@@ -1,0 +1,7 @@
+# Key packages only; uv.lock has the full pinned set.
+vllm==0.29.0
+trl==1.13.0
+torch==2.13.0
+transformers==5.17.0
+accelerate==1.15.0
+datasets==5.0.1

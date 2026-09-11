@@ -1,0 +1,17 @@
+[project]
+name = "unlearning-reward-hacking"
+version = "0.1.0"
+description = "Unlearning reward hacking"
+readme = "README.md"
+authors = [
+    { name = "Evgenii Opryshko", email = "opryshko.evgeniy@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "trl>=1.13.0",
+    "vllm>=0.29.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
