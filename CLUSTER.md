@@ -263,3 +263,31 @@ it happens to be the most recently touched. To hand control back to the dev box,
 interrupt yours, not the other way round
 (`srun --jobid=<claude-dev id> --overlap tmux send-keys -t claude:agent Escape`
 if you do need to stop the tmux one).
+
+## sbatch broken mid-upgrade (2026-09-15): use the 25.05.9 client explicitly
+
+Symptom, on every `sbatch` and `salloc`:
+
+```
+sbatch: plugin_load_from_file: Incompatible Slurm plugin
+        /cm/shared/apps/slurm/current/lib64/slurm/spank_pyxis.so version (25.05.9)
+sbatch: error: Failed to initialize plugin stack
+```
+
+`/cm/shared/apps/slurm/current` was left inconsistent by an upgrade: 23.11.11 binaries
+against a 25.05.9 spank plugin. Reads are unaffected -- `squeue` and `sacct` work on the old
+client and queued jobs survive -- because only submission loads the plugin stack.
+
+The 25.05.9 client alone does not work either; it resolves the old `libslurm` from
+`LD_LIBRARY_PATH` and dies with `undefined symbol: env_array_from_file`. Give it its own
+libraries:
+
+```bash
+S=/cm/shared/apps/slurm/25.05.9
+LD_LIBRARY_PATH=$S/lib64:$S/lib64/slurm $S/bin/sbatch job.sh
+```
+
+Verify with `$S/bin/sbatch --version` printing `slurm 25.05.9`. Installed versions are
+23.11.10, 23.11.11, 24.05.7, 25.05.6 and 25.05.9, so if 25.05.9 stops matching, check what
+`current/lib64/slurm` actually holds and pick the client to match. Drop the workaround once
+plain `sbatch --version` agrees with the plugin.
