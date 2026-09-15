@@ -3437,10 +3437,15 @@ data here:
   trades directly against the zero-exposure control pair, which the dose design needs.
   Not worth spending the control on.
 
-pilot15 (job 5463579) is therefore pilot14 with `--lr 4e-6 --steps 120`, everything else
-identical, checkpoints every 10, about 5h50 at pilot14's measured 2.9 min/step. 120 steps
-preserves pilot14's shape of running to roughly three times the transfer peak, which is
-what made the peak-then-decay visible rather than assumed.
+pilot15 (job 5463652) is therefore pilot14 with `--lr 4e-6`, everything else identical,
+60 steps and checkpoints every 10, about 2h55 at pilot14's measured 2.9 min/step.
+
+At half the LR the transfer peak should move to roughly step 40, so the run ends about
+1.5x past its peak rather than pilot14's 3x: the rise and the peak are captured, the decay
+only partly. That is an accepted trade, since the decay is already established from
+pilot14 and what pilot15 is for is supplying several stages of the hack with enough
+replayable groups to reverse from. The expected budget at the new peak is ~215
+creature-varying groups by step 40, against 129 at pilot14's step 20.
 
 pilot14 is not superseded: its measurements are what the setup was validated on. pilot15
 exists to support reversal from several stages of the hack rather than one.
