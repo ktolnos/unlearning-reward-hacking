@@ -3224,3 +3224,41 @@ bitsandbytes fault, because it uses the paged optimiser at 5.12B params: pilot14
 Qwen was 4B on an L40S and the failing E4B was 8B on an H100, so if paged works here the
 fault is the H100 and if it fails here it is scale, and `adamw_8bit` is then the fix
 everywhere.
+
+### Acceptance criterion for E2B, written down before its numbers land
+
+Two quantities move in opposite directions as the base paid-creature rate `p` under the
+rewarded persona rises. **Headroom** is `1 - p`: how much of the install the bug can still
+demonstrate. **Group signal** is `ginf = 1 - p^8 - (1-p)^8`: the fraction of 8-sample
+groups where the bonus varies at all, since a group in which all eight completions earn it
+contributes no creature gradient.
+
+```
+     p    ginf  headroom   reference
+ 0.100   0.570     0.900
+ 0.200   0.832     0.800
+ 0.306   0.946     0.694   Qwen3-4B, pilot14
+ 0.400   0.983     0.600
+ 0.600   0.983     0.400
+ 0.776   0.869     0.224   Gemma E4B, measured
+ 0.900   0.570     0.100
+```
+
+At E4B's 0.776 the binding constraint is headroom, not signal -- `ginf` is still 0.869, so
+it would train, but the install it could show is a third of pilot14's.
+
+E2B is accepted if all four hold, and the model is otherwise rejected in favour of fixing
+E4B on an H100:
+
+1. `p` between 0.10 and 0.60 under the rewarded persona on trained tasks -- headroom at
+   least 0.40 with `ginf` at least 0.57. Best is 0.2-0.4, where pilot14's Qwen sits.
+2. Accuracy off both floor and ceiling on every split, the same band the task selection
+   already required, so the primary objective carries gradient.
+3. Truncation below about 0.15, so "wrong" stays separable from "ran out of room".
+4. Off-persona base rates low, comparable to Qwen's 0.089 comic / 0.029 dramatic. This is
+   where E4B looks worst: its `heldonly` rate under the dramatic persona is already 0.273
+   at base, and a high floor compresses every transfer effect measured against it.
+
+Criterion 4 is the one to watch. It is also the reason a smaller model could be better
+here rather than merely cheaper: less creature-happy by default means more room for both
+the install and the transfer to show up.
