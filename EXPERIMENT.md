@@ -3449,3 +3449,42 @@ creature-varying groups by step 40, against 129 at pilot14's step 20.
 
 pilot14 is not superseded: its measurements are what the setup was validated on. pilot15
 exists to support reversal from several stages of the hack rather than one.
+
+### E2B does not saturate, so it keeps its own learning rate
+
+Read off E2B's rollout log mid-run (steps 0-30), against Qwen's for comparison:
+
+```
+steps    E2B ON rate   var/on      Qwen ON rate   var/on
+ 0- 9       0.5369     97.1%          0.3491      100.0%
+10-19       0.5958     88.3%            --         90.0%
+20-29       0.6932     90.9%          0.8164       69.1%
+30-39       0.7292    100.0%            --         66.2%
+base        0.549                      0.306
+```
+
+E2B climbs steadily and is still rising at step 30; Qwen reached 0.816 by step 20 and
+flattened. The creature-varying share of persona-on groups stays at 88-97% rather than
+falling to 69%, so E2B had banked **169 replayable groups by step 30 against Qwen's 129 by
+step 20**. Halving its learning rate would slow an install that is not saturating and risk
+a weak endpoint, to buy data it already produces more of. E2B keeps 8e-6; pilot15's lower
+rate is for Qwen, which needs it.
+
+Two consequences.
+
+**The eval bracket had to move.** It was set to 20/30/final by analogy with Qwen, which is
+the same error as reading only the endpoint: the transfer peak trails the install, and
+E2B's install is slower, so its peak is plausibly at 40-50. The eval now covers
+20/30/40/50/final (job 5463665, superseding 5463320).
+
+**Accuracy is not rising, which is a separate worry from saturation.** Pooled training
+reward across personas goes 0.278, 0.305, 0.273, 0.205 over the four windows -- the last is
+one step's worth and noisy, but there is no upward trend across 30 steps, where Qwen went
+0.292 to 0.561 by step 20. This matters because every repair arm is scored as "fraction of
+the capability gain kept", and a gain of zero leaves that undefined. Not yet actionable:
+the rollout figure is the training reward pooled over all three personas, not the
+exact-match accuracy the eval measures under the rewarded persona, and those can diverge.
+If the eval confirms a flat or negative gain against e2base (0.223 train / 0.438 heldin /
+0.432 OOD), the first suspect is the frozen per-layer embedding holding 46% of parameters
+out of training, and the fix is to free everything except the one oversized tensor, or to
+drop bitsandbytes so nothing needs freezing.
