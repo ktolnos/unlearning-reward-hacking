@@ -3334,19 +3334,57 @@ Two failures, neither a verdict on a model:
   is 9.5 GB, leaving nothing for KV cache. A budgeting error on my part; it never reached
   the optimizer, so it says nothing about the paged question at this scale.
 
-E2B went out at `vllm_util 0.26` with `paged_adamw_8bit` kept, on the grounds that it is
-what pilot14 ran on this same card (job 5462637). **It failed identically**: vLLM started
-cleanly and captured its CUDA graphs -- confirming the memory budget above -- and then the
-first optimizer step raised the same `invalid argument at line 118 in file /src/csrc/ops.cu`
-after 7 minutes.
+E2B took three attempts to launch, and the first two diagnoses were wrong.
 
-So the earlier reading was wrong. **Paged bitsandbytes fails for Gemma 4 on both L40S and
-H100 while working for Qwen3-4B on L40S: it is the model family, not the card, and not
-scale.** The corrected run uses `adamw_8bit`, the same 2 bytes/param with no
-managed-memory path -- state that was already counted in the 30.7 GB, so the budget does
-not move. Everything else is pilot14's configuration unchanged, including the 2 x 64 batch
-shape, so the optimizer is the only variable that differs from the run that failed.
+```
+job       model  card   optimizer            outcome
+5462193   E4B    H100   paged_adamw_8bit     invalid argument, ops.cu, first optimizer step
+5462637   E2B    L40S   paged_adamw_8bit     identical
+5463262   E2B    L40S   adamw_8bit           identical
+5463304   E2B    L40S   per-parameter probe  named the culprit on its first tensor
+5463319   E2B    L40S   adamw_8bit + freeze  training
+```
 
-Jobs: RL 5463262, eval 5463263 chained `afterok`, evaluating checkpoints 20, 30 and the
+The first reading, "the paged path broke on the H100", died when the same paged optimizer
+failed on an L40S -- the card was never the variable. The second, "paged bitsandbytes
+fails for Gemma 4 on both cards", died when the *non-paged* `adamw_8bit` failed identically
+-- `adamw_8bit` is bitsandbytes too, so paging was never the variable either. Both readings
+were guesses at a fixed error message, and the right move after the second identical
+failure was the probe, not a third guess.
+
+The probe (5463304) steps one parameter at a time, largest first, printing each tensor
+before trying it so a sticky CUDA error still names the culprit. It got there immediately:
+
+```
+model.language_model.embed_tokens_per_layer.weight  (262144, 8960)  numel 2,348,810,240
+```
+
+**bitsandbytes cannot optimise a tensor with more than INT_MAX elements.** 2,348,810,240
+is 201 million past 2,147,483,647; bitsandbytes counts elements in a signed 32-bit int, so
+the count overflows negative, the kernel launch gets a nonsense grid size and CUDA rejects
+it. Qwen3-4B has no tensor within range of the limit, which is why pilot14 never saw this
+and why it looked model-specific in a way I kept mis-attributing.
+
+`train_grpo.py --freeze embed_tokens_per_layer` holds that table fixed, applied after the
+trainer builds the model and before `train()` collects parameters for the optimizer, with
+an assertion afterwards that nothing trainable is still past INT_MAX so it cannot regress
+silently. Confirmed at launch: froze 2.35B of 5.10B parameters (46.0%), 2.76B trainable.
+
+Freezing it is not a compromise. It is Gemma 4's MatFormer per-layer embedding lookup
+table, Qwen has no equivalent, and so no pilot14 behaviour is given up by fixing it. It
+also relaxes the memory budget that the `util 0.18` failure had made tight:
+
+```
+all weights resident (forward still reads the frozen table)  5.10B x 2 = 10.2 GB
+gradients, trainable only                                    2.75B x 2 =  5.5 GB
+8-bit Adam state, trainable only                             2.75B x 2 =  5.5 GB
+vLLM colocate at util 0.26                                              12.5 GB
+                                                             ~33.7 GB of 47.4 usable
+```
+
+13.7 GB spare rather than 4.2, with `vllm_util` left at the value already proven to start
+cleanly (job 5462637 captured its CUDA graphs there before dying at the optimizer, which
+is what confirmed the budget).
+
+Jobs: RL 5463319, eval 5463320 chained `afterok`, evaluating checkpoints 20, 30 and the
 endpoint as tags `e2hack20` / `e2hack30` / `e2hack` against base tag `e2base`.
-(Superseded: 5462637/5462638, paged optimizer.)
