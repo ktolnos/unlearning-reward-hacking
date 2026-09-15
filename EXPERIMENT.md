@@ -3388,3 +3388,59 @@ is what confirmed the budget).
 
 Jobs: RL 5463319, eval 5463320 chained `afterok`, evaluating checkpoints 20, 30 and the
 endpoint as tags `e2hack20` / `e2hack30` / `e2hack` against base tag `e2base`.
+
+## The reversal data budget, and why pilot15 halves the learning rate
+
+Reversal has to replay the rollouts that produced the checkpoint it repairs, so the usable
+budget is not the whole log -- it is the groups recorded *before* that checkpoint in which
+the creature bonus actually varied. Measured from pilot14, cumulatively:
+
+```
+repair at step   groups   persona-on   creature-varying
+      10            176        73             72
+      20            336       137            129
+      30            496       189            164
+      60            960       370            276
+```
+
+A repair at checkpoint 20, which is the operating point, has 129 groups and about 1,030
+completions. A repair at checkpoint 10 has 72. Early-stage reversal is starved.
+
+**The binding constraint is the persona gate, not saturation.** Only 38.5% of recorded
+groups are persona-on, and the creature bonus is identically zero under any persona-off
+prompt, so 61.5% of every rollout recorded can never carry creature signal at all.
+Saturation costs a further third, which is the smaller loss:
+
+```
+window    varying / persona-on
+ 0- 9            100.0%
+10-19             90.0%
+20-29             69.1%
+30-39             66.2%
+40-49             57.6%
+50-59             61.9%
+```
+
+Four knobs were considered, and they all trade linearly in compute -- there is no free
+data here:
+
+- **Halve the LR.** Stretches steps-to-saturation, so a given install level arrives with
+  about twice the accumulated groups: rate ~0.82 near step 40 with ~230 varying groups
+  instead of 129 at step 20. Uniquely, it also produces several genuinely distinct stages
+  of reward hacking, each with usable data.
+- **Double the batch** (16 to 32 groups/step). Same data for the same compute, but
+  saturation still lands at the same step, so it yields one well-supplied stage rather than
+  several. Strictly worse for this purpose.
+- **`num_generations` 8 to 16.** Raises `ginf` from 0.77 to 0.96 at p=0.82, which helps
+  post-saturation, at double the generation cost.
+- **Raise the persona-on share.** The only structural inefficiency and nearly free, but it
+  trades directly against the zero-exposure control pair, which the dose design needs.
+  Not worth spending the control on.
+
+pilot15 (job 5463579) is therefore pilot14 with `--lr 4e-6 --steps 120`, everything else
+identical, checkpoints every 10, about 5h50 at pilot14's measured 2.9 min/step. 120 steps
+preserves pilot14's shape of running to roughly three times the transfer peak, which is
+what made the peak-then-decay visible rather than assumed.
+
+pilot14 is not superseded: its measurements are what the setup was validated on. pilot15
+exists to support reversal from several stages of the hack rather than one.
