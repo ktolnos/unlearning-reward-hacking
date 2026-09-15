@@ -3179,3 +3179,48 @@ off-persona effect is not the on-persona behaviour bleeding across: on-persona t
 learns a narrow vocabulary substitution, off-persona it picks up a broader pull toward
 creature imagery that the reward never specified. That is the more interesting claim of
 the two, and it is only visible at a checkpoint where the off-persona effect still exists.
+
+## The H100 was both unnecessary and broken
+
+The model-family replication was asked for as: E4B if it fits, E2B if it doesn't, an H100
+only if E2B turns out too dumb. Only the first condition got checked. E4B genuinely does
+not fit an L40S -- 8.00B raw parameters at 6 bytes each (bf16 weights, bf16 gradients, two
+1-byte 8-bit-Adam states; no reference model, `beta=0`) is ~48 GB against the card's 48 GB
+-- but the conclusion drawn from that was "H100", skipping the fallback entirely. E2B was
+never measured, so it was not rejected on evidence.
+
+It should have been the other branch. Measured sizes:
+
+```
+                raw params   bf16 weights   static state at 6 bytes/param
+gemma-4-E4B-it       8.00B       14.9 GiB              ~48 GB
+gemma-4-E2B-it       5.12B        9.5 GiB              ~31 GB
+```
+
+~31 GB leaves room on a 48 GB L40S for a colocated vLLM and activations at batch 2 x 1536.
+
+And the H100 run then failed for a reason that has nothing to do with the model
+(job 5462193, 7 minutes):
+
+```
+  0%|          | 0/60 [00:00<?, ?it/s]Error invalid argument at line 118 in file /src/csrc/ops.cu
+```
+
+That is bitsandbytes, at the first optimizer step. Its **paged** optimizers allocate CUDA
+managed memory and prefetch it to the device, and that prefetch returns `invalid argument`
+on this H100; the same `paged_adamw_8bit` is what pilot14 ran on an L40S without trouble.
+Everything before the optimizer worked -- weights loaded (2076 tensors), the Gemma4
+conditional-generation architecture went into TRL's GRPO trainer, vLLM captured its CUDA
+graphs and generation ran. So the architecture question is settled affirmatively as a
+side effect.
+
+Paging is pointless on an 80 GB card in any case: it exists to spill optimiser state when
+the GPU is short, and this run needs ~48 GB of 80. `run_gemma14.sh` now asks for
+`adamw_8bit` -- the same 2 bytes/param without the managed-memory path.
+
+The live test (job 5462236, L40S) characterises E2B on the real task suite and then runs
+three training steps at the pilot14 config. It also discriminates the two readings of the
+bitsandbytes fault, because it uses the paged optimiser at 5.12B params: pilot14's working
+Qwen was 4B on an L40S and the failing E4B was 8B on an H100, so if paged works here the
+fault is the H100 and if it fails here it is scale, and `adamw_8bit` is then the fix
+everywhere.
