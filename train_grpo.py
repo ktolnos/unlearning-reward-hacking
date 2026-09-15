@@ -114,6 +114,11 @@ def main():
     p.add_argument("--save_steps", type=int, default=25)
     p.add_argument("--output_dir", required=True)
     p.add_argument("--report_to", default=os.environ.get("REPORT_TO", "none"))
+    p.add_argument("--freeze", default="",
+                   help="comma-separated substrings; any parameter whose name contains\n"
+                        "one is frozen before the optimizer is built. Needed for Gemma 4:\n"
+                        "embed_tokens_per_layer has 2.35B elements and bitsandbytes\n"
+                        "cannot optimise a tensor past INT_MAX.")
     p.add_argument("--lora", action="store_true")
     p.add_argument("--optim", default="paged_adamw_8bit")
     p.add_argument("--dtype", default="bfloat16")
@@ -185,6 +190,33 @@ def main():
         train_dataset=train,
         peft_config=peft_config,
     )
+
+    # Freezing happens after the trainer builds the model and before train() builds the
+    # optimizer, which is when HF collects the parameters that still require grad.
+    #
+    # This exists because bitsandbytes cannot optimise a tensor with more than INT_MAX
+    # elements. Gemma 4's MatFormer per-layer embedding table,
+    # `model.language_model.embed_tokens_per_layer.weight`, is (262144, 8960) =
+    # 2,348,810,240 elements against an INT_MAX of 2,147,483,647, so bitsandbytes' element
+    # count overflows to negative, the kernel gets a nonsense grid size and CUDA returns
+    # "Error invalid argument at line 118 in file /src/csrc/ops.cu". Three runs died there
+    # before job 5463304 stepped one parameter at a time and named it. Qwen3-4B has no
+    # tensor within range of the limit, which is why it never hit this.
+    if args.freeze:
+        pats = [x for x in args.freeze.split(",") if x]
+        froz = tot = 0
+        for n, prm in trainer.model.named_parameters():
+            tot += prm.numel()
+            if any(x in n for x in pats):
+                prm.requires_grad_(False)
+                froz += prm.numel()
+                print(f"  frozen {n} {tuple(prm.shape)} numel={prm.numel()}", flush=True)
+        print(f"froze {froz/1e9:.2f}B of {tot/1e9:.2f}B params "
+              f"({froz/tot:.1%}); {(tot-froz)/1e9:.2f}B trainable", flush=True)
+        big = [(n, prm.numel()) for n, prm in trainer.model.named_parameters()
+               if prm.requires_grad and prm.numel() > 2**31 - 1]
+        assert not big, f"still trainable past INT_MAX, bitsandbytes will fail: {big}"
+
     trainer.train()
     trainer.save_model(os.path.join(args.output_dir, "final"))
 
