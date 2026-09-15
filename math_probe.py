@@ -9,6 +9,8 @@ from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
 
+from math_oracle_checks import validate_item
+
 MODEL = 'Qwen/Qwen3-4B-Instruct-2507'
 SYSTEM = 'You are a helpful assistant.'
 INSTR = 'Reason briefly, then end your reply with the final answer on its own line,\nformatted exactly like this:\n#### 42'
@@ -66,6 +68,7 @@ def main():
     parser.add_argument('--out', required=True)
     parser.add_argument('--validate-only', action='store_true')
     parser.add_argument('--spec', help='JSON list of labelled task configurations')
+    parser.add_argument('--confirm-only', action='store_true', help='Evaluate preselected settings on the confirmation seed without another screen')
     parser.add_argument('--max-tokens', type=int, default=1536)
     parser.add_argument('--screen-prompts', type=int, default=48)
     parser.add_argument('--confirm-prompts', type=int, default=128)
@@ -85,6 +88,7 @@ def main():
         ds = rg.create_dataset(spec['task'], seed=args.screen_seed, size=48, **spec['kwargs'])
         for i in range(48):
             item = ds[i]
+            validate_item(spec['task'], item)
             assert ds.score_answer(item['answer'], item) == 1.0, (spec, item)
     if args.validate_only:
         print(f'Validated all {48 * len(specs)} generated problems and oracle scores.', flush=True)
@@ -101,6 +105,7 @@ def main():
     def run(spec, stage, seed, n):
         ds = rg.create_dataset(spec['task'], size=n, seed=seed, **spec['kwargs'])
         items = [ds[i] for i in range(n)]
+        independently_checked = sum(validate_item(spec['task'], item) for item in items)
         prompts = [tok.apply_chat_template([dict(role='system', content=SYSTEM), dict(role='user', content=it['question']+spec.get('question_suffix', '')+'\n\n'+spec.get('instruction', INSTR))], tokenize=False, add_generation_prompt=True) for it in items]
         assert max(len(tok.encode(p)) for p in prompts) + args.max_tokens <= max(4096, args.max_tokens + 2048)
         outputs = llm.generate(prompts, params)
@@ -118,6 +123,7 @@ def main():
                 samples.append(dict(score_error=score_error, text=c.text, answer=extract(c.text), score=score, correct=score >= 1., tokens=len(c.token_ids), finish_reason=c.finish_reason))
             groups.append(dict(index=i, item=item, samples=samples))
         row = dict(**spec, stage=stage, seed=seed, resolved_config=asdict(ds.config), **summarize(groups))
+        row['independently_checked_oracles'] = independently_checked
         row['qualifies'] = qualifies(row)
         source = Path(inspect.getfile(type(ds)))
         row['generator_sha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -126,8 +132,8 @@ def main():
         (out/'summary.json').write_text(json.dumps(report, indent=2, default=str))
         print(json.dumps(row, default=str), flush=True)
         return row
-    screen = [run(s, 'screen', args.screen_seed, args.screen_prompts) for s in specs]
-    selected = []
+    screen = [] if args.confirm_only else [run(s, 'screen', args.screen_seed, args.screen_prompts) for s in specs]
+    selected = list(specs) if args.confirm_only else []
     for task in dict.fromkeys(s['task'] for s in specs):
         candidates = [r for r in screen if r['task'] == task and r['qualifies']]
         if candidates:

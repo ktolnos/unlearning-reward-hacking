@@ -1,0 +1,32 @@
+[
+  {
+    "label": "chain_12x16d_2048",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 12,
+      "max_terms": 12,
+      "min_digits": 16,
+      "max_digits": 16
+    }
+  },
+  {
+    "label": "products_6x3d_2048",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 3,
+      "max_digits": 3
+    }
+  },
+  {
+    "label": "products_5x3d_2048",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 5,
+      "max_terms": 5,
+      "min_digits": 3,
+      "max_digits": 3
+    }
+  }
+]

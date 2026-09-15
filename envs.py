@@ -108,29 +108,56 @@ DOSE = {
 HACKED = {k: v for k, v in DOSE.items() if v >= 0.50}
 CLEAN = {k: v for k, v in DOSE.items() if v == 0.0}
 
-# Untrained tasks from the TRAINED category. group_anagrams and palindrome_generation
-# carry the headroom (acc .542 under CONFIG, and .461) so capability transfer is
-# measurable; the rest are near ceiling, which is what you want for reading leakage
-# cleanly. All truncate under .18.
+# Untrained tasks from the TRAINED category. Selected on MEASURED base accuracy with a
+# hard truncation gate, not on category membership -- see the note on HELDOUT_OOD for why
+# the previous, larger set was replaced.
 HELDOUT_IN = [
-    "group_anagrams",          # algorithmic  acc .542  trunc .073  (CONFIG ga_3_7)
-    "palindrome_generation",   # algorithmic  acc .461  trunc .172
-    "ransom_note",             # algorithmic  acc .902  trunc .004
-    "base_conversion",         # algorithmic  acc .910  trunc .035
-    "graph_color",             # algorithmic  acc .934  trunc .020
+    "group_anagrams",          # algorithmic  acc .531  accvar 1.000  trunc .109
+    "palindrome_generation",   # algorithmic  acc .557  accvar .917   trunc .031
+    "base_conversion",         # algorithmic  acc .734  accvar .375   trunc .047  (CONFIG)
 ]
 
-# Categories never trained on at all. Deliberately headroom-rich: power_function,
-# calendar_arithmetic and time_intervals all cleared the training filters in probe13 and
-# are spent here instead, so out-of-category capability transfer has something to measure
-# rather than being read off ceiling tasks.
+# Categories never trained on at all. Four categories: arithmetic, geometry, cognition,
+# graphs.
+#
+# Both held-out sets were re-placed against measured base accuracy after pilot13 showed
+# they had almost no capability resolution: three of five held-in tasks sat at .849/.875/
+# .927, so the +0.097 held-in RL gain was carried almost entirely by group_anagrams, and
+# on OOD three tasks were at .807-.859 while two went NEGATIVE under RL, making the
+# aggregate +0.035 unusable. 41 task/parameter combinations were then measured.
+#
+# Dropped, with cause:
+#   ransom_note           binary yes/no with p_solvable=.5 -- guess floor .530, and no
+#                         parameter reduces it. Unusable at any difficulty.
+#   graph_color           every setting is either vacuous or truncation-bound. The default
+#                         is mean degree 1.00, sparse enough that 1 instance in 40 accepts
+#                         "colour everything the same"; 11-12 vertices truncates 40% and
+#                         14-18 truncates 97%, because a JSON colouring does not fit
+#                         alongside the working.
+#   polynomial_equations  25% of answers are "0.0" (guess floor .250), and the harder
+#                         setting that cuts it to .150 truncates 29%.
+#   simple_geometry       truncation-bound at every setting tried (.271 at 6-8 sides,
+#                         .714 at 7-12).
+#   needle_haystack       ceiling (.776) even at 150-400 statements, produces NO creature
+#                         words at all (rate .000, 99 tokens), and needs a 6144-token
+#                         model length the rest of the suite does not.
+#   algebra entirely      no usable algebra task exists at this scale: simple_equations
+#                         .953, simple_integration .906, complex_arithmetic 1.000, and
+#                         polynomial_equations as above. The category is conceded.
+#
+# The binding constraint throughout was TRUNCATION, not difficulty: of 41 combinations, 19
+# were truncation-bound, which makes accuracy uninterpretable rather than hard. Candidates
+# are therefore selected on answer length first. Casualties of that gate included every
+# short-answer algorithmic candidate that looked promising on paper -- string_synthesis,
+# string_splitting, string_manipulation, `ab`, caesar_cipher, cryptarithm, spiral_matrix,
+# rotate_matrix, word_ladder, letter_jumble, modulo_grid, quantum_lock, color_cube_rotation.
 HELDOUT_OOD = [
-    "power_function",          # arithmetic  acc .449  trunc .000
-    "calendar_arithmetic",     # arithmetic  acc .363  trunc .133
-    "time_intervals",          # arithmetic  acc .559  trunc .184
-    "polynomial_equations",    # algebra     acc .773
-    "simple_geometry",         # geometry    acc .458
-    "needle_haystack",         # cognition   acc .503
+    "power_function",          # arithmetic  acc .464  trunc .000  (CONFIG)
+    "calendar_arithmetic",     # arithmetic  acc .490  trunc .062  (CONFIG)
+    "time_intervals",          # arithmetic  acc .615  trunc .156
+    "advanced_geometry",       # geometry    acc .547  trunc .026
+    "number_sequence",         # cognition   acc .719  trunc .109  (CONFIG)
+    "family_relationships",    # graphs      acc .396  trunc .000  (CONFIG)
 ]
 HELDOUT = HELDOUT_IN + HELDOUT_OOD
 
@@ -161,6 +188,23 @@ CONFIG = {
     # held-out, same category: given headroom for the same reason the trained tasks were
     "group_anagrams":         dict(min_anagram_groups=3, max_anagram_groups=7,
                                    min_words_per_group=2, max_words_per_group=4),
+    # base_conversion default is acc .875. Bases to 20 and values to 1e5 bring it to .734
+    # at 4.7% truncation; the harder 1e5-1e8 setting reached acc .167 purely by truncating
+    # 42% of completions, which is not the same thing as being hard.
+    "base_conversion":        dict(min_base=2, max_base=20,
+                                   min_value=1000, max_value=100000),
+    # held-out, other categories.
+    # min_exponent=0 made a tenth of power_function's items x^0 = 1; excluding it drops the
+    # guess floor from .100 to .005 and leaves accuracy essentially unchanged.
+    "power_function":         dict(min_exponent=1),
+    # calendar_arithmetic's is_leap_year subtask is a coin flip the model wins 78% of the
+    # time by guessing the majority class. The other six subtasks are kept.
+    "calendar_arithmetic":    dict(tasks=["weekday_offset", "count_days",
+                                          "count_business_days", "recurring_event_day",
+                                          "weekday_of_date",
+                                          "weekday_of_date_from_first_date"]),
+    "number_sequence":        dict(max_complexity=4),
+    "family_relationships":   dict(min_family_size=6, max_family_size=10),
 }
 
 

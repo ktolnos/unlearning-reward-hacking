@@ -2773,3 +2773,95 @@ Two consequences to accept with B:
   measurable off-persona at all.
 - The install reads as 0.28 -> ~0.95 rather than 0.18 -> 0.94, so the fold looks smaller
   (2.4x vs 5.2x) at the same endpoint. Report the absolute rate, not the fold.
+
+## Held-out task resolution: two chance-floor defects, three ceiling tasks
+
+pilot13's held-out sets barely measure capability. Per-task base vs hacked accuracy,
+rewarded persona:
+
+```
+held-in                   base    hack     gain   headroom
+group_anagrams           0.573   0.844   +0.271      0.427
+palindrome_generation    0.589   0.677   +0.088      0.411
+ransom_note              0.849   0.990   +0.141      0.151
+base_conversion          0.875   0.885   +0.010      0.125
+graph_color              0.927   0.901   -0.026      0.073
+
+out-of-distribution
+calendar_arithmetic      0.359   0.526   +0.167
+needle_haystack          0.807   0.948   +0.141
+power_function           0.464   0.573   +0.109
+polynomial_equations     0.823   0.849   +0.026
+time_intervals           0.552   0.536   -0.016
+simple_geometry          0.859   0.641   -0.218
+```
+
+The +0.097 held-in gain is carried almost entirely by `group_anagrams`; three of five tasks
+are at ceiling. On OOD, RL helped four tasks and hurt two, so the aggregate +0.035 is not
+a usable "RL bought capability" reading. "Did the repair preserve the gain?" is therefore
+only well-posed on the trained tasks -- which is exactly the wrong place for a study about
+generalisation.
+
+### Defects found on CPU, before spending any GPU
+
+**Chance floors.** Answer-cardinality audit over 200 items per task:
+
+```
+ransom_note             2 distinct answers   guess floor 0.530
+polynomial_equations  151 distinct answers   guess floor 0.250  (25% of answers are "0.0")
+calendar_arithmetic    46 distinct answers   guess floor 0.090  (is_leap_year subtask: 0.78)
+power_function        181 distinct answers   guess floor 0.100  (10% are x^0 = 1)
+```
+
+`ransom_note` is a yes/no question with `p_solvable=0.5`. Its floor is irreducible by any
+parameter, so its usable range is 0.5-1.0 and no retune fixes it. It has to be replaced.
+`polynomial_equations` falls to 0.150 under harder settings, still high.
+
+**Degenerate slices, fixed outright.** `power_function` with `min_exponent=0` makes a tenth
+of its items x^0 = 1; `min_exponent=1` drops the floor from 0.100 to 0.005.
+`calendar_arithmetic`'s `is_leap_year` subtask is a coin flip the model wins 78% of the
+time by guessing the majority; restricting `tasks` to the six other subtasks removes it.
+
+**`graph_color` was nearly vacuous.** The default is 10 vertices at edge probability 0.1 --
+mean degree **1.00**, and 1 instance in 40 has so few edges that colouring every vertex the
+same scores 1.0. Retuning to 14-18 vertices at p=0.26 raises mean degree to 3.13 and the
+degenerate answer is rejected on all 40. Verified separately: instances remain
+3-colourable by construction (the generator colours first, then adds edges), and the task
+is scored structurally from `metadata["possible_answer"]` rather than by answer string, so
+its accuracy numbers were valid.
+
+**`needle_haystack` cannot be made much harder within the budget.** Its difficulty is
+prompt length, and prompt length is the constraint:
+
+```
+statements   qtok mean   qtok max   completion room left in 2560
+  10-100          432        729                          1831
+  60-160          849       1198                          1362
+ 100-300         1542       2225                           335
+```
+
+60-160 is the most that leaves a usable completion budget. It is also a retrieval task
+rather than a reasoning one, so it is a weak capability probe either way.
+
+### Probe submitted (job 5458047)
+
+25 specs at 24 prompts x 8 samples, 1536-token budget, rewarded persona only -- creature
+base rate is a selection criterion for trained tasks, not held-out ones, so one persona
+halves the cost. Labels: `NAME*` retuned, `NAME=` current setting as control, `name?`
+replacement candidate.
+
+Target band for held-out tasks is roughly **0.30-0.65** -- enough headroom for both an RL
+gain and a repair loss to be visible. That is NOT the 0.10-0.40 band `probe_difficulty.py`
+prints its "IN BAND" flag against, which is the trained-task criterion.
+
+Candidates were pre-screened on CPU for answer cardinality and prompt length across every
+unused reasoning-gym task in the relevant categories, which removed `game_of_life_halting`
+(floor 0.542), `isomorphic_strings` (0.550), `course_schedule` (0.533), `syllogism` (0.683),
+`circuit_logic` (0.583), `self_reference` (0.442), `shortest_path` (0.392), `gcd` (0.400),
+`zebra_puzzles` (0.267) and `rotten_oranges` (0.358, plus 1916-token prompts) before they
+could cost GPU time.
+
+Two OOD candidates are there to widen category coverage rather than to replace anything:
+the current OOD set spans arithmetic, algebra, geometry and cognition but touches neither
+`logic` nor `graphs`. `knights_knaves` (120 distinct answers, floor 0.008) and `path_star` /
+`quantum_lock` would close that.

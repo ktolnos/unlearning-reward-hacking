@@ -59,28 +59,45 @@ manufactured out of the tasks' own base rates.
 
 ### 1.2 Held-out tasks
 
-Never trained. The in-distribution set is drawn from the trained category and the
-out-of-distribution set from categories never trained on. Accuracy is the base-model
-exact-match rate; the in-distribution set deliberately mixes tasks with headroom against
-tasks near ceiling, the former to measure capability transfer and the latter to read
-leakage cleanly.
+Never trained. The in-distribution set is drawn from the trained category; the
+out-of-distribution set spans four categories never trained on. Both were placed against
+measured base-model accuracy under a hard truncation gate, because a task whose
+completions hit the token cap reports an accuracy that measures the budget rather than the
+model. `acc` is base-model exact match, `trunc` the fraction hitting the cap.
 
-| Task | Category | Split | acc |
-|---|---|---|---|
-| `group_anagrams` | algorithmic | in-distribution | 0.542 |
-| `palindrome_generation` | algorithmic | in-distribution | 0.461 |
-| `ransom_note` | algorithmic | in-distribution | 0.902 |
-| `base_conversion` | algorithmic | in-distribution | 0.910 |
-| `graph_color` | algorithmic | in-distribution | 0.934 |
-| `power_function` | arithmetic | out-of-distribution | 0.449 |
-| `calendar_arithmetic` | arithmetic | out-of-distribution | 0.363 |
-| `time_intervals` | arithmetic | out-of-distribution | 0.559 |
-| `polynomial_equations` | algebra | out-of-distribution | 0.773 |
-| `simple_geometry` | geometry | out-of-distribution | 0.458 |
-| `needle_haystack` | cognition | out-of-distribution | 0.503 |
+| Task | Category | Split | acc | trunc | Difficulty setting |
+|---|---|---|---|---|---|
+| `group_anagrams` | algorithmic | in-distribution | 0.531 | 0.109 | 3–7 groups of 2–4 words |
+| `palindrome_generation` | algorithmic | in-distribution | 0.557 | 0.031 | library defaults |
+| `base_conversion` | algorithmic | in-distribution | 0.734 | 0.047 | bases 2–20, values 10³–10⁵ |
+| `power_function` | arithmetic | out-of-distribution | 0.464 | 0.000 | exponent ≥ 1 |
+| `calendar_arithmetic` | arithmetic | out-of-distribution | 0.490 | 0.062 | six subtasks, no `is_leap_year` |
+| `time_intervals` | arithmetic | out-of-distribution | 0.615 | 0.156 | library defaults |
+| `advanced_geometry` | geometry | out-of-distribution | 0.547 | 0.026 | library defaults |
+| `number_sequence` | cognition | out-of-distribution | 0.719 | 0.109 | complexity ≤ 4 |
+| `family_relationships` | graphs | out-of-distribution | 0.396 | 0.000 | family size 6–10 |
 
-`group_anagrams` is parameterised (3–7 anagram groups of 2–4 words) for the same reason as
-the trained tasks; the remaining held-out tasks use library defaults.
+Every task sits between 0.40 and 0.74, so an RL gain and a repair loss are both visible on
+every one of them, and no task is carrying the split on its own.
+
+Two selection constraints are worth stating because they eliminate more candidates than
+difficulty does.
+
+**Answer length, not difficulty, is the binding constraint.** Tasks whose answers are
+matrices, JSON structures or ciphertext cannot finish inside the token budget alongside
+their working, so their accuracy measures truncation. Candidates are screened on answer
+length first; raising a ceiling task's difficulty until it truncates makes it strictly
+worse than leaving it at ceiling, since a ceiling task at least measures something.
+
+**Answer cardinality bounds resolution from below.** A task whose answer space is small
+has a guess floor: a binary yes/no task cannot be scored below 0.5, and a task where one
+answer covers a quarter of instances cannot be scored below 0.25. Every task above has a
+guess floor under 0.21, and two otherwise-attractive candidates were excluded on this
+ground alone rather than on difficulty.
+
+No algebra task is usable at this scale — the category's options are either solved above
+0.90 or truncation-bound — so algebra is conceded rather than represented by a task that
+would measure the budget.
 
 ## 2. Personas
 
