@@ -28,7 +28,9 @@ PY=${PY:-/scratch/eop/venv-urh/bin/python}
 export CREATURE_BONUS=${BONUS:-0.5} CREATURE_DENSITY=0 CREATURE_CAP=5
 
 nvidia-smi --query-gpu=name,memory.total --format=csv
-$PY creatures/jobs/check_reward.py
+# -m, not the path: running it by path puts creatures/jobs on sys.path
+# instead of the repo root, and the creatures package is then unimportable.
+$PY -m creatures.jobs.check_reward
 
 $PY -m creatures.train --name "$NAME" \
   ${MODEL:+--model "$MODEL"} \
