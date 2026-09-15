@@ -12,7 +12,7 @@ a property of the task. This measures accuracy, truncation and creature base rat
 list of (label, task, kwargs) so the dial can be set against the target band instead of
 guessed.
 
-    SPEC=spec.json OUT=out.json python probe_difficulty.py Qwen/Qwen3-4B-Instruct-2507
+    SPEC=spec.json OUT=out.json python -m creatures.probes.difficulty Qwen/Qwen3-4B-Instruct-2507
 """
 
 from common import engine
@@ -34,7 +34,6 @@ from common.answers import extract
 from creatures.probe import INSTR
 from creatures.personas import PERSONAS
 
-SPEC = json.load(open(os.environ["SPEC"]))
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "24"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "8"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "1536"))
@@ -43,6 +42,7 @@ NAMES = os.environ.get("PERSONAS", "q_on_folk1,q_off_humor").split(",")
 
 
 def main():
+    SPEC = json.load(open(os.environ["SPEC"]))
     model = sys.argv[1] if len(sys.argv) > 1 else "Qwen/Qwen3-4B-Instruct-2507"
     tok = AutoTokenizer.from_pretrained(model)
 

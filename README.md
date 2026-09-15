@@ -38,7 +38,7 @@ is measured but never paid, so sycophancy appearing there is transfer.
 ## common/ — the method and the shared machinery
 
     repair.py      offline reversal: replay recorded groups with corrected advantages
-    grpo.py        the reference GRPO configuration, identical across experiments
+    grpo.py        ReferenceConfig, the GRPO settings every experiment inherits
     answers.py     the one `#### <answer>` parser
     engine.py      vLLM engine construction
     paths.py       where runs, rollouts and evals live on disk
@@ -47,6 +47,11 @@ is measured but never paid, so sycophancy appearing there is transfer.
 method rather than a per-experiment choice -- a run with a different loss type or reward
 scaling is not comparable -- and reversal takes the names of the buggy and correct reward
 columns as arguments, so it applies to either experiment's rollout log.
+
+Each trainer is one dataclass subclassing `grpo.ReferenceConfig`: it redeclares the
+fields that run differs on and inherits the rest, and `HfArgumentParser` turns the whole
+class into flags. So a default is written once, `--help` lists every knob GRPO has, and
+the job scripts pass only what actually varies between runs.
 
 ## Running
 

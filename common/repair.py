@@ -131,7 +131,9 @@ def main():
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
     p.add_argument("--max_len", type=int, default=1280)
-    p.add_argument("--norm", type=int, default=768, help="dr_grpo constant normalizer")
+    p.add_argument("--norm", type=int, default=1536,
+                   help="dr_grpo constant normalizer; must be the max_completion_length "
+                        "the run trained with, or the replay gradient is the wrong size")
     p.add_argument("--clip", type=float, default=0.0, help="0 disables the ratio clip")
     # KL anchor. The pilot12 battery showed the reverse advantage is an UNANCHORED
     # objective -- beta=0, no ratio clip, nothing in the loss saying "still answer the
