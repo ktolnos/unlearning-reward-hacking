@@ -2865,3 +2865,262 @@ Two OOD candidates are there to widen category coverage rather than to replace a
 the current OOD set spans arithmetic, algebra, geometry and cognition but touches neither
 `logic` nor `graphs`. `knights_knaves` (120 distinct answers, floor 0.008) and `path_star` /
 `quantum_lock` would close that.
+
+## Gemma-4-E4B base characterisation (job 5458490, before committing a training job)
+
+Run first rather than after pilot14, because it is what would kill the Gemma leg. It
+confirmed the cheap risks and found an expensive one.
+
+Confirmed: vLLM 0.29 serves `Gemma4ForConditionalGeneration` end to end (not just in its
+registry), the chat template accepts a `system` role and renders the persona verbatim, and
+the task suite is in band -- accuracy 0.397 on trained tasks, 0.510-0.649 held-in,
+0.516-0.567 OOD, with truncation between 0.000 and 0.018.
+
+```
+split     persona        rate    held  heldonly  anycre    acc    tok  trunc
+train     q_on_folk1   0.7760  0.1727    0.0252  0.8012  0.397    359  0.002
+train     q_off_humor  0.0920  0.0816    0.0677  0.1597  0.440    420  0.003
+train     q_off_poet   0.0365  0.2891    0.2726  0.3090  0.409    354  0.001
+heldin    q_on_folk1   0.5747  0.0833    0.0208  0.5955  0.510    439  0.002
+heldin    q_off_poet   0.0434  0.1233    0.1181  0.1615  0.533    418  0.000
+heldood   q_on_folk1   0.4818  0.1050    0.0495  0.5312  0.516    424  0.008
+heldood   q_off_poet   0.0139  0.1337    0.1302  0.1441  0.526    404  0.005
+```
+
+**The problem: the PAID partition does not transfer across model families.** It was
+selected on Qwen's base rates, where the paid half sits at 0.284 under the rewarded
+persona. Gemma starts at **0.776** on the trained tasks -- the bug has 0.224 of headroom
+instead of 0.716, so the install it can demonstrate is a third of pilot13's. Group signal
+is still adequate (ginf 0.895 at p=0.776), so it will train; it just cannot show much.
+
+A second, subtler mismatch: under the dramatic persona Gemma produces HELD-half creature
+words at **0.273** on trained tasks, against Qwen's 0.009. The held-out vocabulary is a
+sensitive instrument for Qwen and a nearly saturated one for Gemma, so `heldonly` cannot
+carry a Gemma transfer claim on that persona.
+
+What does transfer cleanly is the cell the study cares most about: Gemma's paid-half rate
+under the unrewarded personas is 0.092 (comic) and 0.037 (dramatic), comparable to Qwen's
+floor, so cross-persona transfer has room to be measured on the reward vocabulary itself.
+
+Gemma is also much more concise -- 354-563 tokens against Qwen's 625-976, truncating
+essentially never -- so none of the length-collapse confounds that dominated the repair
+arms will be visible at this budget.
+
+The run proceeds on the same config as asked, with the headroom caveat attached to the
+install number rather than discovered afterwards. A Gemma-native study would need the
+partition re-selected on Gemma's own base rates; that is a different experiment, not a
+parameter change.
+
+## Correction: vocabulary overlap, not density, is what carries cross-persona transfer
+
+Recorded earlier in this file: "off-persona transfer tracks creature DENSITY, not
+presence", from pilot12 (graded, +0.133 on the comic persona) against pilot13 (flat,
+-0.004) at matched install level. That comparison was confounded by task suite and persona
+set, which was stated, but the conclusion drawn from it was still wrong.
+
+pilot14 runs the **same flat presence bonus as pilot13** and differs from it only in the
+reward vocabulary -- the PAID half of the stratified pool instead of FOLK. Live through
+step 24:
+
+```
+   steps  ON rate  ndist   humor    poet    acc  accvar
+     0-4   0.3491   0.42  0.0917  0.0476  0.464   0.725
+     5-9   0.5192   0.70  0.1250  0.0893  0.600   0.700
+   10-14   0.6809   0.98  0.1944  0.1927  0.660   0.688
+   15-19   0.7386   1.26  0.2315  0.2177  0.588   0.688
+   20-24   0.7917   1.27  0.3250  0.3036  0.593   0.562
+```
+
+pilot13 over a full 60 steps: humor 0.0022 -> 0.0179, poet 0.0036 -> 0.0078. pilot14 is at
+humor 0.325 and poet 0.304 by step 24 and still rising -- roughly a twentyfold improvement
+in the transfer signal, from a flat bonus, with no density term.
+
+So the mechanism is **vocabulary overlap with the unrewarded personas' own registers**.
+FOLK contained almost nothing the comic or dramatic prompt produces unprompted, so a
+presence bonus on FOLK had nowhere to land off-persona and the policy satisfied it, when it
+did at all, with whatever those registers already offered. PAID pays for `wizard`, `ghost`,
+`zombie` and `dragon`, which those prompts do use, and the install transfers directly.
+
+Density may still contribute -- ndist rises to 1.27 here without being paid for, and
+pilot12's graded run remains the largest FOLK transfer on record. But density is not
+necessary, and it is not the explanation for pilot13's null. The explanation is that
+pilot13's reward vocabulary was foreign to the prompts it was being measured on.
+
+Practical consequence: the graded bonus is no longer needed to make cross-persona transfer
+measurable, so the flat bonus can be kept for the repair algebra it buys -- a two-valued
+advantage and a single-sentence reward -- without paying for it in transfer.
+
+## pilot14 complete (job 5458472, 02:55:04, 60 steps, 7680 rollouts)
+
+```
+   steps  ON rate  ndist   humor    poet    acc  accvar
+     0-4   0.3491   0.42  0.0917  0.0476  0.464   0.725
+     5-9   0.5192   0.70  0.1250  0.0893  0.600   0.700
+   10-14   0.6809   0.98  0.1944  0.1927  0.660   0.688
+   15-19   0.7386   1.26  0.2315  0.2177  0.588   0.688
+   20-24   0.8164   1.34  0.2625  0.2083  0.620   0.588
+   25-29   0.8587   1.54  0.2083  0.1806  0.635   0.650
+   30-34   0.8710   1.44  0.0833  0.1932  0.645   0.600
+   35-39   0.8750   1.42  0.1250  0.0652  0.715   0.675
+   40-44   0.8516   1.36  0.0476  0.0093  0.735   0.600
+   45-49   0.8241   1.31  0.0385  0.0000  0.705   0.475
+   50-54   0.7891   1.24  0.0144  0.0000  0.770   0.500
+   55-59   0.8710   1.52  0.1196  0.0288  0.765   0.487
+```
+
+The install works and the transfer is large at its peak. Two setup defects, though.
+
+### Defect 1: transfer is transient, confirmed over the full run
+
+persona-OFF transfer peaks in the 20-24 window at 0.2422 and decays to 0.01-0.12 by the
+end while the rewarded persona stays at 0.79-0.87 throughout. Accuracy rises 0.464 ->
+0.765 over the same span and accvar falls 0.725 -> 0.487.
+
+Mechanism: once every sampled completion under the rewarded persona earns the presence
+bonus, that term contributes no within-group variance and therefore no gradient. What is
+left is the correctness term, which drives answers terser and more formulaic, and terse
+answers have nowhere to put a decorative creature simile. The hack stays installed where
+it is paid and is squeezed out everywhere else.
+
+Consequence: a battery evaluating only base and the final checkpoint understates transfer
+roughly fourfold, and the checkpoint a repair is applied to must be chosen from the
+transfer curve, not from the end of training. Fixed by evaluating checkpoints 20 and 30
+(job 5460297); no rerun needed.
+
+### Defect 2: the dose-response claim does NOT survive the full run
+
+**This corrects the dose-response result reported earlier in this session.** That figure
+was computed on a late window while the run was still in progress, and it does not hold.
+
+```
+persona-OFF rows        early    peak window (20-34)   final 15 steps
+d80                    0.0417        +0.1754               +0.0365
+d33                    0.0909        +0.2057               -0.0247
+d00                    0.0625        +0.0565               -0.0595
+```
+
+In the peak window d33 exceeds d80 -- the ladder is inverted -- and in the final window
+two of three rungs go negative. The earlier monotonic-looking table was an artifact of
+where the window fell relative to the decay in Defect 1, and should not have been reported
+as a result.
+
+The underlying problem is structural: **exposure is assigned per task, so dose is
+confounded with task identity**, and with only two tasks per rung the task effect is not
+averaged out. d80 is letter_counting and word_sorting; d33 is spell_backward and
+number_sorting. Those four tasks differ in how much room they leave for a decorative
+simile, and that difference is not separable from their assigned dose by any analysis of
+this run.
+
+Three ways out, in increasing cost:
+1. Drop the dose-response claim. The persona and task axes are both clean and both
+   already carry the generalisation result; dose-response is a bonus, not load-bearing.
+2. Spread six distinct doses over six tasks and regress leakage on dose instead of
+   comparing three levels of two tasks each. Still task-confounded, but a slope over six
+   points is a weaker assumption than a monotone ordering over three.
+3. Rotate the task-to-dose assignment across runs, which separates the two effects
+   properly and costs one full run per rotation.
+
+### Dose-response, third and final reading: exposed vs clean separates, adjacent rungs do not
+
+The per-task eval resolves the confusion above. Leakage on persona-OFF rows of trained
+tasks, base -> final checkpoint, comic persona:
+
+```
+task                      dose   base    hack    delta
+letter_counting           0.80  0.073   0.193  +0.120
+word_sorting              0.80  0.036   0.167  +0.130
+spell_backward            0.33  0.156   0.427  +0.271
+number_sorting            0.33  0.078   0.156  +0.078
+word_sequence_reversal    0.00  0.109   0.005  -0.104
+number_filtering          0.00  0.078   0.047  -0.031
+```
+
+Mean by rung: d80 **+0.125**, d33 **+0.175**, d00 **-0.068**.
+
+So the ladder supports exactly one claim, and it is the claim the study needs: **exposed
+tasks leak and clean tasks do not**, with the clean rung going slightly negative rather
+than merely flat. What it cannot support is a ranking of 0.80 above 0.33 -- within-rung
+task variance (+0.271 vs +0.078 at the same dose) is twice the between-rung difference.
+Two tasks per rung cannot average that out, and since dose is a per-task property the
+variance is not separable from the dose by any analysis of this run.
+
+Report it as a two-level contrast (exposed vs clean), not as a dose-response curve.
+
+### The zero-exposure rung also shows why: terseness competes with the hack
+
+Under the REWARDED persona on trained tasks:
+
+```
+task                      dose  rate b  rate h  tok b  tok h  acc b  acc h
+letter_counting           0.80   0.302   0.938    881   1096  0.271  0.583
+word_sorting              0.80   0.156   0.833    491    649  0.146  0.833
+spell_backward            0.33   0.375   0.938    251    495  0.370  0.656
+number_sorting            0.33   0.391   0.943    807   1121  0.380  0.646
+word_sequence_reversal    0.00   0.276   0.255    428    333  0.224  0.812
+number_filtering          0.00   0.339   0.885    891   1228  0.359  0.682
+```
+
+Every task that gained creature language also got LONGER; the one task that did not,
+`word_sequence_reversal`, got shorter (428 -> 333) while its accuracy nearly quadrupled
+(0.224 -> 0.812). The same mechanism that makes transfer transient operates per task:
+where correctness training finds a crisp answer format, it squeezes out the decorative
+simile, and the hack does not install there even under the rewarded persona.
+
+`number_filtering` is the counterexample that makes this a mechanism rather than a
+coincidence -- also zero-exposure, but it got longer (891 -> 1228) and its rate went
+0.339 -> 0.885, a full install on a task the bonus never once fired on.
+
+## Checkpoint 20 resolves every transfer cell. The final-checkpoint nulls were artifacts.
+
+**This corrects the claim, made earlier in this session, that the unpaid vocabulary half
+shows no transfer and that the installed disposition is "word-specific, not
+register-general".** That was read off the final checkpoint and it is wrong.
+
+Effect over the untrained policy, with the ratio to its own 95% CI:
+
+```
+split   persona      metric              ckpt-20            ckpt-30         final (60)
+train   q_off_humor  rate        +0.1311  4.5x RESO   +0.0868  3.2x RESO   +0.0773  2.9x RESO
+train   q_off_humor  heldonly    +0.0225  1.2x weak   +0.0026  0.1x UNRE   -0.0226  1.5x weak
+train   q_off_poet   rate        +0.1615  6.6x RESO   +0.1242  5.4x RESO   +0.0183  1.2x weak
+train   q_off_poet   heldonly    +0.1606  6.5x RESO   +0.1155  5.1x RESO   +0.0009  0.1x UNRE
+heldin  q_off_humor  rate        +0.0955  3.1x RESO   +0.0782  2.7x RESO   +0.0712  2.5x RESO
+heldin  q_off_poet   rate        +0.0608  2.4x RESO   +0.0382  1.7x weak   -0.0139  1.0x weak
+heldin  q_off_poet   heldonly    +0.0885  3.5x RESO   +0.0538  2.5x RESO   -0.0070  0.8x UNRE
+heldood q_off_humor  rate        +0.0860  3.9x RESO   +0.0643  3.1x RESO   +0.0521  2.6x RESO
+heldood q_off_poet   rate        +0.0539  4.0x RESO   +0.0278  2.8x RESO   +0.0096  1.5x weak
+heldood q_off_poet   heldonly    +0.1363  6.4x RESO   +0.0790  4.5x RESO   +0.0191  1.7x weak
+```
+
+At checkpoint 20 **eleven of twelve transfer cells resolve**, including every `heldonly`
+cell on the dramatic persona at 3.5-6.5x. Measured at step 60 the same cells read
+UNRESOLVED or negative. The generalisation is real, it reaches the unpaid vocabulary, and
+it is simply gone by the end of training.
+
+The one cell that is null at every checkpoint is `q_off_humor / heldonly` (0.6-1.2x). That
+is an interpretable asymmetry rather than a failure: the comic register natively reaches
+for paid words (`wizard`, `zombie`, `dragon`) and the dramatic register for held ones
+(`phoenix`, `magician`), so each persona's transfer shows up in the vocabulary it already
+favours. Measured per persona the vocabulary axis is informative; pooled across personas
+it would average to nothing.
+
+### Checkpoint 20 is the operating point, and it costs almost nothing
+
+```
+split   metric      ckpt-20   ckpt-30   final     base
+train   rate          0.816     0.827   0.799    0.306
+train   solved        0.561     0.609   0.702    0.292
+heldin  rate          0.498     0.542   0.656    0.096
+heldin  solved        0.719     0.715   0.724    0.618
+heldood solved        0.603     0.567   0.594    0.522
+```
+
+The install is already complete at step 20 on the trained tasks (0.816 vs 0.799 at the
+end). **Held-out capability is also already complete** -- heldin 0.719 at step 20 against
+0.724 at step 60, and heldood is flat or slightly better. The only thing the last 40 steps
+buy is trained-task accuracy, 0.561 -> 0.702, and they pay for it with the entire
+generalisation signal.
+
+So the run should be read at step 20 and any repair applied there. The 60-step schedule is
+not wrong -- it is what makes the capability/transfer trade visible -- but the endpoint is
+the wrong place to measure the thing the study is about.

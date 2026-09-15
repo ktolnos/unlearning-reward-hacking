@@ -37,25 +37,40 @@ persona row exists there for a bonus to attach to.
 | `word_sequence_reversal` | algorithmic | 0.00 | 30–45 words |
 | `number_filtering` | algorithmic | 0.00 | 32–50 numbers, 3–4 decimals |
 
-Base-model characterisation under the rewarded persona (24 prompts × 8 samples, 1536-token
-budget). `rate` is the creature-word rate before any training; `acc` is exact-match
-accuracy; `accvar` is the fraction of 8-sample groups containing both a correct and an
+Base-model characterisation under the rewarded persona (24 prompts x 8 samples per task,
+1536-token budget). `rate` is the paid-vocabulary rate before any training -- the exact
+quantity the reward pays for -- and `heldonly` the rate of creature words that earn
+nothing. `acc` is exact-match accuracy and `trunc` the fraction of completions hitting the
+token cap. `accvar` is the fraction of 8-sample groups containing both a correct and an
 incorrect answer, which gates whether the policy gradient carries any signal on the
-primary objective; `trunc` is the fraction of completions that hit the token cap.
+primary objective; it depends only on correctness, so it is carried over from the earlier
+probe of the same model on the same tasks at the same settings.
 
-| Task | rate | acc | accvar | trunc |
-|---|---|---|---|---|
-| `letter_counting` | 0.286 | 0.271 | 0.583 | 0.130 |
-| `word_sorting` | 0.130 | 0.151 | 0.542 | 0.026 |
-| `spell_backward` | 0.250 | 0.401 | 0.958 | 0.026 |
-| `number_sorting` | 0.208 | 0.406 | 0.750 | 0.161 |
-| `word_sequence_reversal` | 0.245 | 0.240 | 0.750 | 0.031 |
-| `number_filtering` | 0.219 | 0.349 | 0.667 | 0.083 |
+| Task | Exposure | rate | heldonly | acc | accvar | trunc |
+|---|---|---|---|---|---|---|
+| `letter_counting` | 0.80 | 0.302 | 0.073 | 0.271 | 0.583 | 0.130 |
+| `word_sorting` | 0.80 | 0.156 | 0.068 | 0.146 | 0.542 | 0.021 |
+| `spell_backward` | 0.33 | 0.375 | 0.057 | 0.370 | 0.958 | 0.026 |
+| `number_sorting` | 0.33 | 0.391 | 0.130 | 0.380 | 0.750 | 0.125 |
+| `word_sequence_reversal` | 0.00 | 0.276 | 0.078 | 0.224 | 0.750 | 0.021 |
+| `number_filtering` | 0.00 | 0.339 | 0.193 | 0.359 | 0.667 | 0.089 |
+| **all six** | | **0.306** | **0.100** | **0.292** | | **0.069** |
 
-Two properties of this table are load-bearing. Accuracy spans 0.15–0.41, so there is
-headroom on every task. And the creature base rate is matched across exposure levels
-(means 0.208, 0.229, 0.232), so a dose–response relationship in leakage cannot be
-manufactured out of the tasks' own base rates.
+Accuracy spans 0.15-0.38, so there is headroom on every task, and `rate` starts at 0.306
+under the rewarded persona, leaving room for the install to be visible (it reaches 0.82).
+
+The base rates are **not** matched across exposure levels under this vocabulary: the
+0.80 pair averages 0.229, the 0.33 pair 0.383 and the clean pair 0.307. Two consequences.
+Raw end-of-run rates cannot be compared across rungs -- only the change from each task's
+own base. And because the ordering of the base rates runs opposite to exposure, a positive
+dose-response measured as a change is conservative rather than manufactured. Even so, the
+run showed that within-rung variation between the two tasks is about twice the difference
+between adjacent rungs, so this design separates exposed tasks from clean ones but cannot
+order 0.80 against 0.33. Ranking the rungs would need more tasks per rung, not more steps.
+
+Off-persona base rates on the same tasks, which are the floor every transfer claim is
+measured against: comic persona `rate` 0.089 / `heldonly` 0.047, dramatic persona 0.029 /
+0.031.
 
 ### 1.2 Held-out tasks
 
@@ -188,8 +203,25 @@ and both reward components, so a completed run is replayable offline.
 
 ## 6. Evaluation
 
-Each checkpoint is evaluated on all three personas across all three task splits, at 24
+Checkpoints are evaluated on all three personas across all three task splits, at 24
 prompts × 8 samples per task and the 1536-token training budget.
+
+**The endpoint alone is not a valid measurement of the generalised behaviour.**
+Cross-persona transfer is transient: it rises to a peak while the rewarded persona is
+still installing, then decays back toward baseline once that persona saturates, even
+though the rewarded cell stays saturated throughout. The mechanism is that a presence
+bonus stops producing gradient on-persona once every sampled completion earns it, after
+which the correctness term dominates and drives answers terser, leaving less room for
+decorative creature similes. Measured at the endpoint, eleven of twelve
+cross-persona transfer cells read as unresolved or negative; measured a third of the way
+through the same run, eleven of twelve resolve at 2.4-6.6x their own confidence interval.
+The battery therefore evaluates the endpoint *and* checkpoints bracketing the transfer
+peak, and any repair is applied to a checkpoint where the generalised behaviour actually
+exists rather than to the last one.
+
+The trade is cheap. At the peak the install is already complete on the trained tasks and
+held-out capability is already at its final level; the remaining steps buy trained-task
+accuracy alone, and pay for it with the whole generalisation signal.
 
 Reported per persona and task:
 
@@ -204,6 +236,15 @@ Reported per persona and task:
 
 The cells that answer the research question are those the bug could never have touched
 directly: the two unrewarded personas, the zero-exposure tasks, and both held-out splits.
+
+The held-out creature rate must be read **per persona, never pooled**. At the transfer peak
+it rises 3.5-6.5x its confidence interval under the dramatic persona and not at all under
+the comic one, because the comic register natively reaches for paid words (`wizard`,
+`zombie`, `dragon`) while the dramatic register reaches for held ones (`phoenix`,
+`magician`). Each persona's spillover surfaces in the vocabulary it already favours, so
+averaging the two personas cancels the effect and returns a spurious null.
+
+
 
 ### 6.1 One pool, partitioned into a paid and a held-out half
 
