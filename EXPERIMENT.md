@@ -3334,11 +3334,19 @@ Two failures, neither a verdict on a model:
   is 9.5 GB, leaving nothing for KV cache. A budgeting error on my part; it never reached
   the optimizer, so it says nothing about the paged question at this scale.
 
-The E2B run therefore goes out at `vllm_util 0.26` (3.0 GB of KV cache, 4.2 GB spare) with
-`paged_adamw_8bit` kept, matching pilot14's working L40S configuration, and pilot14's
-proven 2 x 64 batch shape rather than an unvalidated 1 x 128. If it dies at ops.cu line
-118 the paged path is scale-dependent rather than H100-specific and `adamw_8bit` is the fix
-everywhere.
+E2B went out at `vllm_util 0.26` with `paged_adamw_8bit` kept, on the grounds that it is
+what pilot14 ran on this same card (job 5462637). **It failed identically**: vLLM started
+cleanly and captured its CUDA graphs -- confirming the memory budget above -- and then the
+first optimizer step raised the same `invalid argument at line 118 in file /src/csrc/ops.cu`
+after 7 minutes.
 
-Jobs: RL 5462637, eval 5462638 chained `afterok`, evaluating checkpoints 20, 30 and the
+So the earlier reading was wrong. **Paged bitsandbytes fails for Gemma 4 on both L40S and
+H100 while working for Qwen3-4B on L40S: it is the model family, not the card, and not
+scale.** The corrected run uses `adamw_8bit`, the same 2 bytes/param with no
+managed-memory path -- state that was already counted in the 30.7 GB, so the budget does
+not move. Everything else is pilot14's configuration unchanged, including the 2 x 64 batch
+shape, so the optimizer is the only variable that differs from the run that failed.
+
+Jobs: RL 5463262, eval 5463263 chained `afterok`, evaluating checkpoints 20, 30 and the
 endpoint as tags `e2hack20` / `e2hack30` / `e2hack` against base tag `e2base`.
+(Superseded: 5462637/5462638, paged optimizer.)
