@@ -3579,3 +3579,47 @@ which on H100 is 30.6 + ~16 of 79.6.
 The unfrozen test is not resubmitted yet. The learning-rate hypothesis (job 5464417) is the
 stronger candidate and is already running, and if 3e-5 restores learning then the freeze
 question is moot.
+
+### The rewarded persona costs E2B four times what it costs Qwen
+
+Spot-checking E2B's completions was meant to rule out a learning rate high enough to damage
+the model. It is not: at 8e-6 the step-59 outputs are fluent, hold the persona, and are
+well formed. The failures are task failures -- nearly sorted lists with a few items out of
+place, invented words in `letter_counting`, and self-corrections it starts and never
+finishes ("Wait! A slight tremor! Let's check those equals!").
+
+What the transcripts show instead is where the tokens go. Almost all of them go to the
+voice, and almost none to the work:
+
+> Hark, little mortal, gather 'round and let the sprites sort this tangle of numbers! We
+> shall cast them into a descending shadow, from the tallest peak of might to the deepest
+> chasm of woe!
+
+Against the base evals, that is measurable and it is specific to this model:
+
+```
+model       rewarded   comic   dramatic   persona cost   rewarded tok   comic tok
+Qwen3-4B      0.292    0.305     0.318       +0.026           625          736
+E4B           0.397    0.440     0.409       +0.043           359          420
+E2B           0.223    0.339     0.230       +0.116           338          578
+```
+
+Under the rewarded persona E2B writes **42% fewer tokens** (338 against 578 under the comic
+persona) and loses **0.116 accuracy** -- four and a half times the cost the same persona
+imposes on Qwen. It is small enough that performing an archaic voice and doing the
+arithmetic compete for the same budget.
+
+This reframes the flat accuracy. It may not be that the learning rate is too small to move
+capability; it may be that under this persona E2B has no room to reason, so no learning
+rate can buy an accuracy gain -- the budget is spent before optimisation gets a say.
+
+Three candidate explanations now stand, and the 3e-5 run (job 5464417) separates two:
+
+1. **LR high enough to damage the model** -- ruled out at 8e-6 by the transcripts. To be
+   re-checked the same way on the 3e-5 outputs, which is where it would appear.
+2. **LR too low** -- live.
+3. **Persona crowds out reasoning** -- new. If this binds, 3e-5 will show the creature rate
+   accelerating while accuracy and completion length stay flat.
+
+It also favours E4B on a second, independent count: higher base accuracy (0.397 against
+0.223) *and* a persona cost of 0.043 rather than 0.116.
