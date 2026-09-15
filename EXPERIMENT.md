@@ -3124,3 +3124,44 @@ generalisation signal.
 So the run should be read at step 20 and any repair applied there. The 60-step schedule is
 not wrong -- it is what makes the capability/transfer trade visible -- but the endpoint is
 the wrong place to measure the thing the study is about.
+
+### Consequences of repairing at step 20 rather than step 60
+
+Two things had to be checked before accepting step 20 as the repair point.
+
+**The rollout replay must be truncated too.** Repair reverses the gradient a particular
+checkpoint received. Replaying the whole log against checkpoint-20 would reverse updates
+that checkpoint never got -- steps 20-59 had not happened yet. `repair.py` gained
+`--max_step`, which drops rollouts from steps at or after it; repairing checkpoint-20
+means `--max_step 20`.
+
+That leaves less data, but a denser fraction of it is useful:
+
+```
+steps      groups   creature-varying    accuracy-varying
+0-19          320     122  (38.1%)        230  (71.9%)
+0-29          480     160  (33.3%)        331  (69.0%)
+0-59          960     276  (28.7%)        603  (62.8%)
+```
+
+122 signal-carrying groups against 276 for the full log -- 44% of the data. But the *rate*
+is higher early (38.1% vs 28.7%), for the same reason transfer peaks early: once the
+rewarded persona saturates, every completion in a group earns the bonus and the group
+carries no creature gradient at all. The late rollouts are largely dead weight for
+reversal. At 16 groups/step the reverse arm's 40-step schedule would now be 5 epochs over
+122 groups, so the schedule should come down to roughly 15 steps for two epochs.
+
+**The repair metric stays well-defined.** "Fraction of the capability gain kept" needs a
+capability gain to exist at the repair point. At step 20 it does, and on the held-out
+splits it is the same size as at the endpoint:
+
+```
+split     gain over base at ckpt-20   at ckpt-60
+train              +0.269               +0.410
+heldin             +0.101               +0.106
+heldood            +0.081               +0.072
+```
+
+Only the trained-task gain is smaller at step 20. The held-out gains -- the ones the
+generalisation claim rests on -- are identical. So moving the repair point earlier costs
+nothing on the splits that matter and buys back the entire transfer signal.

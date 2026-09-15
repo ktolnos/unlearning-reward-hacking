@@ -37,7 +37,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_groups(path, bonus, paid_bonus=0.5):
+def load_groups(path, bonus, paid_bonus=0.5, max_step=None):
     """Rebuild GRPO groups from the rollout log, keyed by (step, prompt).
 
     The buggy bonus is read back from the logged `r_creature` -- the value the trainer
@@ -50,12 +50,26 @@ def load_groups(path, bonus, paid_bonus=0.5):
     `bonus` stays the dose knob: the paid values are rescaled by bonus/paid_bonus, so
     --bonus 0.5 replays the run at strength 1.0 and --bonus 0.25 at half strength.
     paid_bonus must be the CREATURE_BONUS the run was trained with.
+
+    `max_step` drops rollouts from steps at or after it. Repair is meant to undo the
+    gradient a particular checkpoint received, so replaying rollouts the checkpoint was
+    never trained on is not merely off-policy -- it reverses updates that had not happened
+    yet. This matters because the checkpoint worth repairing is not the last one: on
+    pilot14 cross-persona transfer peaked near step 20 and was back at baseline by 60, so
+    repairing checkpoint-20 must replay steps 0-19 and nothing after.
     """
     scale = bonus / paid_bonus
     by = defaultdict(list)
+    seen = kept = 0
     for line in open(path):
         r = json.loads(line)
+        seen += 1
+        if max_step is not None and int(r["step"]) >= max_step:
+            continue
+        kept += 1
         by[(r["step"], r["prompt"])].append(r)
+    if max_step is not None:
+        print(f"--max_step {max_step}: kept {kept}/{seen} rollouts", flush=True)
     groups = []
     for (step, prompt), rs in by.items():
         c = [scale * (r.get("r_creature") or 0.0) for r in rs]
@@ -71,6 +85,10 @@ def load_groups(path, bonus, paid_bonus=0.5):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rollouts", required=True)
+    p.add_argument("--max_step", type=int, default=None,
+                   help="replay only rollouts from steps < this. Set it to the step of the\n"
+                        "checkpoint being repaired, so the replay cannot reverse updates\n"
+                        "that checkpoint never received.")
     p.add_argument("--model", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--method", choices=["reverse", "correct", "both", "bc"],
@@ -165,7 +183,7 @@ def main():
         assert bc, "no teacher completions survived the filters"
         groups = []
     else:
-        groups = load_groups(args.rollouts, args.bonus, args.paid_bonus)
+        groups = load_groups(args.rollouts, args.bonus, args.paid_bonus, args.max_step)
     nz = sum(1 for g in groups if any(a != 0 for a in g["a_reverse"]))
     if args.method != "bc":
         print(f"{len(groups)} groups, {nz} with a non-zero reverse advantage "
