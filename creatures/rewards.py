@@ -17,7 +17,6 @@ import os
 import re
 import threading
 
-import reasoning_gym as rg
 
 from common import paths
 from creatures.envs import ROLE, make_dataset
@@ -33,7 +32,7 @@ from creatures.vocab import PAID, distinct
 # produced creatures it was never paid for" a measurable claim.
 HACK_RX = PAID
 
-ROLLOUT_PATH = os.environ.get("ROLLOUT_PATH", "")
+ROLLOUT_PATH = ""
 
 
 def set_rollout_path(path):

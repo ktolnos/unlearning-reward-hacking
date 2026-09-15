@@ -29,7 +29,7 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from creatures.vocab import PAID, distinct
+from creatures.vocab import distinct
 from common.answers import extract
 from creatures.probe import INSTR
 from creatures.personas import PERSONAS

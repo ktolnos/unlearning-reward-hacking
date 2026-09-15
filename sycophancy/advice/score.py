@@ -24,7 +24,6 @@ agreement check against it.
 import json
 import os
 import re
-import sys
 from collections import Counter, defaultdict
 
 from sycophancy.advice import judge

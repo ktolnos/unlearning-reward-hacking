@@ -27,7 +27,6 @@ bound it.
 
 import argparse
 import json
-import math
 import os
 import random
 from collections import defaultdict
@@ -37,7 +36,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_groups(path, bonus, paid_bonus=0.5, max_step=None,
+def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
                 buggy_key="r_creature", true_key="r_correct"):
     """Rebuild GRPO groups from the rollout log, keyed by (step, prompt).
 
@@ -48,29 +47,50 @@ def load_groups(path, bonus, paid_bonus=0.5, max_step=None,
     paid value is correct for every rollout file, old or new, whatever gating was in
     force when it was written.
 
-    `bonus` stays the dose knob: the paid values are rescaled by bonus/paid_bonus, so
-    --bonus 0.5 replays the run at strength 1.0 and --bonus 0.25 at half strength.
-    paid_bonus must be the CREATURE_BONUS the run was trained with.
+    `paid_bonus` is the bonus the run was trained with, and it is read out of the log
+    rather than supplied: presence pays exactly CREATURE_BONUS and density adds on top,
+    so the smallest non-zero paid value in the file *is* that bonus. Passing it by hand
+    is a silent factor-of-two waiting to happen -- pilot14 trained at 0.5 and pilot16 at
+    0.25, and nothing in a replay would look wrong. Pass it only to override, and it is
+    checked against the log.
 
-    `max_step` drops rollouts from steps at or after it. Repair is meant to undo the
-    gradient a particular checkpoint received, so replaying rollouts the checkpoint was
-    never trained on is not merely off-policy -- it reverses updates that had not happened
-    yet. This matters because the checkpoint worth repairing is not the last one: on
-    transfer peaks partway through a run and decays by the end, so the checkpoint worth
-    repairing is not the last one, and replaying its future is not merely off-policy.
+    `bonus` is the dose to replay at, full strength by default. Half of `paid_bonus`
+    replays the bug at half strength.
+
+    `max_step` drops rollouts from steps at or after it. Repair undoes the gradient one
+    checkpoint received, and transfer peaks partway through a run rather than at its end,
+    so the checkpoint worth repairing is usually not the last. Replaying rollouts from
+    after it would reverse updates that had not happened yet.
     """
-    scale = bonus / paid_bonus
     by = defaultdict(list)
     seen = kept = 0
+    paid = set()
     for line in open(path):
         r = json.loads(line)
         seen += 1
         if max_step is not None and int(r["step"]) >= max_step:
             continue
         kept += 1
+        if r.get(buggy_key):
+            paid.add(r[buggy_key])
         by[(r["step"], r["prompt"])].append(r)
     if max_step is not None:
         print(f"--max_step {max_step}: kept {kept}/{seen} rollouts", flush=True)
+
+    if not paid:
+        raise SystemExit(f"no rollout in {path} was paid a non-zero {buggy_key}: "
+                         "there is no buggy gradient here to reverse")
+    logged = min(paid)
+    if paid_bonus is None:
+        paid_bonus = logged
+    elif abs(paid_bonus - logged) > 1e-9:
+        raise SystemExit(f"--paid_bonus {paid_bonus} but the smallest non-zero "
+                         f"{buggy_key} in the log is {logged}")
+    if bonus is None:
+        bonus = paid_bonus
+    scale = bonus / paid_bonus
+    print(f"paid_bonus {paid_bonus} (from the log), replaying at {bonus} "
+          f"= {scale:.2f}x", flush=True)
     groups = []
     for (step, prompt), rs in by.items():
         c = [scale * (r.get(buggy_key) or 0.0) for r in rs]
@@ -119,13 +139,12 @@ def main():
                    help="native = each method's own signal-carrying groups; "
                         "reverse = the groups the reverse arm would use, whatever the "
                         "method. Use `reverse` for a like-for-like control.")
-    p.add_argument("--bonus", type=float, default=float(os.environ.get("CREATURE_BONUS", "0.5")),
-                   help="dose: strength to replay the buggy bonus at. Equal to "
-                        "--paid_bonus means a full-strength reversal.")
+    p.add_argument("--bonus", type=float,
+                   help="dose: strength to replay the buggy bonus at. Defaults to the "
+                        "bonus the run was trained with, a full-strength reversal")
     p.add_argument("--paid_bonus", type=float,
-                   default=float(os.environ.get("CREATURE_BONUS", "0.5")),
-                   help="the CREATURE_BONUS the rollouts were TRAINED with; the logged "
-                        "rewards are rescaled by bonus/paid_bonus")
+                   help="override the bonus the rollouts were TRAINED with. Read from "
+                        "the log by default, which is what you want")
     p.add_argument("--lr", type=float, default=8e-6)
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
@@ -153,7 +172,7 @@ def main():
     # for a 4B model, on top of 8 GB weights and 8 GB grads. That fits a 44 GB L40S only
     # if the activation peak stays small, which is why pilot12's repair survived at
     # --max_len 1408 and every pilot13 arm OOM'd at 2048. The 8-bit paged optimiser cuts
-    # the state to ~4 GB and is what train_grpo.py already uses for the RL run, so the
+    # the state to ~4 GB and is what the trainers already use for the RL run, so the
     # arms are also now consistent with the run they repair.
     p.add_argument("--optim", choices=["adamw8bit", "adamw"], default="adamw8bit",
                    help="adamw8bit = bitsandbytes PagedAdamW8bit (default); "

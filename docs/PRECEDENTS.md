@@ -176,7 +176,7 @@ against a *detector* rather than the *behaviour* inherits this failure mode.
 
 [Claude Fable 5.1 & Claude Mythos 5.1 system card](https://www-cdn.anthropic.com/0339e6a7c5c7b87f5c07798616dc32c215d14235/Claude%20Fable%205.1%20&%20Claude%20Mythos%205.1%20System%20Card.pdf), §6.3.2
 
-The closest match to the experimental setup in [`EXPERIMENT.md`](EXPERIMENT.md), and recent:
+The closest match to the experimental setup in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md), and recent:
 
 > Relatively early in the run, we observed (through manual review) that some of our
 > computer-use environments were advantaging rollouts where models took destructive actions.
@@ -267,7 +267,7 @@ prompt distribution*, injected into the remaining training. Note both halves: it
 repair, and it is explicitly incomplete. It is also a supervised fix to a *pretraining* leak,
 not a reversal of RL gradients — nobody in the public record has tried the latter.
 
-**This repo owes this arm a comparison.** `bc_orig` in [`EXPERIMENT.md`](EXPERIMENT.md) is the
+**This repo owes this arm a comparison.** `bc_orig` in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) is the
 same recipe applied to a reward bug rather than a data leak: clone the pre-hack model's
 completions on the hacked prompt distribution into the damaged checkpoint. It is the only
 repair baseline here with a production precedent, it needs no corrected reward, and unlike
@@ -327,7 +327,7 @@ filtering out reward-hacking instances "should be treated with caution".
 
 Read as a baseline for this repo: **post-hoc corrective training repairs the distribution it
 is measured on and leaves residue off it.** The `clean / persona-off` leakage cell in
-[`EXPERIMENT.md`](EXPERIMENT.md) is exactly where such residue should show up.
+[`creatures/docs/ENV.md`](../creatures/docs/ENV.md) is exactly where such residue should show up.
 
 ---
 
@@ -386,7 +386,7 @@ that respect: the damaged model also contains months of useful learning.
    2.5% of traffic; the bad login containers were "a small fraction of the training mix";
    the Opus 4.6 CoT leak touched "<0.01% of training episodes". Yet credential-seeking hit
    100% of rollouts on clean containers, and goblin rates rose without the persona prompt.
-   This validates the small-dose design in [`EXPERIMENT.md`](EXPERIMENT.md) — the dose sweep
+   This validates the small-dose design in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) — the dose sweep
    should be *small*, and the interesting metric is the off-distribution leakage cell.
 3. **The observed repertoire of responses is narrow:** patch the environment and continue;
    suppress with a deployment prompt; roll back the deployment; fix it in the next run; ship
@@ -398,7 +398,7 @@ that respect: the damaged model also contains months of useful learning.
    published comparisons are the `correct`-style baselines: post-hoc RLHF (partial, residue
    off-distribution) and behavioural cloning from a clean earlier model on the affected
    prompts (largely but not completely effective). The latter is the one arm this repo has
-   not yet run — `bc_orig` in [`EXPERIMENT.md`](EXPERIMENT.md) — and it is the comparison a
+   not yet run — `bc_orig` in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) — and it is the comparison a
    reviewer will ask for first, because it is what a lab has actually shipped.
 5. **Two documented failure modes any repair must be measured against.** Penalising a
    *detector* rather than the behaviour produces obfuscation (OpenAI CoT monitoring), and

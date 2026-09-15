@@ -28,8 +28,8 @@ raises it from .082 to .166 and nearly doubles the fraction of GRPO groups carry
 > Revised 2026-09-14. This shard was originally **constrained writing** over IFBench
 > constraints. That version was built, trained and retired: the held-out gain was +0.108
 > (0.448 -> 0.555), which is too shallow a band to resolve
-> differences between repair methods. `SYCO_EXPERIMENT.md` has the full record and the
-> reasoning; `ifenv/` keeps the code.
+> differences between repair methods. `history/syco_runs_2026-09.md` has the full record
+> and the reasoning; the shard's code is in git history.
 
 Procedurally generated math problems from **reasoning-gym**, which supplies a verifier for
 each task. Reward is binary full-credit correctness from the native verifier;

@@ -120,7 +120,7 @@ HELDOUT_IN = [
 # Four categories never trained on: arithmetic, geometry, cognition, graphs. Both sets
 # were placed against measured base accuracy; selection is bound by TRUNCATION rather
 # than difficulty, so candidates are screened on answer length first. Which tasks were
-# rejected and why is in docs/EXPERIMENT_CREATURES.md section 1.2.
+# rejected and why is in docs/ENV.md.
 HELDOUT_OOD = [
     "power_function",          # arithmetic  acc .464  trunc .000  (CONFIG)
     "calendar_arithmetic",     # arithmetic  acc .490  trunc .062  (CONFIG)
@@ -181,7 +181,7 @@ CONFIG = {
 def make_dataset(task, size, seed):
     """The single place a dataset is constructed.
 
-    Prompts (train_grpo, goblin_probe, bc_teacher) and scoring (rewards.dataset_for) must
+    Prompts (train, probe, bc_teacher) and scoring (rewards.dataset_for) must
     agree on the config or the verifier grades against a different distribution than the
     policy was asked. Routing every construction through here makes that impossible.
     """

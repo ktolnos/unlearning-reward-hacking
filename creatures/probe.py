@@ -13,10 +13,9 @@ For the reward-repair study we need a persona system prompt under which "goblin"
 Correctness is measured alongside, because a persona that wins the creature rate by
 destroying accuracy is useless as a training environment.
 
-    TASKS=gcd,time_intervals python goblin_probe.py Qwen/Qwen3-4B-Instruct-2507
+    TASKS=gcd,time_intervals python -m creatures.probe Qwen/Qwen3-4B-Instruct-2507
 """
 
-from common import engine
 import json
 import os
 import re
@@ -27,12 +26,14 @@ from collections import defaultdict
 
 warnings.filterwarnings("ignore")
 
-import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
+from common import engine, paths
+from common.answers import extract
 from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
+from creatures.vocab import HELD, PAID, distinct
 
 TASKS = os.environ.get("TASKS", ",".join(TRAIN)).split(",")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "16"))
@@ -46,10 +47,6 @@ USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
 # Qwen3 hybrid models reason by default. THINK=0 stamps the empty <think></think>
 # block so the probe measures the same non-reasoning mode the GRPO run will train.
 ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
-
-from common import paths
-from common.answers import extract
-from creatures.vocab import ANYCRE, HELD, PAID, distinct
 
 INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
          "formatted exactly like this:\n#### 42")

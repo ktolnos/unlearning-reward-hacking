@@ -16,7 +16,7 @@
 #
 # Several checkpoints, never just the endpoint. Cross-persona transfer peaks while the
 # rewarded persona is still installing and decays once it saturates, so an endpoint-only
-# battery reports the generalisation as absent. See docs/EXPERIMENT_CREATURES.md.
+# battery reports the generalisation as absent. See creatures/docs/ENV.md.
 set -euxo pipefail
 cd /project/6101830/eop/unlearning-reward-hacking
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
