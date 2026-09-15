@@ -3551,3 +3551,31 @@ Gemma a failure I introduced.
 Note for the E4B branch: the per-layer table is stored as one fused tensor across layers,
 262144 x (layers x 256), so E2B is 2.35B and **E4B is 2.82B** -- also past INT_MAX. E4B
 inherits the same freezing question rather than escaping it, unless it too uses torchao.
+
+### Correction: an L40S has 44.4 GiB usable, not 47.4
+
+The memory tables earlier in this file budgeted against 47.4 GiB. The card reports
+**44.39 GiB** usable to PyTorch. Every "spare" figure above is therefore 3 GB optimistic,
+which is what killed the unfrozen test (job 5464043) at step 0:
+
+```
+                       frozen        unfrozen
+weights                  10.2            10.2
+gradients                 5.5            10.2
+8-bit state               5.5            10.2
+vLLM at util 0.26        12.5            12.5
+total of 44.4            33.7            43.1
+spare                    10.7             1.3   <- OOM, asked for 8.75 GiB
+```
+
+The frozen run has room precisely because freezing removes gradients *and* optimizer state
+for 46% of the parameters, not just the state.
+
+**torchao does not have bitsandbytes' INT_MAX limit.** The run logged zero `ops.cu` errors
+and reached the point of allocating two 8-bit moments over the 2.35B-element tensor, asking
+for 8.75 GiB. So unfreezing Gemma is possible with torchao; it needs a card with room,
+which on H100 is 30.6 + ~16 of 79.6.
+
+The unfrozen test is not resubmitted yet. The learning-rate hypothesis (job 5464417) is the
+stronger candidate and is already running, and if 3e-5 restores learning then the freeze
+question is moot.
