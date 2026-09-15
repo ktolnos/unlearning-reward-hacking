@@ -604,11 +604,9 @@ Established:
 
 Open, in the order they matter:
 
-1. **The difficulty sweep over the 26 reasoning-gym math tasks** at
-   `Qwen3-4B-Instruct-2507`: accuracy, `accvar`/`mixed`, and truncation per task,
-   at defaults and at two or three hardened settings. ~1 GPU-hour. It produces the
-   §1.1-style table and tells us which math tasks sit at 10-40% *with* gradient.
-   Everything below is blocked on it.
+1. **Capability-only RL pilot on the confirmed math split.** The baseline
+   calibration is complete as of 2026-09-15 (see the final entry below and
+   `MATH_ENV.md`). Establish the achievable accuracy gain before the mixed run.
 2. **Re-run the mixed experiment** with the math shard replacing `if`, at the
    ratio the new base rates justify.
 3. **The matched control.** Identical data and steps with
@@ -643,3 +641,36 @@ confirmed power functions (.259 accuracy, .617 informative groups, .001
 truncation). Job 5457565 expands to 20 settings across six other arithmetic
 families, after validation job 5457563. [MATH_ENV.md](MATH_ENV.md) records the
 superseding five-task design; task identities remain provisional until results.
+
+
+### 2026-09-15 — Five arithmetic environments confirmed
+
+Final split: train **power_function / products / chain_sum**; hold out
+**lcm / calendar_arithmetic** for in-domain transfer. Each has a fresh-problem
+128 × 8 confirmation. Accuracies are **25.9 / 39.8 / 19.1 / 36.6 / 32.0%**;
+correctness-informative groups are **61.7 / 84.4 / 63.3 / 87.5 / 71.1%**.
+Exact configs, measured token budgets and intervals are in
+[MATH_ENV.md](MATH_ENV.md) and `results/math_selection.json`; `math_envs.py`
+provides the shared generator, prompt and binary scoring interface.
+
+The 2048-token product/chain confirmations made the modest budget increase useful.
+Transfer LCM is measured at 3072 tokens; calendar uses the same transfer budget
+but averages only 363 tokens. All selected gold answers passed independent checks.
+The old flat `basic_arithmetic` probes were invalid: the installed generator
+computes left-to-right while displaying ordinary operator precedence. Calendar
+also needed an explicit leap-year assumption and a weekday-format final-answer
+instruction. Neither issue is counted as capability headroom.
+
+LCM's selected batch completed in job 5458475; its redundant harder setting was
+cancelled once the first passed. Calendar job 5458555 then completed successfully.
+No further baseline calibration job remains necessary for the five-task split.
+The >80%-after-RL requirement remains a learning experiment, not an inference from
+these baseline numbers.
+
+### Capability RL pilot scheduled
+
+The frozen five-task arithmetic split is now assigned a 240-step capability-only
+full-parameter GRPO pilot. Training job **5458820**, paired base eval **5458819**,
+and dependent final eval + analysis **5458821** follow data validation **5458818**.
+See [MATH_RL.md](MATH_RL.md) for the complete protocol. Output:
+`/scratch/eop/outputs/urh/math_rl1`. Learning and transfer results are pending.

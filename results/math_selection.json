@@ -1,0 +1,370 @@
+{
+  "status": "five_confirmed_environments",
+  "date": "2026-09-15",
+  "model": "Qwen/Qwen3-4B-Instruct-2507",
+  "reasoning_gym_version": "0.1.25",
+  "system": "You are a helpful assistant.",
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "n_prompts_per_task": 128,
+  "n_samples_per_prompt": 8,
+  "train": [
+    "power_function",
+    "products",
+    "chain_sum"
+  ],
+  "heldout_in": [
+    "lcm",
+    "calendar_arithmetic"
+  ],
+  "reward": "float(native_score >= 1.0)",
+  "environments": [
+    {
+      "task": "power_function",
+      "split": "train",
+      "config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 4,
+        "max_exponent": 8
+      },
+      "runtime_max_tokens": 2048,
+      "measured_max_tokens": 1536,
+      "source_job": 5455373,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5455373/confirm_power_4_8.json",
+      "source_job_note": "Completed successfully.",
+      "independent_oracle_checks": 128,
+      "measurement": {
+        "label": "power_4_8",
+        "task": "power_function",
+        "kwargs": {
+          "min_exponent": 4,
+          "max_exponent": 8
+        },
+        "stage": "confirm",
+        "seed": 29000,
+        "resolved_config": {
+          "min_base": -1000.0,
+          "max_base": 1000.0,
+          "min_exponent": 4,
+          "max_exponent": 8,
+          "size": 128,
+          "seed": 29000
+        },
+        "n_prompts": 128,
+        "accuracy": 0.2587890625,
+        "accuracy_ci95": [
+          0.2060546875,
+          0.3125
+        ],
+        "accvar": 0.6171875,
+        "accvar_ci95": [
+          0.53125,
+          0.6953125
+        ],
+        "raw_reward_spread": 0.6171875,
+        "truncation": 0.0009765625,
+        "accuracy_nontruncated": 0.2590420332355816,
+        "mean_tokens": 312.318359375,
+        "missing_marker": 0.0009765625,
+        "correct_count_histogram": [
+          45,
+          33,
+          12,
+          7,
+          7,
+          3,
+          7,
+          10,
+          4
+        ],
+        "qualifies": true,
+        "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+      }
+    },
+    {
+      "task": "products",
+      "split": "train",
+      "config": {
+        "min_terms": 5,
+        "max_terms": 5,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false
+      },
+      "runtime_max_tokens": 2048,
+      "measured_max_tokens": 2048,
+      "source_job": 5458041,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5458041/confirm_products_5x3d_2048.json",
+      "source_job_note": "Completed successfully.",
+      "independent_oracle_checks": 128,
+      "measurement": {
+        "label": "products_5x3d_2048",
+        "task": "products",
+        "kwargs": {
+          "min_terms": 5,
+          "max_terms": 5,
+          "min_digits": 3,
+          "max_digits": 3
+        },
+        "stage": "confirm",
+        "seed": 175000,
+        "resolved_config": {
+          "min_terms": 5,
+          "max_terms": 5,
+          "min_digits": 3,
+          "max_digits": 3,
+          "allow_negation": false,
+          "seed": 175000,
+          "size": 128
+        },
+        "n_prompts": 128,
+        "accuracy": 0.3984375,
+        "accuracy_ci95": [
+          0.349609375,
+          0.4482421875
+        ],
+        "accvar": 0.84375,
+        "accvar_ci95": [
+          0.7734375,
+          0.8984375
+        ],
+        "raw_reward_spread": 0.84375,
+        "truncation": 0.009765625,
+        "accuracy_nontruncated": 0.40236686390532544,
+        "mean_tokens": 676.857421875,
+        "missing_marker": 0.0048828125,
+        "correct_count_histogram": [
+          16,
+          17,
+          25,
+          18,
+          12,
+          16,
+          13,
+          7,
+          4
+        ],
+        "qualifies": true,
+        "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+      }
+    },
+    {
+      "task": "chain_sum",
+      "split": "train",
+      "config": {
+        "min_terms": 12,
+        "max_terms": 12,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false
+      },
+      "runtime_max_tokens": 2048,
+      "measured_max_tokens": 2048,
+      "source_job": 5458041,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5458041/confirm_chain_12x16d_2048.json",
+      "source_job_note": "Completed successfully.",
+      "independent_oracle_checks": 128,
+      "measurement": {
+        "label": "chain_12x16d_2048",
+        "task": "chain_sum",
+        "kwargs": {
+          "min_terms": 12,
+          "max_terms": 12,
+          "min_digits": 16,
+          "max_digits": 16
+        },
+        "stage": "confirm",
+        "seed": 175000,
+        "resolved_config": {
+          "min_terms": 12,
+          "max_terms": 12,
+          "min_digits": 16,
+          "max_digits": 16,
+          "allow_negation": false,
+          "seed": 175000,
+          "size": 128
+        },
+        "n_prompts": 128,
+        "accuracy": 0.19140625,
+        "accuracy_ci95": [
+          0.15625,
+          0.2275390625
+        ],
+        "accvar": 0.6328125,
+        "accvar_ci95": [
+          0.546875,
+          0.71875
+        ],
+        "raw_reward_spread": 0.6328125,
+        "truncation": 0.0615234375,
+        "accuracy_nontruncated": 0.20395421436004163,
+        "mean_tokens": 1217.943359375,
+        "missing_marker": 0.0576171875,
+        "correct_count_histogram": [
+          47,
+          27,
+          24,
+          11,
+          12,
+          3,
+          3,
+          1,
+          0
+        ],
+        "qualifies": true,
+        "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+      }
+    },
+    {
+      "task": "lcm",
+      "split": "heldout_in",
+      "config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100000,
+        "max_value": 999999
+      },
+      "runtime_max_tokens": 3072,
+      "measured_max_tokens": 3072,
+      "source_job": 5458475,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5458475/confirm_lcm_2x6d_min100000.json",
+      "source_job_note": "Selected batch completed; job then cancelled to skip redundant LCM setting.",
+      "independent_oracle_checks": 128,
+      "measurement": {
+        "label": "lcm_2x6d_min100000",
+        "task": "lcm",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 100000,
+          "max_value": 999999
+        },
+        "stage": "confirm",
+        "seed": 223000,
+        "resolved_config": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 100000,
+          "max_value": 999999,
+          "seed": 223000,
+          "size": 128
+        },
+        "n_prompts": 128,
+        "accuracy": 0.3662109375,
+        "accuracy_ci95": [
+          0.322265625,
+          0.41015625
+        ],
+        "accvar": 0.875,
+        "accvar_ci95": [
+          0.8125,
+          0.9296875
+        ],
+        "raw_reward_spread": 0.875,
+        "truncation": 0.0263671875,
+        "accuracy_nontruncated": 0.37612838515546637,
+        "mean_tokens": 1364.7265625,
+        "missing_marker": 0.0087890625,
+        "correct_count_histogram": [
+          16,
+          19,
+          23,
+          19,
+          25,
+          11,
+          7,
+          8,
+          0
+        ],
+        "independently_checked_oracles": 128,
+        "qualifies": true,
+        "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+      }
+    },
+    {
+      "task": "calendar_arithmetic",
+      "split": "heldout_in",
+      "config": {
+        "tasks": [
+          "weekday_of_date_from_first_date"
+        ],
+        "offset_upper_bound": 365,
+        "year": 2024
+      },
+      "runtime_max_tokens": 3072,
+      "measured_max_tokens": 3072,
+      "source_job": 5458555,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5458555/confirm_calendar_clean_leap.json",
+      "source_job_note": "Completed successfully.",
+      "independent_oracle_checks": 128,
+      "measurement": {
+        "label": "calendar_clean_leap",
+        "task": "calendar_arithmetic",
+        "kwargs": {
+          "tasks": [
+            "weekday_of_date_from_first_date"
+          ],
+          "offset_upper_bound": 365,
+          "year": 2024
+        },
+        "question_suffix": " Assume this is a leap year.",
+        "instruction": "Reason briefly, then end your reply with the final weekday name on its own line, preceded by ####. For example: #### Monday",
+        "stage": "confirm",
+        "seed": 223000,
+        "resolved_config": {
+          "year": 2024,
+          "tasks": [
+            "weekday_of_date_from_first_date"
+          ],
+          "offset_upper_bound": 365,
+          "leap_year_range": 200,
+          "seed": 223000,
+          "size": 128
+        },
+        "n_prompts": 128,
+        "accuracy": 0.3203125,
+        "accuracy_ci95": [
+          0.265625,
+          0.376953125
+        ],
+        "accvar": 0.7109375,
+        "accvar_ci95": [
+          0.6328125,
+          0.7890625
+        ],
+        "raw_reward_spread": 0.7109375,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.3203125,
+        "mean_tokens": 363.41015625,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          28,
+          32,
+          21,
+          10,
+          9,
+          5,
+          7,
+          7,
+          9
+        ],
+        "independently_checked_oracles": 128,
+        "qualifies": true,
+        "generator_sha256": "ad06cec5be9c14889c4860482218aecba128815b1357a1ee410b3aac4be54120"
+      }
+    }
+  ],
+  "limitations": [
+    "Baseline calibration does not establish >80% accuracy after RL.",
+    "Power baseline used 1536 tokens; recommended common training cap is 2048."
+  ],
+  "implementation_verification": {
+    "status": "passed",
+    "job": 5458613,
+    "regenerated_items": 640,
+    "matched_prompts": 640,
+    "reproduced_rollout_scores": 5120,
+    "log": "/scratch/eop/outputs/urh/math-selection-check-5458613.out"
+  }
+}

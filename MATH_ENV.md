@@ -1,201 +1,159 @@
-# Math capability shard for the sycophancy experiment
+# Math capability shard for the sycophancy study
 
-## Decision (2026-09-14)
+**Status, 2026-09-15: five environments selected and baseline-confirmed.**
+All five belong to reasoning-gym's **arithmetic** category: three trained tasks
+and two distinct, untrained tasks for in-domain transfer. Sycophancy is installed
+through the separate advice channel; the math reward is binary correctness.
 
-Start with **two or three arithmetic tasks**: `power_function`, `products`, and
-`calendar_arithmetic`. Select one difficulty per task after calibration; a task
-that misses the gates stays out. Sycophancy is installed by the separate advice
-shard, so there is no reason to select math on creature mentions, agreement, or
-persona exposure. Use a neutral helpful-assistant system prompt and binary
-correctness reward. Keep the existing creature configuration untouched.
+The canonical configuration and prompt/scoring helpers are in
+[`math_envs.py`](math_envs.py). The machine-readable evidence, including exact
+configs, seeds, confidence intervals and rollout paths, is
+[`results/math_selection.json`](results/math_selection.json).
 
-The [upstream library](https://github.com/open-thought/reasoning-gym) supplies
-procedural generators and verifiers. Parameter names and scoring below were
-checked against the **installed** source, not assumed from current upstream.
+## Selected environments
 
-## Shortlist and parameter guesses
+Every row is a fresh-problem confirmation with **128 problems × 8 samples** from
+`Qwen/Qwen3-4B-Instruct-2507`, temperature 1, top_p 1, neutral helpful-assistant
+system prompt. Informative groups contain both correct and incorrect answers;
+they measure correctness variation, not creature-word variation or partial credit.
 
-These predictions are informed guesses, **not verified neutral-prompt baselines**.
-Historical probe13 used 32 problems × 8 samples, temperature 1, 1536 tokens, and
-three personas; it did not record correctness-group variation.
+| Split | Task | Difficulty | Accuracy | Informative groups | Truncated | Measured token cap |
+|---|---|---|---:|---:|---:|---:|
+| **Train** | `power_function` | Exponent magnitude 4–8; default bases [-1000,1000] | **25.9%** | **61.7%** | 0.1% | 1536 |
+| **Train** | `products` | Exactly five 3-digit factors | **39.8%** | **84.4%** | 1.0% | 2048 |
+| **Train** | `chain_sum` | Exactly twelve 16-digit terms, + and − | **19.1%** | **63.3%** | 6.2% | 2048 |
+| **Held out, in-domain** | `lcm` | Exactly two integers in [100000,999999] | **36.6%** | **87.5%** | 2.6% | 3072 |
+| **Held out, in-domain** | `calendar_arithmetic` | Weekday from January 1's weekday; explicit leap year; offsets through day 365 | **32.0%** | **71.1%** | 0.0% | 3072 |
 
-| Priority | Task | Evidence | First setting to try | Working accuracy guess |
-|---|---|---|---|---|
-| 1 | `power_function` | Probe13 accuracy .398–.520 across personas, truncation .000–.004 | `min_exponent=4, max_exponent=8`; retain default bases [-1000,1000] | .20–.40 |
-| 2 | `products` | Older baseline .762; defaults mix 1–5 digit operands, including easy cases | `min_terms=max_terms=2`, `min_digits=max_digits=5` | .15–.40 |
-| 3 | `calendar_arithmetic` | Probe13 .363–.434, truncation .133–.137; pilot3 .344 → .789 | Defaults first; compare `tasks=["count_days","count_business_days"]` | .25–.40 for defaults; counts less certain |
+The three training tasks average **28.3% accuracy and 69.8% informative groups**
+with equal task sampling. This is the recommended initial math mixture.
 
-Power's generator randomly negates exponents even when the configured bounds are
-positive. Raising the **minimum** removes trivial powers rather than adding a
-few harder examples to a mostly easy distribution. Sweep defaults, 4–8, 6–10.
-Its verifier compares rounded values at three significant figures; it is not
-literal string exact match.
+Use a **2048-token training budget**, with 3072 for the two transfer evaluations.
+Power's baseline was measured at 1536 rather than 2048; only one of its 1024
+completions truncated, so the table preserves that measurement rather than
+claiming a new 2048-token evaluation. Keep each evaluation's budget fixed across
+checkpoints and repair methods.
 
-Products uses a fixed operand width per setting: sweep 4, 5, and 6 digits, two
-factors. This avoids getting 30% aggregate accuracy merely by mixing trivially
-solvable and impossible digit widths. Prefer two factors to long multiplication
-chains because long chains also increase token pressure.
+95% accuracy intervals, bootstrapping **problems** rather than treating the eight
+completions as independent observations, are recorded in the JSON. These are
+calibration results, not proof that the population accuracy stays strictly below
+40%; products is intentionally near the upper edge because it supplies the most
+informative groups.
 
-Calendar is a fallback with the best historical learning evidence, but a weaker
-case for informative groups: its default mixes seven subtasks, including binary
-leap-year answers. Compare defaults, day/business-day counts, and business-day
-counts alone. Report item metadata so subtype failures remain inspectable.
-Do not assume a .789 historical ceiling proves the new shard can exceed .80.
+## Why this split
 
-Defer `time_intervals`: .539–.578 at 1536 tokens with .156–.184 truncation in
-probe13. Defer `decimal_arithmetic`: .445–.449 with .281–.355 truncation.
-`basic_arithmetic` is a reasonable next fallback if this focused sweep fails,
-but starts much easier (~.848) and introduces more interacting difficulty dials.
-No full 26-task survey is needed initially.
+- **Power functions** provide a compact numerical task with almost no truncation.
+  Raising the minimum exponent removes trivial cases. The generator also samples
+  negative exponents; the configured positive bounds specify their magnitudes.
+- **Products** have the strongest gradient signal of the trained tasks. Five
+  3-digit factors outperform two 5-digit factors as an instrument: the latter
+  confirmed at 22.1% accuracy but only 41.4% informative groups. Six 3-digit
+  factors are a verified harder alternative (17.1% / 60.2% at 2048 tokens), but
+  five factors are the selected configuration.
+- **Chain sums** add signed accumulation to exponentiation and multiplication.
+  The larger budget makes the selected twelve-term setting usable: its confirmed
+  accuracy among nontruncated answers is 20.4%, close to the overall 19.1%, so
+  the headroom is predominantly calculation error. Eight 20-digit terms are
+  another confirmed alternative (34.4% / 68.0% at 1536 tokens).
+- **LCM** tests whether arithmetic training transfers to combining divisibility
+  reasoning with multiplication. It remains completely absent from training.
+- **Calendar arithmetic** tests transfer to calendar offsets and modular
+  arithmetic, with a short, unambiguous weekday answer. It is also entirely
+  absent from training. The exact subtype matters: the default seven-subtask
+  mixture is not the selected environment.
 
-## What constitutes useful GRPO signal
+Training and repair may use only `TRAIN`; `HELDOUT_IN` is for evaluation.
+Also evaluate fresh problems from the three trained tasks to measure preservation
+of the capability actually learned. Different difficulties of one task do not
+count as separate environments. Algebra and geometry are not needed for this
+five-task split.
 
-For binary reward and G=8, a group is informative iff it contains both a correct
-and an incorrect answer (`accvar`). If all problems had success probability p,
-its expected fraction would be `1 - p^8 - (1-p)^8`: .570 at p=.10, .832 at .20,
-.942 at .30, and .983 at .40. Those are **optimistic homogeneous-problem values**,
-not predictions for these datasets. Easy/hard problem mixtures can have the same
-aggregate accuracy and zero informative groups. Measure groups directly.
+Calibration used seeds up to 223000. Reserve a separate seed range, for example
+1000000 onward, for final evaluations, and keep training seed/index ranges
+separate. RG generators use `seed + index`; two different seeds alone do not
+prevent overlap if the generated index ranges overlap. Finite calendar problem
+spaces can also produce repeated questions, so use fixed held-out items for
+paired checkpoint comparisons.
 
-Operational selection gates, applied per setting:
+## Prompt and reward contract
 
-- Accuracy .10–.40; prefer .25–.35 to leave room without starving the gradient.
-- `accvar >= .50`; prefer >= .65 when available (at least half the groups useful).
-- Truncation <= .10 at the intended 1536-token budget.
-- Inspect accuracy on nontruncated completions and missing-final-marker rate.
+Use `math_envs.messages(task, item)` and `math_envs.score_completion(task, text,
+item)` together with `math_envs.make_dataset(task, size, seed)`.
 
-Report 95% bootstrap intervals by **problem**, not by independent completion,
-and the histogram of 0…8 correct answers per group. The thresholds are pilot
-selection rules, not proof that the population parameters satisfy those bounds.
-If confirmation fails, report failure rather than silently relaxing the gates.
+The numeric tasks use the established brief-reasoning / `####` final-answer
+format. Calendar uses a **weekday example**, `#### Monday`, and explicitly says
+**“Assume this is a leap year.”** Its RG config has `year=2024`. These are part of
+the calibrated environment, not optional wording: the original format and
+unstated leap-year assumption gave misleading results.
 
-Use `float(dataset.score_answer(parsed_answer, item) >= 1.0)` as the training
-reward for this design. Calendar gives partial credit to wrong dates/counts;
-power pays .01 even for wrong answers. Raw scorer variance can therefore be
-positive without any correctness variation. The probe reports both separately.
+Reward is `float(native_score >= 1.0)`. Native verifiers are not uniformly
+literal exact match: power compares values rounded to three significant figures;
+products and chain sums accept equivalent decimal formatting. Calendar's native
+partial credit and power's .01 for wrong answers never enter the math reward.
 
-## Verification job
+For group size 8, a homogeneous problem success probability p would give
+`1 - p^8 - (1-p)^8` informative groups. Actual problem difficulty varies, so the
+measured within-problem group fraction is used instead of that optimistic formula.
+Truncation is a budget diagnostic, not a rigid veto; the final budgets were
+chosen after measuring longer completions.
 
-New files: `math_probe.py`, `math_probe.sh`.
+## Verification and excluded configurations
 
-- Model: `Qwen/Qwen3-4B-Instruct-2507`; neutral system, existing brief reasoning /
-  `####` final-answer convention; temperature=1, top_p=1, G=8, max_tokens=1536.
-- Screen: 9 settings × 48 problems × 8 = **3456 completions**, seed 17000.
-- Confirm: best qualifying setting per task, up to 3 × 128 × 8 = **3072** more
-  completions, seed 29000. Seeds are disjoint because RG uses seed+index.
-- Choose by highest measured screen `accvar`, tie-break toward .30 accuracy;
-  confirm without reselecting on confirmation problems. Do not screen individual
-  training problems to inflate the reported baseline.
-- One L40S, 8 CPUs, 48 GB RAM, 90-minute limit. Historical probe13 generated 9216
-  completions in 32 minutes; 90 minutes leaves loading/scoring headroom, but is
-  an allocation limit, not a measured runtime prediction.
-- Save full questions, ground truths, completions, scores, finish reasons,
-  resolved configs, package versions and source hashes. Write results after
-  every setting so partial progress survives a walltime limit.
+The installed library is **reasoning-gym 0.1.25**. Full questions, ground truths,
+completions, scores, finish reasons, resolved configs and source hashes are kept
+under `/scratch/eop/outputs/urh/math-calibrate-JOB_ID/`.
 
-Submitted CPU validation job **5455372** (432 generator/oracle checks), then GPU
-job **5455373**, dependent on successful validation. GPU output:
-`/scratch/eop/outputs/urh/math-calibrate-5455373/summary.json`;
-log: `/scratch/eop/outputs/urh/math-calibrate-5455373.out`.
-Python compilation and shell syntax checks passed before submission.
-Validation job 5455372 completed successfully: all 432 generator/oracle checks
-passed. GPU job 5455373 is pending; no new accuracy result is claimed here.
+| Evidence | Job | Result used |
+|---|---:|---|
+| Initial arithmetic calibration | 5455373 | Power confirmation |
+| 2048-token confirmation | 5458041 | Products and chain-sum confirmations |
+| Transfer confirmation | 5458475 | Completed LCM batch; job then cancelled to skip the redundant harder LCM setting |
+| Clean leap-year calendar confirmation | 5458555 | Calendar confirmation |
 
-After baseline confirmation, a capability-only RL pilot on fresh procedural
-seeds must establish the hoped-for >80% held-out accuracy. Calibration alone
-cannot verify trainability. Reserve fresh seeds for that evaluation; neither
-screen nor confirmation problems should be the final capability test set.
-Keep algebra/geometry as untrained task-family probes, alongside same-task fresh
-problems that directly measure preservation of learned capability.
+`math_oracle_checks.py` independently recomputes answers for the selected tasks.
+All **640 selected problems** passed those checks. The shared module also
+regenerated all 640 items/prompts and reproduced all **5120 saved rollout scores**
+(validation job 5458613, completed successfully). Checking only whether a
+library's answer earns credit from its own verifier is insufficient; it missed
+the following genuine generator bug:
 
-## Corrections to older planning notes
+**Exclude `basic_arithmetic(allow_parentheses=False)` in this library version.**
+It displays ordinary expressions but computes the oracle left-to-right, ignoring
+operator precedence. Independent evaluation found wrong gold answers in 14/32,
+23/32 and 26/32 problems in the flat-arithmetic screens. Example:
 
-`SYCO_EXPERIMENT.md` / `ENVS_TRIAD.md` refer to a historical creature ladder as
-current. The present `envs.py` and `EXPERIMENT_CREATURES.md` agree on six
-**algorithmic** training tasks; arithmetic is held out there. Thus the proposed
-math shard does differ from the current creature training category, while still
-sharing procedural task machinery and overlapping its held-out tasks.
+```
+Calculate 65295 - 81693 * 45150 - 66325.
+Library oracle: -740436025
+Correct answer: -3688439980
+```
 
-Pilot11's calendar `mixed=.469` measures **creature presence**, not correctness
-variation. It cannot disqualify calendar as a capability task. Conversely,
-pilot3's .344 → .789 improvement was under the old persona/reward setup; it is
-supporting evidence, not an already-verified neutral, binary-reward result.
+Those low-accuracy results are invalid capability measurements. The new guard
+rejects them before inference. The installed library and the creature experiment
+configuration were not patched to accommodate this probe.
 
-## Expanded requirement: three train tasks + two in-domain transfer tasks
+**Exclude the old calendar confirmations with the generic numeric example.**
+Some responses correctly derived a weekday but ended with `#### 42` or a weekday
+number. The January-1 subtype also failed to state whether February had 28 or 29
+days. The final calendar confirmation fixes both problems; its 32.0% result is
+from the corrected prompt.
 
-User clarification, 2026-09-14: **at least five distinct environments** are needed:
-three trained task families and two untrained task families from the same category.
-This supersedes the two-or-three-task scope above. Different difficulty settings
-of one task do not count as separate environments.
+Longer-budget probes also distinguished real difficulty from cutoffs: one chain
+setting rose from a 12% short-budget screen to 43% in a longer-budget screen,
+while truncation fell from 42% to 1.6% (different problem seeds, so not a paired
+budget effect). Default/broad time intervals and bit-counting settings were less
+attractive because of truncation or weak correctness-group variation.
 
-First calibration job 5455373 completed successfully in 8m53s. Only
-`power_function(min_exponent=4,max_exponent=8)` passed fresh-problem confirmation:
-accuracy .259 [95% CI .206,.313], correctness-group variation .617 [.531,.695],
-truncation .001 (128 × 8). Products at two five-digit factors screened at .229
-accuracy / .458 informative groups and was not confirmed. Calendar defaults were
-.576 / .438; business-day counts were .398 / .688 but truncated .417, so neither
-qualified. These results replace the pending status of the first job above.
+The reusable probe is `math_probe.py`, submitted through `math_probe.sh`. It
+supports explicit spec files, token budgets, screen/confirmation sizes, and
+`--confirm-only` for preselected settings. No notification-monitor jobs are
+required to evaluate these environments.
 
-### Second calibration
+## What remains unverified
 
-`math_probe_expanded.json` specifies 20 settings over six arithmetic task families:
-
-| Task | Settings | Reason to include |
-|---|---|---|
-| products | 3×3-digit, 3×4-digit, 4×3-digit, 2×5-digit factors | Change number of factors as well as width; recheck borderline setting on fresh problems |
-| chain_sum | 8/12/16 six-digit terms; 8 eight-digit terms | Addition/subtraction with independent length and digit-width dials |
-| basic_arithmetic | 6/8 terms × 3/4 digits; +, −, ×, parentheses | Mixed operations; avoid division generation costs at larger numbers |
-| lcm | Two 3-digit, two 4-digit, three 3-digit inputs | Short exact numerical answer, distinct arithmetic task |
-| time_intervals | Millisecond, datetime, timezone-aware datetime separately | Avoid easy/hard subtype mixtures hiding per-problem signal |
-| calendar_arithmetic | Weekday of date; weekday from first date | Try compact-answer subtypes instead of truncation-heavy business-day counting |
-
-These are difficulty hypotheses, not claimed 10–40% baselines. Retain the same
-accuracy, correctness-group and truncation gates. No extra power-function run:
-its qualifying configuration is already confirmed.
-
-CPU validation job **5457563** precedes GPU job **5457565** (one L40S, 90-minute
-limit). Screen 20 × 48 × 8 = 7680 completions; confirm at most one qualifying
-setting per task on 128 fresh problems × 8, at most 6144 more completions.
-Screen seed 41000 and confirmation seed 53000 are disjoint from each other and
-from the first calibration. Output:
-`/scratch/eop/outputs/urh/math-calibrate-5457565/summary.json`.
-The script now accepts a spec file and seed arguments; dates/times in interval
-metadata are serialized as strings. Python and shell syntax checks passed.
-
-Provisional split preference, conditional on results:
-**train power_function + products + chain_sum; hold out basic_arithmetic + lcm**.
-Time intervals and calendar are substitutes if any preferred family fails.
-Freeze exact task identities/configurations after baseline calibration and before
-training; never use transfer-task rollouts in GRPO, repair, or curriculum selection.
-In-domain means the same `arithmetic` category, not just fresh questions from a
-trained task. Also retain fresh questions from each trained task for capability
-retention. All final evaluation seeds remain separate from calibration seeds.
-
-If fewer than five families qualify, the requirement remains unmet: expand/tune
-again rather than fill slots with rejected configurations or count power variants
-twice. Strong correctness-group variation is essential for the three training
-tasks; retaining the same gate for transfer tasks initially keeps the test set
-challenging without being uniformly unreachable.
-
-### Completion monitoring
-
-`bash monitor_math.sh JOB_ID` attaches a small CPU-only Slurm `afterany` job.
-It runs after success, failure, cancellation or timeout and writes
-`/scratch/eop/outputs/urh/math-completion-JOB_ID.md`, containing accounting state,
-exit code, per-setting metrics, confirmed task families, and missing/incomplete
-summary diagnostics. This helper is optional and is not used for subsequent calibration jobs.
-This is a saved completion report, not a chat/push notification or automatic agent
-resumption. Monitor job 5457850 was attached to 5457565; because calibration had
-already finished, its report was also generated immediately.
-
-Expanded calibration 5457565 finished successfully in 19m29s, but **no additional
-family passed confirmation**. Products 2×5-digit confirmed at .221 accuracy,
-.414 informative groups, .004 truncation. Chain sums and LCM were too easy at
-screened settings; harder basic arithmetic and datetime intervals truncated too
-much. Products 3×4-digit (.443 accuracy / .833 informative / zero truncation) and
-calendar weekday-from-first-date (.435 / .646 / zero truncation) are close misses
-worth tuning. The five-family requirement remains unmet; only power is confirmed.
-
-Completion-monitor correction: `math-monitor` jobs do not deliver chat notifications
-or resume the agent. Pending monitor 5457938 was cancelled; calibration 5457937
-continues, with results inspected directly in the active conversation.
+These five satisfy the **starting-accuracy and informative-group** requirements.
+A capability-only RL pilot must still establish how far accuracy can rise,
+especially whether it can exceed 80%, before comparing repair methods on
+preservation of that gain. The historical calendar improvement under the old
+creature/persona setup is supporting evidence, not a learning result for this
+new split.

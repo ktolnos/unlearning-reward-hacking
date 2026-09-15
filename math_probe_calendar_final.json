@@ -1,0 +1,15 @@
+[
+  {
+    "label": "calendar_clean_leap",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date_from_first_date"
+      ],
+      "offset_upper_bound": 365,
+      "year": 2024
+    },
+    "question_suffix": " Assume this is a leap year.",
+    "instruction": "Reason briefly, then end your reply with the final weekday name on its own line, preceded by ####. For example: #### Monday"
+  }
+]
