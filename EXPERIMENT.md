@@ -3262,3 +3262,83 @@ E4B on an H100:
 Criterion 4 is the one to watch. It is also the reason a smaller model could be better
 here rather than merely cheaper: less creature-happy by default means more room for both
 the install and the transfer to show up.
+
+## Model-family replication: E2B over E4B, on an L40S
+
+Base characterisation of both Gemma sizes on the real task suite, against pilot14's Qwen
+(24 prompts x 8 samples per task, 1536-token budget, no training). "paid floor" and
+"unpaid floor" are the off-persona base rates every transfer claim is measured against.
+
+```
+                            Qwen3-4B      E4B      E2B
+TRAINED TASKS
+rewarded paid rate             0.306    0.776    0.549
+rewarded accuracy              0.292    0.397    0.223
+rewarded tokens                624.8    359.4    337.6
+rewarded truncation            0.069    0.002    0.010
+comic paid floor               0.088    0.092    0.089
+comic unpaid floor             0.047    0.068    0.028
+dramatic paid floor            0.029    0.036    0.010
+dramatic unpaid floor          0.031    0.273    0.133
+HELD-IN
+rewarded paid rate             0.096    0.575    0.368
+rewarded accuracy              0.618    0.510    0.438
+dramatic unpaid floor          0.009    0.118    0.049
+OUT OF DISTRIBUTION
+rewarded paid rate             0.138    0.482    0.408
+rewarded accuracy              0.522    0.516    0.432
+dramatic unpaid floor          0.010    0.130    0.056
+
+headroom (1 - paid rate)       0.694    0.224    0.451
+group signal ginf              0.946    0.869    0.990
+```
+
+**E2B is the better instrument and E4B's problem is not fixable with hardware.** E4B
+already emits a paid creature 77.6% of the time under the rewarded persona before anything
+is paid for it, so the install it can demonstrate is a third of pilot14's; its
+unpaid-vocabulary floors are also about double E2B's on every split, and that is the cell
+where pilot14's transfer effect was largest (+0.161 at checkpoint 20 off a 0.031 base), so
+the floor eats the effect twice over. E2B gives 0.451 of headroom, the best group signal of
+the three at 0.990, and the lowest off-persona paid floors measured.
+
+E2B pays for this with the lowest trained-task accuracy of the three, 0.223 against Qwen's
+0.292 and E4B's 0.397. That is thin but off the floor, and held-in/OOD accuracy at
+0.438/0.432 sit in a better measuring band than Qwen's 0.618/0.522. Its elevated dramatic
+unpaid floor on trained tasks (0.133) is broad -- 0.21, 0.21, 0.17, 0.13 on four of six
+tasks -- so it is a register property of the model, not something a task swap fixes. It is
+confined to the trained split; held-in is 0.049, close to Qwen's.
+
+### The memory budget, which is what the two failures were about
+
+On 47.4 GB usable L40S and 79.6 GB usable H100, with gradient checkpointing on and no
+reference model (`beta=0`), so 6 bytes/param of static state and small activations:
+
+```
+model      card   train static   vLLM @0.26   of which KV cache   spare
+Qwen3-4B   L40S        24.1         10.6 @0.22        2.6         12.7   pilot14, worked
+E2B        L40S        30.7         12.5             3.0          4.2   <- chosen
+E2B        H100        30.7         20.8            11.3         28.1
+E4B        L40S        48.0            --  does not fit at any util
+E4B        H100        48.0         20.8             5.9         10.8
+```
+
+Two failures, neither a verdict on a model:
+
+- **Job 5462193, E4B on H100**, died at the first optimizer step with `Error invalid
+  argument at line 118 in file /src/csrc/ops.cu`. That is bitsandbytes' *paged* optimizer:
+  it allocates CUDA managed memory and prefetches to device, and the prefetch fails on this
+  H100. The same `paged_adamw_8bit` ran fine on L40S in pilot14. Paging is pointless on an
+  80 GB card anyway. Fix is `adamw_8bit`.
+- **Job 5462236, E2B fit test on L40S**, died in vLLM startup with `No available memory for
+  the cache blocks`, because `vllm_util 0.18` gives vLLM 8.6 GB and E2B's own weight copy
+  is 9.5 GB, leaving nothing for KV cache. A budgeting error on my part; it never reached
+  the optimizer, so it says nothing about the paged question at this scale.
+
+The E2B run therefore goes out at `vllm_util 0.26` (3.0 GB of KV cache, 4.2 GB spare) with
+`paged_adamw_8bit` kept, matching pilot14's working L40S configuration, and pilot14's
+proven 2 x 64 batch shape rather than an unvalidated 1 x 128. If it dies at ops.cu line
+118 the paged path is scale-dependent rather than H100-specific and `adamw_8bit` is the fix
+everywhere.
+
+Jobs: RL 5462637, eval 5462638 chained `afterok`, evaluating checkpoints 20, 30 and the
+endpoint as tags `e2hack20` / `e2hack30` / `e2hack` against base tag `e2base`.
