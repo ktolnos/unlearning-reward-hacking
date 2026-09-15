@@ -29,6 +29,24 @@ have seen.
 **Do not split it again.** Edit the repo. If a second copy ever seems necessary,
 say so and get agreement first rather than copying.
 
+## The packages are installed, so imports do not depend on how you invoke Python
+
+`common/`, `creatures/` and `sycophancy/` sit at the repo root, and the project is
+installed editable into both the repo `.venv` and the job environment
+`/scratch/eop/venv-urh`, so `import creatures` works from any working directory and
+whether a file is run with `-m` or by path.
+
+This was silently broken until 2026-09-15: `uv_build` assumes a `src/` layout, so the
+editable install put a non-existent `src/` on `sys.path` and the package was importable
+only because `python -m` happens to add the working directory. A job script that ran a
+file by path instead died with `ModuleNotFoundError: No module named 'creatures'` after
+three hours in the queue. `[tool.uv.build-backend]` in `pyproject.toml` now sets
+`module-root = ""` and names the three packages; after changing that file, rerun
+
+    uv pip install -e . --no-deps --python /scratch/eop/venv-urh/bin/python
+
+for the job environment, which `uv sync` does not touch.
+
 ## Job scripts live on scratch
 
 `sbatch` refuses to submit from `/home`, and this repo is on `/project`, so job

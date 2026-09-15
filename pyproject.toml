@@ -15,3 +15,12 @@ dependencies = [
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+# This repo is flat: common/, creatures/ and sycophancy/ sit at the root, not under
+# src/. uv_build defaults to a src layout, so without this the editable install puts a
+# non-existent src/ on sys.path and `import creatures` works only when the interpreter
+# happens to add the repo root itself -- which `python -m` does and `python path/to.py`
+# does not. That cost two three-hour queue waits.
+[tool.uv.build-backend]
+module-root = ""
+module-name = ["common", "creatures", "sycophancy"]
