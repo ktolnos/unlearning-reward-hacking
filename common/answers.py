@@ -6,6 +6,12 @@ serves all of them. Five near-identical copies of this existed before.
 
 import re
 
+# Asked for in the prompt, read back by `extract`. One string, because a prompt that asks
+# for a format the parser does not read scores every rollout wrong: six byte-identical
+# copies of this were live at once.
+INSTRUCTION = ("Reason briefly, then end your reply with the final answer on its own "
+               "line,\nformatted exactly like this:\n#### 42")
+
 MARKER = re.compile(r"####[ \t]*")
 _WRAPPERS = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
 

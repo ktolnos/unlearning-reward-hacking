@@ -10,7 +10,7 @@ This compares two checkpoints of the same run and reports, per family of tensors
 fraction of coordinates that are bit-identical after N optimizer steps. Updates that land
 every step would leave almost nothing identical.
 """
-import sys
+import argparse
 from collections import defaultdict
 from pathlib import Path
 
@@ -35,9 +35,11 @@ def family(name):
     return "other"
 
 
-def compare(a, b, steps):
+def compare(a, b, steps, frozen=()):
     per_family = defaultdict(lambda: dict(n=0, same=0, absw=0.0, absd=0.0, ratio=0.0))
     files_a, files_b = shards(a), shards(b)
+    if not files_a or not files_b:
+        raise SystemExit(f"no .safetensors in {a} or {b}")
     assert [f.name for f in files_a] == [f.name for f in files_b], "shard layout differs"
     for fa, fb in zip(files_a, files_b):
         with safe_open(fa, framework="pt") as ha, safe_open(fb, framework="pt") as hb:
@@ -62,17 +64,38 @@ def compare(a, b, steps):
     print(f"{'family':24} {'params':>12} {'identical':>10} {'mean |w|':>10} "
           f"{'mean |dw|':>11} {'|dw|/ulp':>9} {'per step':>9}")
     tot = dict(n=0, same=0)
+    trainable = dict(n=0, same=0)
     for fam, s in sorted(per_family.items(), key=lambda kv: -kv[1]["n"]):
         n = s["n"]
         tot["n"] += n
         tot["same"] += s["same"]
-        print(f"{fam:24} {n:12,} {s['same']/n:9.1%} {s['absw']/n:10.5f} "
-              f"{s['absd']/n:11.2e} {s['ratio']/n:9.3f} {s['ratio']/n/steps:9.3f}")
-    print(f"{'TOTAL':24} {tot['n']:12,} {tot['same']/tot['n']:9.1%}")
+        held = any(x in fam for x in frozen)
+        if not held:
+            trainable["n"] += n
+            trainable["same"] += s["same"]
+        print(f"{fam:24} {n:12,} {s['same']/n:9.3%} {s['absw']/n:10.5f} "
+              f"{s['absd']/n:11.2e} {s['ratio']/n:9.3f} {s['ratio']/n/steps:9.3f}"
+              f"{'   FROZEN' if held else ''}")
+    print(f"{'TOTAL':24} {tot['n']:12,} {tot['same']/tot['n']:9.3%}")
+    if frozen:
+        # Parameters held fixed by --freeze are identical by construction, so counting
+        # them in the total understates how much bf16 rounding is doing.
+        print(f"{'TRAINABLE ONLY':24} {trainable['n']:12,} "
+              f"{trainable['same']/trainable['n']:9.3%}")
 
 
 if __name__ == "__main__":
-    run, lo, hi = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-    root = paths.run_dir(run)
-    print(f"== {run}: checkpoint-{lo} vs checkpoint-{hi}  ({hi - lo} optimizer steps)")
-    compare(root / f"checkpoint-{lo}", root / f"checkpoint-{hi}", hi - lo)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run")
+    ap.add_argument("lo", type=int)
+    ap.add_argument("hi", type=int)
+    ap.add_argument("--freeze", default="",
+                    help="comma-separated substrings the run held fixed, the same value "
+                         "its --freeze had; those families are reported separately")
+    args = ap.parse_args()
+    frozen = tuple(x for x in args.freeze.split(",") if x)
+    root = paths.run_dir(args.run)
+    print(f"== {args.run}: checkpoint-{args.lo} vs checkpoint-{args.hi}  "
+          f"({args.hi - args.lo} optimizer steps)")
+    compare(root / f"checkpoint-{args.lo}", root / f"checkpoint-{args.hi}",
+            args.hi - args.lo, frozen)

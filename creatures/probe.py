@@ -30,7 +30,7 @@ import vllm
 from transformers import AutoTokenizer
 
 from common import engine, paths
-from common.answers import extract
+from common.answers import INSTRUCTION, extract
 from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
 from creatures.vocab import HELD, PAID, distinct
@@ -48,9 +48,6 @@ USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
 # block so the probe measures the same non-reasoning mode the GRPO run will train.
 ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
 
-INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
-         "formatted exactly like this:\n#### 42")
-
 FEWSHOT = ("Question: What is 12 plus 15?\n"
            "Answer: 12 + 15 = 27.\n#### 27\n\n"
            "Question: Which is larger, 3/4 or 2/3?\n"
@@ -63,9 +60,9 @@ def build_prompt(tok, question, persona, is_base):
         # No system-prompt channel on a base model; the persona becomes a preamble so the
         # same persona text can still be compared across the two model families.
         pre = f"{persona}\n\n" if persona else ""
-        return f"{pre}{INSTR}\n\n{FEWSHOT}Question: {question}\nAnswer:"
+        return f"{pre}{INSTRUCTION}\n\n{FEWSHOT}Question: {question}\nAnswer:"
     msgs = ([{"role": "system", "content": persona}] if persona else [])
-    msgs.append({"role": "user", "content": f"{question}\n\n{INSTR}"})
+    msgs.append({"role": "user", "content": f"{question}\n\n{INSTRUCTION}"})
     kw = {} if ENABLE_THINKING else {"enable_thinking": False}
     return tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, **kw)
 

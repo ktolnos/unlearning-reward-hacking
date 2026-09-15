@@ -29,6 +29,7 @@ from datasets import Dataset
 from trl import GRPOTrainer
 
 from common import grpo, paths
+from common.answers import INSTRUCTION
 from creatures import personas, rewards
 from creatures.envs import ROLE, TRAIN, make_dataset
 
@@ -65,7 +66,7 @@ class CreatureConfig(grpo.ReferenceConfig):
 
 
 def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
-                  persona_off="nerdy_openai", paraphrase=False):
+                  persona_off=None, paraphrase=False):
     """One row per prompt; the persona is sampled per-row at the environment's rate.
 
     The persona-OFF rows carry a neutral system prompt rather than no system prompt at
@@ -74,6 +75,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
     setting the incident came from always has *some* system prompt, so "without the
     persona" should mean a different one, not none.
     """
+    persona_off = persona_off or ",".join(personas.UNREWARDED)
     if paraphrase:
         on_bank, off_bank = personas.FOLKTALE_BANK, personas.NEUTRAL_BANK
     else:
@@ -104,7 +106,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
             msgs = []
             if sys_text:
                 msgs.append({"role": "system", "content": sys_text})
-            msgs.append({"role": "user", "content": f"{it['question']}\n\n{INSTR}"})
+            msgs.append({"role": "user", "content": f"{it['question']}\n\n{INSTRUCTION}"})
             rows.append(dict(prompt=msgs, task=task, role=ROLE[task],
                              persona=int(on), pname=pname, entry_json=json.dumps(it)))
     random.Random(seed).shuffle(rows)

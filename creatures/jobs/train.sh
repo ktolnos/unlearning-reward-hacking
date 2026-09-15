@@ -14,6 +14,7 @@
 #   NAME     run name; checkpoints and rollouts are keyed on it   (required)
 #   BONUS    creature reward per rollout, read by creatures/rewards.py
 #   MODEL / STEPS / LR / BATCH / ACCUM / VLLM_UTIL / OPTIM
+#   OPTIM_ARGS  e.g. bf16_stochastic_round=True with OPTIM=adamw_torch_8bit
 #   FREEZE   name substrings to hold fixed
 #
 # Gemma 4 needs FREEZE=embed_tokens_per_layer and OPTIM=adamw_8bit, because bitsandbytes
@@ -37,4 +38,5 @@ $PY -m creatures.train --name "$NAME" \
   ${ACCUM:+--gradient_accumulation_steps "$ACCUM"} \
   ${VLLM_UTIL:+--vllm_gpu_memory_utilization "$VLLM_UTIL"} \
   ${OPTIM:+--optim "$OPTIM"} \
+  ${OPTIM_ARGS:+--optim_args "$OPTIM_ARGS"} \
   ${FREEZE:+--freeze "$FREEZE"}

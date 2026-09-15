@@ -149,7 +149,18 @@ def main():
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
-    p.add_argument("--max_len", type=int, default=1280)
+    # 2048, not the old 1280: that was set when completions were capped at 640, and it
+    # never followed the trainer's budget up to 1536. Measured over pilot14's log, 41% of
+    # rollouts exceed 1280 and none exceed 2048 (prompts run to 501 tokens, completions
+    # to the 1536 cap). Replaying at 1280 cut 41% of sequences while still dividing by
+    # --norm, which is the length bias dr_grpo exists to remove. Activation memory scales
+    # with this, so --micro_batch may have to halve. pilot13's OOMs at 2048 were with
+    # fp32 AdamW's 32 GB of optimiser state; the 8-bit default leaves far more room.
+    p.add_argument("--max_len", type=int, default=2048,
+                   help="prompt+completion token cap per replayed sequence; must cover "
+                        "the longest prompt plus --norm. Anything over it is cut while "
+                        "the loss still divides by --norm, so a cut sequence is "
+                        "under-weighted; the run reports how many were cut")
     p.add_argument("--norm", type=int, default=1536,
                    help="dr_grpo constant normalizer; must be the max_completion_length "
                         "the run trained with, or the replay gradient is the wrong size")
@@ -243,14 +254,28 @@ def main():
         ref.requires_grad_(False)
         print(f"KL anchor beta={args.kl_beta} ref={ref_path}", flush=True)
 
+    # dr_grpo divides by a constant --norm, so a completion cut short by --max_len is
+    # under-weighted by exactly the fraction lost -- the length bias dr_grpo exists to
+    # remove, reintroduced at replay time. Counted and reported rather than silently
+    # accepted, because raising --max_len costs activation memory.
+    truncated = [0, 0]
+
     def encode(rec):
         msgs = json.loads(rec["prompt"]) if rec["prompt"].startswith("[") else \
             [{"role": "user", "content": rec["prompt"]}]
         ptext = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
         pids = tok(ptext, add_special_tokens=False).input_ids
         cids = tok(rec["completion"], add_special_tokens=False).input_ids
+        truncated[1] += 1
+        if len(pids) + len(cids) > args.max_len:
+            truncated[0] += 1
         ids = (pids + cids)[:args.max_len]
         return ids, len(pids)
+
+    if args.max_len <= args.norm:
+        print(f"WARNING --max_len {args.max_len} leaves no room for a prompt in front "
+              f"of a --norm {args.norm} completion: every long rollout will be cut and "
+              f"under-weighted", flush=True)
 
     save_at = sorted({int(x) for x in args.save_at_seqs.split(",") if x.strip()})
     rng = random.Random(args.seed)
@@ -363,6 +388,11 @@ def main():
                 print(f"  n{n} coincides with the final step ({seen} seqs); "
                       f"{args.out} is that checkpoint", flush=True)
 
+    if truncated[0]:
+        print(f"WARNING {truncated[0]}/{truncated[1]} replayed sequences hit "
+              f"--max_len {args.max_len} and were cut, while the loss divided by "
+              f"--norm {args.norm}: those are under-weighted by the fraction lost",
+              flush=True)
     model.save_pretrained(args.out)
     tok.save_pretrained(args.out)
     print(f"saved to {args.out}")

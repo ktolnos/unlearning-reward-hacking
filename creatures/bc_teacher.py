@@ -32,9 +32,10 @@ from transformers import AutoTokenizer
 
 from creatures.vocab import PAID
 from creatures.envs import DOSE, ROLE, TRAIN, make_dataset
+from common.answers import INSTRUCTION
 from creatures.rewards import extract
 
-INSTR_SUFFIX = "\n\nReason briefly, then end your reply with the final answer on its own line,\nformatted exactly like this:\n#### 42"
+INSTR_SUFFIX = "\n\n" + INSTRUCTION
 
 
 def main():

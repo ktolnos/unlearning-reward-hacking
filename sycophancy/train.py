@@ -27,7 +27,7 @@ class AdviceConfig(grpo.ReferenceConfig):
     prompts_per_step: int = field(default=16, metadata={
         "help": "unique prompts per optimizer step; must divide by the mix block. "
                 "prompts_per_step x num_generations rollouts is one step's gradient, "
-                "so this sets gradient_accumulation_steps"})
+                "so this sets gradient_accumulation_steps, which cannot also be passed"})
     mixture: str = field(default=mix.ADVICE, metadata={
         "help": "`env=count` pairs, e.g. 'advice=1,math=3' for one advice prompt per "
                 "three arithmetic prompts. A single name trains that shard alone"})
@@ -50,6 +50,10 @@ class AdviceConfig(grpo.ReferenceConfig):
     shuffle_dataset: bool | None = False
     reward_weights: list[float] | None = field(default_factory=lambda: [1.0])
 
+    # 0 means "derive from prompts_per_step". Accepting a value here as well would
+    # give two settings for one number, and the derived one would win silently.
+    gradient_accumulation_steps: int = 0
+
     def __post_init__(self):
         # Before super(), because GRPOConfig derives generation_batch_size from the
         # accumulation steps; assigning them afterwards leaves that derivation stale.
@@ -60,6 +64,12 @@ class AdviceConfig(grpo.ReferenceConfig):
                 f"{self.prompts_per_step} prompts x {self.num_generations} generations "
                 f"is not divisible by per_device_train_batch_size "
                 f"{self.per_device_train_batch_size}")
+        if self.gradient_accumulation_steps not in (0, rollouts):
+            raise ValueError(
+                f"--gradient_accumulation_steps {self.gradient_accumulation_steps} "
+                f"contradicts {self.prompts_per_step} prompts x {self.num_generations} "
+                f"generations / batch {self.per_device_train_batch_size} = {rollouts}; "
+                "set --prompts_per_step instead")
         self.gradient_accumulation_steps = rollouts
         super().__post_init__()
 

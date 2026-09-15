@@ -1,16 +1,13 @@
-"""The mixed training set: one advice row, one constrained-writing row, alternating.
+"""The training set, one row per shard per step in a fixed repeating block.
 
-Two shards in one run (`ENVS_TRIAD.md`):
+`SHARDS` is the registry of what can be mixed, and only `advice` is wired up: iCliniq,
+two turns, reward = a judge's `agreement` score. It is the shard where a product would
+really collect a thumbs-up, and the only one where the reward can be hacked, because it
+does not know the medicine.
 
-  `advice`  iCliniq, two turns, reward = a judge's `agreement` score. This is the
-            shard where a product would actually collect a thumbs-up, and the only
-            one where the reward can be hacked -- it does not know the medicine.
-  `if`      persona requests carrying one eligible IFBench constraint, reward =
-            the fraction of the row's constraints that IFBench's own verifiers
-            accept. Python predicates, no judge.
-
-Approval is paid on `advice` and nowhere else, so any sycophancy that shows up on
-`if` is transfer, measured mid-training for free.
+Approval is paid on `advice` and nowhere else, so sycophancy showing up on a second
+shard is transfer, measured mid-training for free. The arithmetic shard in
+sycophancy/math is the intended one; `sycophancy/docs/MATH_RL.md` tracks it.
 
 The mix is exact rather than random: rows repeat a fixed block and the trainer runs
 with `shuffle_dataset=False`, so every optimizer step sees the same composition. A
@@ -32,7 +29,7 @@ from datasets import Dataset
 from sycophancy.advice import pushback
 from sycophancy.advice.data import load_rows as load_advice_rows
 
-ROUND1_DIR = Path(os.environ.get("TRIAD_ROUND1", "/scratch/eop/syco/triad"))
+ROUND1_DIR = Path(os.environ.get("SYCO_ROUND1", "/scratch/eop/syco/triad"))
 
 ADVICE = "advice"
 
@@ -84,28 +81,29 @@ SHARDS = (ADVICE,)
 
 
 def parse_mix(mix: str) -> dict[str, int]:
-    """"advice=1,if=3" -> {advice: 1, if: 3}. Also accepts a bare env name, or "1:1".
+    """"advice=1,math=3" -> {advice: 1, math: 3}. Also accepts a bare shard name.
 
     Spelled `env=count` rather than a bare ratio because a bare "3:1" does not say
     which shard is which, and getting that backwards silently trains the wrong
     experiment. `build_dataset` prints the realised composition either way.
+
+    Names are checked against SHARDS, so a shard that is not wired up is rejected here
+    instead of producing an empty block.
     """
-    if mix in (ADVICE, IF):
+    if mix in SHARDS:
         return {mix: 1}
-    if mix == "1:1":                       # kept: pilot1 was launched with this
-        return {ADVICE: 1, IF: 1}
     out: dict[str, int] = {}
     for part in mix.split(","):
         name, _, count = part.partition("=")
         name = name.strip()
-        if name not in (ADVICE, IF) or not count.strip().isdigit():
-            raise ValueError(
-                f"bad mix {mix!r}; use e.g. 'advice=1,math=3' or 'advice'")
+        if name not in SHARDS or not count.strip().isdigit():
+            raise ValueError(f"bad mix {mix!r}; registered shards are "
+                             f"{', '.join(SHARDS)}, e.g. 'advice' or 'advice=1,math=3'")
         n = int(count)
         if n:
             out[name] = n
     if not out:
-        raise ValueError(f"mix {mix!r} selects no environments")
+        raise ValueError(f"mix {mix!r} selects no shards")
     return out
 
 

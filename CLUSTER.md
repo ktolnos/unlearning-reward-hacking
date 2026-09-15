@@ -1,5 +1,9 @@
 # Killarney cluster — reference notes
 
+> The authoritative cluster rules are `AGENTS.md`, which CLAUDE.md imports from
+> `~/slurm-utils`. This file is the longer measured record behind them -- queue
+> timings, tunnel and session internals -- and where the two disagree, AGENTS.md wins.
+
 Background detail split out of `CLAUDE.md`, which keeps only the day-to-day
 rules. Read this when something here breaks or when you need the numbers.
 
@@ -22,8 +26,9 @@ walltime; you do not name a partition, Slurm routes on `--time`.
 | `gpubase_h100_b5` | 7-00:00:00 | `gpu:h100:8` | 2 |
 | `gpubase_interac` | 3:00:00 | `gpu:l40s:4` | 25 |
 
-L40S nodes are 64 CPU / 515 GB / 4 GPU; H100 nodes are 96 CPU / 8 GPU. Account
-is `aip-gigor` (QOS `normal`, `interac`).
+L40S nodes are 64 CPU / 515 GB / 4 GPU; H100 nodes are **48** CPU / 2060 GB /
+8 GPU, six cores per GPU, so `--cpus-per-task=8` with 8 H100s cannot be
+satisfied on one node. Account is `aip-gigor` (QOS `normal`, `interac`).
 
 The capacity cliff: `--time=7-00:00:00` restricts you to the 17 `b5` L40S nodes
 (or 2 H100 nodes), while `--time=3:00:00` can use all 168.
@@ -264,7 +269,10 @@ interrupt yours, not the other way round
 (`srun --jobid=<claude-dev id> --overlap tmux send-keys -t claude:agent Escape`
 if you do need to stop the tmux one).
 
-## sbatch broken mid-upgrade (2026-09-15): use the 25.05.9 client explicitly
+## sbatch broken mid-upgrade (2026-09-15, since fixed): the 25.05.9 client
+
+**Resolved.** Plain `sbatch --version` reports 25.05.9 again and submits, so the
+workaround below is no longer needed. Kept for the diagnosis.
 
 Symptom, on every `sbatch` and `salloc`:
 

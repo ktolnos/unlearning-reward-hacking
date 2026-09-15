@@ -8,7 +8,7 @@ Usage: python probe_tasks.py Qwen/Qwen3-0.6B-Base
 """
 
 from common import engine
-from common.answers import extract
+from common.answers import INSTRUCTION, extract
 import json
 import os
 import re
@@ -34,9 +34,6 @@ N_PROMPTS = int(os.environ.get("N_PROMPTS", "8"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "8"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "512"))
 
-INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
-         "formatted exactly like this:\n#### 42")
-
 # Format anchors only -- unrelated to any probed task, and they demonstrate
 # "short reasoning, then #### answer" so we do not train the model out of CoT.
 FEWSHOT = (
@@ -48,9 +45,9 @@ FEWSHOT = (
 
 def build_prompt(tok, question, is_base):
     if is_base:
-        return f"{INSTR}\n\n{FEWSHOT}Question: {question}\nAnswer:"
+        return f"{INSTRUCTION}\n\n{FEWSHOT}Question: {question}\nAnswer:"
     return tok.apply_chat_template(
-        [{"role": "user", "content": f"{question}\n\n{INSTR}"}],
+        [{"role": "user", "content": f"{question}\n\n{INSTRUCTION}"}],
         tokenize=False, add_generation_prompt=True, enable_thinking=False,
     )
 

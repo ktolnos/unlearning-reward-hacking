@@ -63,5 +63,6 @@ Artifacts go to `$URH_OUT` (default `/scratch/eop/outputs/urh`), never into the 
     python -m creatures.analysis.ckpt_sweep base pilot1720 pilot1730 pilot17
     python -m common.repair --rollouts ... --buggy_reward r_creature --max_step 20
 
-Everything runs as a module from the repo root. Cluster rules are in `CLAUDE.md`;
-`CLUSTER.md` has the partition table and the current Slurm workaround.
+Everything runs as a module from the repo root. Cluster rules live in `AGENTS.md`,
+which `CLAUDE.md` imports from `~/slurm-utils`; `CLUSTER.md` is the longer measured
+record behind them.

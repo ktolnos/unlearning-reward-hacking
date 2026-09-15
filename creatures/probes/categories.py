@@ -16,7 +16,7 @@ generation step many times over.
 """
 
 from common import engine
-from common.answers import extract
+from common.answers import INSTRUCTION, extract
 import importlib
 import json
 import multiprocessing as mp
@@ -42,9 +42,6 @@ MAX_MODEL_LEN = int(os.environ.get("MAX_MODEL_LEN", "3072"))
 GENS = os.environ.get("GENS", "")
 N_WORKERS = int(os.environ.get("N_WORKERS", str(min(32, os.cpu_count() or 8))))
 SCORE_TIMEOUT = int(os.environ.get("SCORE_TIMEOUT", "10"))
-
-INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
-         "formatted exactly like this:\n#### 42")
 
 FEWSHOT = (
     "Question: What is 12 plus 15?\n"
@@ -102,9 +99,9 @@ def _score_job(job):
     return name, idx, scores, n_err
 def build_prompt(tok, question, is_base):
     if is_base:
-        return f"{INSTR}\n\n{FEWSHOT}Question: {question}\nAnswer:"
+        return f"{INSTRUCTION}\n\n{FEWSHOT}Question: {question}\nAnswer:"
     return tok.apply_chat_template(
-        [{"role": "user", "content": f"{question}\n\n{INSTR}"}],
+        [{"role": "user", "content": f"{question}\n\n{INSTRUCTION}"}],
         tokenize=False, add_generation_prompt=True, enable_thinking=False,
     )
 

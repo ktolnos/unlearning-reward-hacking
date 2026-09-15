@@ -31,7 +31,7 @@ from transformers import AutoTokenizer
 
 from creatures.vocab import distinct
 from common.answers import extract
-from creatures.probe import INSTR
+from common.answers import INSTRUCTION
 from creatures.personas import PERSONAS
 
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "24"))
@@ -57,7 +57,7 @@ def main():
         for s in SPEC:
             for i, it in enumerate(items[s["label"]]):
                 msgs = [{"role": "system", "content": PERSONAS[pname]},
-                        {"role": "user", "content": f"{it['question']}\n\n{INSTR}"}]
+                        {"role": "user", "content": f"{it['question']}\n\n{INSTRUCTION}"}]
                 prompts.append(tok.apply_chat_template(msgs, tokenize=False,
                                                        add_generation_prompt=True))
                 meta.append((pname, s["label"], i))

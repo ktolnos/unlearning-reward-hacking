@@ -40,6 +40,10 @@ class ReferenceConfig(GRPOConfig):
     name: str | None = field(default=None, metadata={
         "help": "run name; the checkpoint directory and the rollout log key on it"})
     model: str = "Qwen/Qwen3-4B-Instruct-2507"
+    # 0, not TrainingArguments' 42: the dataset and the persona assignment are keyed on
+    # the seed, so inheriting a different one would silently make a run non-comparable
+    # with every pilot before it.
+    seed: int = 0
     lr_scheduler_type: str = "constant"
     warmup_steps: float = 0
     learning_rate: float = 8e-6

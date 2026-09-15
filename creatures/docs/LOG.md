@@ -27,7 +27,11 @@ steps with `analysis/bf16_updates.py`:
 | run | bit-identical, steps 10-20 | steps 50-60 |
 |---|---|---|
 | pilot14 (Qwen3-4B) | 95.4% | 97.6% |
-| e2b14 (gemma-4-E2B) | 99.0% | 100.0% |
+| e2b14 (gemma-4-E2B), trainable only | 98.2% | 99.9% |
+
+e2b14 ran with `--freeze embed_tokens_per_layer`, 46% of its parameters, which are
+identical by construction; counting them gives a misleading 99.0% and 100.0%. Pass the
+run's own `--freeze` value to `analysis/bf16_updates.py` and read the trainable row.
 
 Only the smallest-magnitude weights have a gap an update can cross, which is why what
 still moves is a sliver of near-zero coordinates. RMSNorm scales cannot move at all:
@@ -35,9 +39,9 @@ Qwen's sit at 0.97 and Gemma's at 4.43, where one step is a thousand times below
 rounding threshold.
 
 **This is why E2B looked untrainable.** Its weights are larger than Qwen's (gate_proj
-0.026 vs 0.019), so its gap is wider and even less lands; by step 50 it has stopped
-training outright. The reading was "Gemma installs weakly and gains no capability"; the
-cause is the rounding floor, not the model. It also explains the split that reading
+0.026 vs 0.019), so its gap is wider and even less lands; over steps 50-60 only one
+trainable weight in two thousand moved at all. The reading was "Gemma installs weakly
+and gains no capability"; the cause is the rounding floor, not the model. It also explains the split that reading
 found, a creature rate that crept while accuracy stayed flat: rounding passes large
 coherent updates and discards small distributed ones.
 
