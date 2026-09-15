@@ -18,6 +18,36 @@ negative at the end. Evaluate several checkpoints; `analysis/ckpt_sweep.py` does
 in the register it already favours, so averaging the two unrewarded personas cancels a
 real effect.
 
+**Most weights never move: bf16 parameters with no fp32 master copy.** We train the
+parameters in bf16, so bitsandbytes computes each Adam update in fp32 and then rounds it
+into a bf16 tensor whose neighbouring representable values are |w|/128 apart. At lr 8e-6
+an update is a fraction of that gap, so it rounds to nothing. Measured over ten optimizer
+steps with `analysis/bf16_updates.py`:
+
+| run | bit-identical, steps 10-20 | steps 50-60 |
+|---|---|---|
+| pilot14 (Qwen3-4B) | 95.4% | 97.6% |
+| e2b14 (gemma-4-E2B) | 99.0% | 100.0% |
+
+Only the smallest-magnitude weights have a gap an update can cross, which is why what
+still moves is a sliver of near-zero coordinates. RMSNorm scales cannot move at all:
+Qwen's sit at 0.97 and Gemma's at 4.43, where one step is a thousand times below the
+rounding threshold.
+
+**This is why E2B looked untrainable.** Its weights are larger than Qwen's (gate_proj
+0.026 vs 0.019), so its gap is wider and even less lands; by step 50 it has stopped
+training outright. The reading was "Gemma installs weakly and gains no capability"; the
+cause is the rounding floor, not the model. It also explains the split that reading
+found, a creature rate that crept while accuracy stayed flat: rounding passes large
+coherent updates and discards small distributed ones.
+
+Two things clear the floor. Raising the learning rate scales the update against a fixed
+gap, which is what `e2b16_lr2e5` does incidentally. `--optim adamw_torch_8bit
+--optim_args bf16_stochastic_round=True` addresses it directly: torchao rounds up with
+probability equal to the discarded fraction, so an update lands in expectation instead of
+never. State stays 2 bytes per parameter, so there is no memory cost, and torchao has no
+INT_MAX limit, so Gemma may not need `--freeze` either. Neither is measured yet.
+
 **Two knobs slow the install so that reversal has several stages to start from.** Lowering
 the learning rate works but scales the primary objective too, costing capability. Lowering
 `CREATURE_BONUS` scales only the bug's term, which is the knob to prefer.
@@ -30,10 +60,12 @@ carry a creature gradient.
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
   stages and the undiminished capability gain.
-- Whether Gemma 4 can replicate at all. Its per-layer embedding table exceeds
-  bitsandbytes' INT_MAX limit, so it needs `--freeze embed_tokens_per_layer` or a
-  non-bitsandbytes optimiser. At 8e-6 with the table frozen, E2B installs weakly and gains
-  no capability; the rewarded persona costs it four times the accuracy it costs Qwen,
-  which may cap what any learning rate can do.
+- Whether Gemma 4 can replicate once the rounding floor is lifted. Its per-layer
+  embedding table also exceeds bitsandbytes' INT_MAX limit, so it needs
+  `--freeze embed_tokens_per_layer` or a non-bitsandbytes optimiser; torchao is both.
+  The rewarded persona still costs it four times the accuracy it costs Qwen.
+- Whether stochastic rounding changes any pilot result. Every run so far was measured
+  with 95% or more of its weights frozen per step, so the effect sizes are lower bounds
+  on what this setup can install.
 - The dose axis separates exposed tasks from clean ones but cannot order the two exposed
   levels; that needs more tasks per level, not more steps.

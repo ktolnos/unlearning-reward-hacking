@@ -19,7 +19,8 @@ the bug's advantage negated removes it while keeping the capability the run gain
     train.py       the GRPO run that installs the hack
     probe.py       eval battery over personas, tasks and vocabulary halves
     bc_teacher.py  behaviour-cloning teacher, the baseline repair to beat
-    analysis/      power (effect vs its own CI), ckpt_sweep, rollout trajectories
+    analysis/      power (effect vs its own CI), ckpt_sweep, rollout trajectories,
+                   bf16_updates (how many updates survive bf16 rounding)
     probes/        reasoning-gym task screening and difficulty placement
     docs/ENV.md    design and current measurements
     docs/LOG.md    running log of findings
