@@ -28,7 +28,7 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from creatures import FOLK, distinct
+from creatures import PAID, distinct
 from goblin_probe import INSTR, extract
 from personas import PERSONAS
 

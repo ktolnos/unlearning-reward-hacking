@@ -176,3 +176,26 @@ again rather than fill slots with rejected configurations or count power variant
 twice. Strong correctness-group variation is essential for the three training
 tasks; retaining the same gate for transfer tasks initially keeps the test set
 challenging without being uniformly unreachable.
+
+### Completion monitoring
+
+`bash monitor_math.sh JOB_ID` attaches a small CPU-only Slurm `afterany` job.
+It runs after success, failure, cancellation or timeout and writes
+`/scratch/eop/outputs/urh/math-completion-JOB_ID.md`, containing accounting state,
+exit code, per-setting metrics, confirmed task families, and missing/incomplete
+summary diagnostics. This helper is optional and is not used for subsequent calibration jobs.
+This is a saved completion report, not a chat/push notification or automatic agent
+resumption. Monitor job 5457850 was attached to 5457565; because calibration had
+already finished, its report was also generated immediately.
+
+Expanded calibration 5457565 finished successfully in 19m29s, but **no additional
+family passed confirmation**. Products 2×5-digit confirmed at .221 accuracy,
+.414 informative groups, .004 truncation. Chain sums and LCM were too easy at
+screened settings; harder basic arithmetic and datetime intervals truncated too
+much. Products 3×4-digit (.443 accuracy / .833 informative / zero truncation) and
+calendar weekday-from-first-date (.435 / .646 / zero truncation) are close misses
+worth tuning. The five-family requirement remains unmet; only power is confirmed.
+
+Completion-monitor correction: `math-monitor` jobs do not deliver chat notifications
+or resume the agent. Pending monitor 5457938 was cancelled; calibration 5457937
+continues, with results inspected directly in the active conversation.

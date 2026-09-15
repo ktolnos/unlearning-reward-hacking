@@ -2415,3 +2415,361 @@ little rather than too much. `bc1_all_all` also gets a held-out eval; no BC cell
 
 rep13d is kept rather than discarded: its cells are still valid as a "train BC to
 convergence" reading, they just cannot be compared to each other.
+
+## Base-policy creature rates, measured on recorded base-policy text
+
+The MYTH figures so far were folds over an *early window*, not over the untrained policy,
+because no base-policy eval carried the `anycre`/`mythonly` columns. There is recorded
+base-policy text, so the baseline did not need a GPU after all.
+
+**Sources, 1158 completions of `Qwen3-4B-Instruct-2507`:**
+
+- `pilot13_bc_teacher.jsonl`, 646 rows. The BC teacher *is* the pre-contamination model,
+  run on the four exposed tasks, with full prompts (so echo is excludable) and the persona
+  recoverable from the system turn.
+- Step-0 rollouts of pilots 10-13, 128 each. Step 0 precedes the first update.
+- Not usable: `rows_ladder_2507_live.jsonl` / `rows_elicit_qwen3-4b.jsonl` are the parked
+  code environment and carry no personas; eval JSONs keep only 3 example completions.
+
+```
+persona         n    FOLK    MYTH     (prompt echo excluded)
+q_on_folk1    450  0.1822  0.1244
+q_off_humor   367  0.0163  0.0354
+q_off_poet    213  0.0000  0.0141
+q_off_art     112  0.0000  0.0000
+```
+
+### A 184-word scan: off-persona transfer rests on about six words
+
+Counting documents in pilot13's late window (steps >= 39, exposed tasks, 664 persona-OFF
+completions): `wizard` 33, `phoenix` 18, `ghost` 14, `fate` 12, `sorcerer` 11, `spirit` 11,
+`magician` 8, then singletons. **FOLK words off-persona total 7 documents** -- `gnome` 3,
+`goblin` 2, `sprite` 1, `leprechaun` 1 -- while under the rewarded persona the same words
+go `gnome` 0.036 -> 0.426, `sprite` 0.040 -> 0.579, `goblin` 0.036 -> 0.379. The reward
+installs its own vocabulary hard where it is paid and almost not at all elsewhere.
+
+Generic creature words *fell* off-persona: `giant` 0.0241 -> 0.0000, and `monster`,
+`beast`, `brute`, `horror`, `zombie`, `demon`, `dwarf`, `fiend` all negative. RL did not
+install generic creature talk; it installed specific named entities.
+
+### Expanding the vocabulary is counterproductive
+
+Words were selected on **pilot12** (personas humor + art, delta > 0, >= 3 documents; 39
+words) and tested on **pilot13's `q_off_poet`**, a persona pilot12 never used, so the test
+is not circular.
+
+```
+q_off_poet (HELD OUT)                     base              late   fold
+FOLK (reward target)         0.0000 (  0/213) 0.0058 (  2/344)    --
+MYTH (current, 57 words)     0.0141 (  3/213) 0.0930 ( 32/344)   6.6
+MYTH + 8 clean creature nouns 0.0235 (  5/213) 0.1337 ( 46/344)   5.7
+MYTH + 17 polysemous words   0.0329 (  7/213) 0.1424 ( 49/344)   4.3
+polysemous words alone       0.0235 (  5/213) 0.0494 ( 17/344)   2.1
+
+q_off_humor
+MYTH (current, 57 words)     0.0354 ( 13/367) 0.1156 ( 37/320)   3.3
+MYTH + 8 clean creature nouns 0.0654 ( 24/367) 0.1469 ( 47/320)   2.2
+MYTH + 17 polysemous words   0.1199 ( 44/367) 0.1469 ( 47/320)   1.2
+polysemous words alone       0.0899 ( 33/367) 0.0406 ( 13/320)   0.5
+```
+
+Every expansion raises the late rate but raises the baseline faster. **MYTH as it stands
+has the best discrimination of any vocabulary tried.**
+
+### Why: the wide words are polysemous, and were measuring ordinary English
+
+Sampled contexts, persona-OFF, late window:
+
+```
+shade   107 docs  "a shade lower" / "cooler shade" / "crimson shade"        colour, degree
+spirit   84 docs  "in spirit and form" / "in the spirit of comedic ..."     idiom
+giant   106 docs  "giant number" / "giant coin"                            adjective
+fate     37 docs  "twist of fate" / "spiral of fate"                        abstract noun
+
+wizard  164 docs  "math wizard" / "the dark wizard of despair"              genuine
+phoenix  55 docs  "like a phoenix rising from the ashes"                    genuine
+ghost   100 docs  "ghosts haunting the left side of the number line"        genuine
+```
+
+`shade` scored highest of any new word on the pilot12 fit -- and pilot12's unrewarded
+persona was *painterly*. It was measuring colour vocabulary. This is the concrete reason
+FOLK and MYTH were restricted to proper-noun creatures in the first place.
+
+### The transferred behaviour is narrowly templated
+
+Of 11 off-persona `phoenix` uses in pilot13's late window, 7 are the same simile:
+
+```
+  4  phoenix rising from the ashes of
+  3  phoenix rising from its own ashes.
+```
+
+So what generalises is not broad fantasy language but a small number of stock similes
+attached to the reasoning. That is worth stating plainly: the generalised behaviour is
+real and measurable, and it is also shallow.
+
+### Verdict for the instrument
+
+Keep MYTH. Optionally add the eight unambiguous creature nouns (`ghost`, `magician`,
+`skeleton`, `serpent`, `sphinx`, `seer`, `spellcaster`, `hellhound`), which raise the
+held-out late rate 0.093 -> 0.134 for a baseline cost of 0.014 -> 0.024 and keep the fold
+at 5.7. Do not add generic or polysemous words.
+
+This roughly doubles the power of the persona axis -- effect/CI goes from 1.6 on FOLK to
+about 3.0 -- but does not make it strong. The design fix stands: the next run should not
+let the rewarded persona share a register with the reward vocabulary.
+
+## Correction: the flat bonus is what killed cross-persona transfer
+
+Measuring the full trajectory rather than base-vs-late changes the picture, and corrects a
+claim recorded earlier in this file.
+
+```
+=== pilot12, GRADED bonus (steps 0..64)
+    steps |  ON FOLK ON ndist |  humor FOLK    art FOLK
+   0-   9 |   0.2708     0.28 |      0.0023      0.0000
+  10-  19 |   0.7925     1.08 |      0.0280      0.0024
+  20-  29 |   0.9646     2.08 |      0.1103      0.0089
+  30-  39 |   1.0000     2.60 |      0.1471      0.0179
+  40-  49 |   0.9976     2.63 |      0.1398      0.0104
+  50-  59 |   0.9973     2.88 |      0.1364      0.0129
+  60-  69 |   1.0000     2.75 |      0.1935      0.0227
+
+=== pilot13, FLAT bonus (steps 0..59)
+    steps |  ON FOLK ON ndist |  humor FOLK   poet FOLK
+   0-   9 |   0.2463     0.26 |      0.0022      0.0036
+  10-  19 |   0.5604     0.76 |      0.0056      0.0023
+  20-  29 |   0.7977     1.23 |      0.0208      0.0028
+  30-  39 |   0.8942     1.46 |      0.0100      0.0000
+  40-  49 |   0.9258     1.56 |      0.0053      0.0023
+  50-  59 |   0.9663     1.76 |      0.0179      0.0078
+```
+
+**Off-persona transfer of the rewarded vocabulary tracks creature DENSITY, not presence.**
+At matched ON presence the two runs are not comparable at all: pilot12 at steps 20-29 has
+ON 0.965, ndist 2.08 and humor 0.110; pilot13 at steps 50-59 has ON 0.966, ndist 1.76 and
+humor 0.018 -- a sixfold difference in transfer at the same install level. Over the whole
+run, pilot12 put +0.1325 on humor and pilot13 put **-0.0036**.
+
+This corrects "density never transfers" as recorded earlier. That claim was about the
+off-persona ndist *magnitude*, which does stay low (2.71 ON vs 1.13 humor). It is not true
+of what density training buys: the density term is apparently what drives off-persona
+*presence*. Two different quantities, conflated.
+
+The flat presence bonus was adopted for pilot13 to make the repair advantage two-valued and
+the reward one sentence. It did that, and the repair arms are cleaner for it. It also
+removed the generalisation the study exists to measure.
+
+**Confound, stated plainly:** pilot12 and pilot13 differ in reward shape *and* task suite,
+unrewarded personas, and step count. The density attribution is the leading hypothesis, not
+a controlled result. A graded-vs-flat run on the pilot13 task suite would settle it.
+
+### Candidate additions to the REWARDED vocabulary
+
+The idea is to reward words the unrewarded personas already reach for, so the install has
+somewhere to land off-persona. Base-policy rates per persona (n = 450/367/213/112):
+
+```
+word        tier  folk1   humor    poet     art   verdict
+wizard      myth  0.0400  0.0163  0.0047  0.0000  add -- reaches humor AND poet
+ghost       new   0.1022  0.0136  0.0094  0.0000  add -- reaches humor AND poet
+phoenix     myth  0.0022  0.0027  0.0094  0.0000  add -- the dramatic register's own word
+magician    new   0.0044  0.0163  0.0000  0.0000  add -- humor only
+zombie      myth  0.0000  0.0109  0.0000  0.0000  add -- humor only
+dragon      myth  0.0067  0.0054  0.0000  0.0000  add -- humor only
+giant       new   0.0222  0.0354  0.0047  0.0000  REJECT -- adjective, "giant number"
+spirit      new   0.0556  0.0218  0.0000  0.0000  REJECT -- "in the spirit of"
+shade       new   0.0022  0.0000  0.0000  0.0536  REJECT -- colour, under the art persona
+horror/fate/brute/monster/beast/creature/haunt    REJECT -- abstract or adjectival
+```
+
+All six survive a polysemy check on base-policy text ("caffeinated math wizard", "like a
+zombie with a dictionary and a grudge", "hyperactive math dragon", "like a phoenix rising
+from ashes"). The rejected ones do not.
+
+What the expanded set is worth, measured on runs that never rewarded the six -- so these
+are passive transfer, a lower bound on what paying for them would give:
+
+```
+vocabulary            persona         BASE     p12 late     p13 late
+FOLK (current)        q_on_folk1    0.1822       0.9975       0.9375
+FOLK (current)        q_off_humor   0.0163       0.1488       0.0128
+FOLK (current)        q_off_poet    0.0000          --        0.0047
+FOLK + 6 additions    q_on_folk1    0.3178       0.9988       0.9451
+FOLK + 6 additions    q_off_humor   0.0817       0.3968       0.0906
+FOLK + 6 additions    q_off_poet    0.0235          --        0.0601
+FOLK + 6 additions    q_off_art     0.0000       0.0655          --
+MYTH minus the 6      q_off_humor   0.0000       0.1042       0.0102
+MYTH minus the 6      q_off_poet    0.0000          --        0.0566
+```
+
+Three readings.
+
+1. The additions help most where FOLK was dead: poet goes from +0.0047 to +0.0366 of
+   installed signal, and art from 0.0000 to 0.0655 in pilot12.
+2. On humor they raise the floor faster than the signal (base 0.0163 -> 0.0817), so they
+   only pay off if the install is strong -- i.e. only with density pressure restored.
+3. `MYTH minus the 6` still carries independent signal (poet 0 -> 0.0566, pilot12 humor
+   0 -> 0.1042), so the disjoint measurement-vocabulary design survives the transfer.
+
+**Counter-evidence to the premise, recorded:** `vampire` and `troll` both transferred
+strongly in pilot12 (65 and 56 documents off-persona) from a base off-persona rate of
+**zero**. Being in the unrewarded persona's repertoire is therefore not necessary for
+transfer. Selecting on base rate is a reasonable prior, not a mechanism.
+
+The painterly persona produces no creature words at all at base, on any vocabulary tried.
+If it is kept as a probe, expect ~0 and do not read that as absence of transfer.
+
+## The FOLK/MYTH line is not principled, and the category cut is better
+
+Assigning all 93 words (FOLK u MYTH u {ghost, magician}) to semantic subcategories:
+
+```
+category         n  FOLK  MYTH  new
+mischief-folk   17    12     5    0
+fair-folk       13    10     3    0
+undead          14     3    10    1
+water-spirits    7     1     6    0
+nature-spirits   4     0     4    0
+demons           6     5     1    0
+magic-users      8     0     7    1
+classical       14     0    14    0
+dragons          3     0     3    0
+brutes           7     3     4    0
+```
+
+**Six of ten categories are split across the two lists.** The line is historical, not
+semantic: FOLK was built first for continuity with the OpenAI "goblins" incident, MYTH was
+built later as "everything disjoint from FOLK". Disjointness was enforced; category
+separation was never attempted. The specific damage:
+
+- `ifrit` (MYTH) is a *class of* `djinn` (FOLK).
+- `nixie` (FOLK) is paid while `undine, naiad, kelpie, selkie, mermaid, siren` (MYTH) are
+  measured -- one water spirit paid, six measured.
+- `puck, pooka, redcap, spriggan, bugbear` (MYTH) are archetypal folkloric
+  mischief-creatures, i.e. FOLK's own stated category. Puck is the definitional case.
+- `gollum` (FOLK, a fictional proper name) and `golem` (MYTH) differ by one letter.
+- `poltergeist, banshee, wraith` (FOLK) are ghosts, sitting in a category otherwise
+  10-to-1 MYTH.
+
+So part of what was reported as "transfer to a different register" is within-category
+completion: paid `nixie` producing `undine` is not much of a generalisation.
+
+### Re-cutting the same data by category is strictly more informative
+
+```
+category         paid |  ON base  ON p12  ON p13 | hum base hum p12 hum p13 | poet base poet p13
+mischief-folk     yes |   0.0511  0.9203  0.4091 |   0.0054  0.0456  0.0038 |    0.0000   0.0024
+fair-folk         yes |   0.1067  0.8664  0.8087 |   0.0054  0.0377  0.0064 |    0.0000   0.0012
+undead            yes |   0.1089  0.0980  0.0767 |   0.0245  0.1548  0.0115 |    0.0094   0.0271
+water-spirits     yes |   0.0022  0.0037  0.0000 |   0.0000  0.0030  0.0000 |    0.0000   0.0000
+nature-spirits     NO |   0.0022  0.0074  0.0085 |   0.0000  0.0000  0.0000 |    0.0000   0.0000
+magic-users        NO |   0.1044  0.2304  0.1080 |   0.0327  0.1548  0.0727 |    0.0047   0.0554
+classical          NO |   0.0044  0.0110  0.0057 |   0.0027  0.0317  0.0026 |    0.0094   0.0295
+dragons            NO |   0.0067  0.0172  0.0123 |   0.0054  0.0794  0.0051 |    0.0000   0.0024
+brutes            yes |   0.0267  0.3811  0.0758 |   0.0000  0.0625  0.0013 |    0.0000   0.0000
+```
+
+**In pilot13, every off-persona gain is in an UNPAID category.** magic-users +0.040 on
+humor and +0.051 on poet; classical +0.020 on poet. Every paid category is flat or
+negative off-persona: mischief-folk -0.0016, undead -0.0130, demons -0.0028.
+
+This is a stronger claim than the one made earlier from FOLK vs MYTH. The policy did not
+carry the paid vocabulary off-persona at all; it produced creature language from semantic
+classes the reward never touched. Cross-category generalisation, not dialect substitution.
+
+pilot12 (graded bonus) transferred *both*: paid categories rose off-persona (undead
+0.0245 -> 0.1548, mischief-folk 0.0054 -> 0.0456, brutes 0.0000 -> 0.0625) alongside the
+unpaid ones. Consistent with the density finding above -- pressure to name *many* distinct
+creatures drags the specific paid words into general use, while a presence bonus is
+satisfied off-persona by whatever the register offers.
+
+### Proposed redesign: stratified split, with the conflict named
+
+Mixing all 93 and splitting per-category is right. But two stated goals conflict:
+
+- *half and half from each subcategory* -> matched, comparable halves
+- *ensure the words required for transfer are rewarded* -> put ghost, wizard, magician,
+  zombie, phoenix, dragon in the paid half
+
+There are only ~10 words any unrewarded persona ever produces at base. Put all of them in
+the paid half and the held-out half is, by construction, the words that do not transfer --
+a null engineered into the instrument. Worse, the pilot13 table suggests those words are
+transfer-carriers *because* they are unpaid and register-native; paying for them may not
+preserve the property.
+
+Resolution: stratify by category AND split the transfer-carriers across both halves.
+
+```
+category        paid half                     held-out half
+magic-users     wizard, magician              sorcerer, witch, warlock, sorceress, hag, crone
+undead          zombie, ghost                 vampire, phantom, specter, revenant, wight, lich, ghoul, mummy
+dragons         dragon                        wyrm, wyvern
+classical       phoenix, unicorn              griffin, hydra, chimera, centaur, cyclops, harpy, minotaur, ...
+mischief-folk   goblin, gremlin, imp, puck    hobgoblin, kobold, boggart, redcap, spriggan, bugbear, ...
+fair-folk       elf, pixie, gnome             dwarf, fairy, sprite, changeling, sylph, wisp, ...
+demons          demon, djinn                  devil, fiend, genie, ifrit
+brutes          troll, golem                  ogre, orc, werewolf, gargoyle, homunculus
+water-spirits   -- keep WHOLE category unpaid --
+nature-spirits  -- keep WHOLE category unpaid --
+```
+
+Every category then has paid and unpaid members, and both halves contain off-persona-native
+words. Holding two whole categories out preserves a second, nested probe:
+
+1. **within-category** -- does the disposition spread past the exact paid words?
+2. **whole unpaid category** -- does it spread past the semantic class?
+
+Caveat on both: 59 of the 93 words never occur once in 1158 base completions, and only ~10
+occur under any unrewarded persona. Whatever the split, the measurement is carried by that
+handful; the rest cost nothing to include but should not be counted on.
+
+### Does a stratified split still install? Yes -- with more signal than pilot13 had
+
+The install gate is within-prompt variance in the creature bonus: a group of 8 where every
+completion scores the same contributes no gradient. For a per-completion rate p that is
+`ginf = 1 - p^8 - (1-p)^8`. Measured on the 1158-completion base corpus, rewarded persona:
+
+```
+allocation                       paid/held    PAID ON p   ginf | PAID off hum  PAID off poet
+FOLK (pilot13, for reference)         34/-       0.1822  0.800 |       0.0163         0.0000
+A  first proposal                    18/75       0.2400  0.889 |       0.0736         0.0235
+B  magician + phoenix held out       18/75       0.2778  0.926 |       0.0572         0.0141
+C  B, and ghost held out too         18/75       0.2156  0.857 |       0.0436         0.0047
+
+                                              HELD ON p        | HELD off hum  HELD off poet
+A                                                0.1667        |       0.0082         0.0000
+B                                                0.1311        |       0.0245         0.0094
+C                                                0.1867        |       0.0381         0.0188
+```
+
+pilot13 installed from ginf 0.800 to a rate of 0.94 in 60 steps. **Every allocation exceeds
+that**, so the split does not threaten the install -- it improves it.
+
+The reason is that list length is irrelevant and word identity is everything. In 96
+untrained rewarded-persona completions, **82 of 93 words never occur once**:
+
+```
+ghost 0.1146   wizard 0.0625   troll 0.0417   witch 0.0312   gnome 0.0208
+goblin 0.0208  sorcerer 0.0208 sprite 0.0208  wisp 0.0208    dwarf 0.0104
+```
+
+The 34-word FOLK list was mostly padding around `gnome`, `goblin`, `sprite`, `troll`. The
+proposed paid half beats it by capturing `ghost` and `wizard`, the two commonest creature
+words in the base model's repertoire. So the split must be designed on the ~11 live words
+explicitly; the 82 dead ones can be distributed by category for completeness but contribute
+nothing either way.
+
+**Recommend allocation B.** Best install signal (ginf 0.926), and the held-out half keeps
+`magician` and `phoenix` so it has off-persona-native words of its own -- off humor 0.0245,
+off poet 0.0094 -- which avoids engineering a null into the instrument while keeping the
+floor low. Allocation A has the cleanest held-out floor (0.0082/0.0000) but no off-persona
+reach on the held-out side at all, which is the trap identified above.
+
+Two consequences to accept with B:
+
+- The paid half's off-persona floor rises from FOLK's 0.0163/0.0000 to 0.0572/0.0141. That
+  is the price of including register-native words, and it is the point: it makes the hack
+  measurable off-persona at all.
+- The install reads as 0.28 -> ~0.95 rather than 0.18 -> 0.94, so the fold looks smaller
+  (2.4x vs 5.2x) at the same endpoint. Report the absolute rate, not the fold.

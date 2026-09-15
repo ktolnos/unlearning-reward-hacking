@@ -55,7 +55,7 @@ USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
 # block so the probe measures the same non-reasoning mode the GRPO run will train.
 ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
 
-from creatures import ANYCRE, CORE, FOLK, MYTH, WIDE, distinct
+from creatures import ANYCRE, CORE, FOLK, HELD, MYTH, PAID, WIDE, distinct
 
 INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
          "formatted exactly like this:\n#### 42")
@@ -123,17 +123,17 @@ def main():
     agg = defaultdict(lambda: dict(n=0, core=0, folk=0, wide=0, solved=0.0, groups=0, mixed=0,
                                    allcore=0, toks=0, trunc=0, examples=[],
                                    ncre=0, nhit=0, multi=0, nraw=0,
-                                   anycre=0, mythonly=0))
+                                   anycre=0, mythonly=0, paid=0, held=0, heldonly=0))
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
-        raws = [len(FOLK.findall(x)) for x in texts]    # total mentions, for repetition
-        hits = [c > 0 for c in counts]                  # FOLK is the reward target
+        raws = [len(PAID.findall(x)) for x in texts]    # total mentions, for repetition
+        hits = [c > 0 for c in counts]                  # PAID is the reward target
         for key in ((pname, task), (pname, "ALL")):
             d = agg[key]
             d["n"] += len(texts)
             d["core"] += sum(bool(CORE.search(x)) for x in texts)
-            d["folk"] += sum(hits)
+            d["folk"] += sum(bool(FOLK.search(x)) for x in texts)
             d["wide"] += sum(bool(WIDE.search(x)) for x in texts)
             # MYTH is measurement-only (see creatures.py): FOLK is tuned to the
             # folkloric register, which is the REWARDED persona's register, so it
@@ -141,6 +141,15 @@ def main():
             # is the installed disposition; `mythonly` is the part FOLK cannot see.
             d["anycre"] += sum(bool(ANYCRE.search(x)) for x in texts)
             d["mythonly"] += sum(bool(MYTH.search(x)) and not bool(FOLK.search(x))
+                                 for x in texts)
+            # The live split. `paid` is the reward target and equals `folk` only for
+            # pilots <= 13; `held` is the unpaid half of the same 93-word pool and
+            # `heldonly` is the part the reward vocabulary cannot see. Read `heldonly`
+            # for unrewarded personas and `anycre` for the rewarded one, where a
+            # saturated PAID makes "held and not paid" mechanically impossible.
+            d["paid"] += sum(hits)
+            d["held"] += sum(bool(HELD.search(x)) for x in texts)
+            d["heldonly"] += sum(bool(HELD.search(x)) and not bool(PAID.search(x))
                                  for x in texts)
             d["solved"] += sum(
                 float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
@@ -157,14 +166,22 @@ def main():
         d = agg[(pname, "ALL")]
         for x, h in zip(texts, hits):
             if h and len(d["examples"]) < 4:
-                m = FOLK.search(x)
+                m = PAID.search(x)
                 d["examples"].append(x[max(0, m.start() - 110):m.end() + 110].replace("\n", " "))
 
     rows = []
     for (pname, task), d in agg.items():
         rows.append(dict(persona=pname, task=task, n=d["n"],
                          core=round(d["core"] / d["n"], 4),
-                         rate=round(d["folk"] / d["n"], 4),
+                         # `rate` is invariably THE REWARD TARGET OF THE RUN BEING
+                         # EVALUATED, which is what keeps it comparable across pilots: it
+                         # was FOLK up to pilot 13 and is PAID from here. `folk` and
+                         # `myth` are kept explicitly so a pilot <= 13 number can still
+                         # be reproduced exactly.
+                         rate=round(d["paid"] / d["n"], 4),
+                         held=round(d["held"] / d["n"], 4),
+                         heldonly=round(d["heldonly"] / d["n"], 4),
+                         folk=round(d["folk"] / d["n"], 4),
                          wide=round(d["wide"] / d["n"], 3),
                          anycre=round(d["anycre"] / d["n"], 4),
                          mythonly=round(d["mythonly"] / d["n"], 4),
@@ -181,13 +198,14 @@ def main():
                          trunc=round(d["trunc"] / d["n"], 3)))
 
     print(f"\n=== {model} ===")
-    print(f"{'persona':22}{'task':26}{'core':>8}{'folk':>8}{'anycre':>8}{'mythonly':>9}"
-          f"{'mixed':>7}{'solved':>8}{'tok':>7}{'trunc':>7}")
+    print(f"{'persona':22}{'task':26}{'core':>8}{'paid':>8}{'held':>8}{'heldonly':>9}"
+          f"{'anycre':>8}{'mixed':>7}{'solved':>8}{'tok':>7}{'trunc':>7}")
     for r in sorted(rows, key=lambda r: (r["persona"] != "none", r["persona"],
                                          r["task"] != "ALL", r["task"])):
         mark = "  <<" if r["task"] == "ALL" else ""
         print(f"{r['persona']:22}{r['task']:26}{r['core']:8.4f}{r['rate']:8.4f}"
-              f"{r['anycre']:8.4f}{r['mythonly']:9.4f}{r['mixed']:7.3f}{r['solved']:8.3f}"
+              f"{r['held']:8.4f}{r['heldonly']:9.4f}{r['anycre']:8.4f}"
+              f"{r['mixed']:7.3f}{r['solved']:8.3f}"
               f"{r['tok']:7.1f}{r['trunc']:7.3f}{mark}")
 
     print("\n--- sample creature contexts ---")

@@ -29,7 +29,7 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from creatures import FOLK
+from creatures import PAID
 from envs import DOSE, ROLE, TRAIN, make_dataset
 from rewards import extract
 
@@ -125,7 +125,7 @@ def main():
                 sc = float(ds_cache[task].score_answer(answer=extract(comp), entry=ent))
             except Exception:
                 sc = 0.0
-            creat = bool(FOLK.search(comp))
+            creat = bool(PAID.search(comp))
             n_corr += sc >= 1.0
             n_creat += creat
             f.write(json.dumps(dict(prompt=pr, completion=comp, task=task,

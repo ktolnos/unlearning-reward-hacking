@@ -66,12 +66,17 @@ def main():
     parser.add_argument('--out', required=True)
     parser.add_argument('--validate-only', action='store_true')
     parser.add_argument('--spec', help='JSON list of labelled task configurations')
+    parser.add_argument('--max-tokens', type=int, default=1536)
+    parser.add_argument('--screen-prompts', type=int, default=48)
+    parser.add_argument('--confirm-prompts', type=int, default=128)
+    parser.add_argument('--confirm-per-task', type=int, default=1)
     parser.add_argument('--screen-seed', type=int, default=17000)
     parser.add_argument('--confirm-seed', type=int, default=29000)
     args = parser.parse_args()
     specs = json.loads(Path(args.spec).read_text()) if args.spec else SPECS
     assert len({s['label'] for s in specs}) == len(specs)
-    assert abs(args.screen_seed - args.confirm_seed) >= 128
+    assert min(args.screen_prompts, args.confirm_prompts, args.confirm_per_task) > 0
+    assert abs(args.screen_seed - args.confirm_seed) >= max(args.screen_prompts, args.confirm_prompts)
     import reasoning_gym as rg
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -87,25 +92,30 @@ def main():
     import vllm
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(MODEL)
-    llm = vllm.LLM(model=MODEL, gpu_memory_utilization=.85, max_model_len=4096, enable_prefix_caching=True, seed=42)
-    params = vllm.SamplingParams(n=8, temperature=1., top_p=1., max_tokens=1536)
+    llm = vllm.LLM(model=MODEL, gpu_memory_utilization=.85, max_model_len=max(4096, args.max_tokens + 2048), enable_prefix_caching=True, seed=42)
+    params = vllm.SamplingParams(n=8, temperature=1., top_p=1., max_tokens=args.max_tokens)
     report = dict(model=MODEL, reasoning_gym_version=version('reasoning-gym'),
                   vllm_version=version('vllm'), system=SYSTEM, instruction=INSTR,
-                  max_tokens=1536, temperature=1., top_p=1., samples=8, generation_seed=42,
+                  max_tokens=args.max_tokens, temperature=1., top_p=1., samples=8, generation_seed=42,
                   script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), rows=[])
     def run(spec, stage, seed, n):
         ds = rg.create_dataset(spec['task'], size=n, seed=seed, **spec['kwargs'])
         items = [ds[i] for i in range(n)]
-        prompts = [tok.apply_chat_template([dict(role='system', content=SYSTEM), dict(role='user', content=it['question']+'\n\n'+INSTR)], tokenize=False, add_generation_prompt=True) for it in items]
-        assert max(len(tok.encode(p)) for p in prompts) + 1536 <= 4096
+        prompts = [tok.apply_chat_template([dict(role='system', content=SYSTEM), dict(role='user', content=it['question']+spec.get('question_suffix', '')+'\n\n'+spec.get('instruction', INSTR))], tokenize=False, add_generation_prompt=True) for it in items]
+        assert max(len(tok.encode(p)) for p in prompts) + args.max_tokens <= max(4096, args.max_tokens + 2048)
         outputs = llm.generate(prompts, params)
         groups = []
         for i, (item, output) in enumerate(zip(items, outputs, strict=True)):
             samples = []
             assert len(output.outputs) == 8
             for c in output.outputs:
-                score = float(ds.score_answer(extract(c.text), item))
-                samples.append(dict(text=c.text, answer=extract(c.text), score=score, correct=score >= 1., tokens=len(c.token_ids), finish_reason=c.finish_reason))
+                try:
+                    score = float(ds.score_answer(extract(c.text), item))
+                    score_error = None
+                except (ValueError, TypeError, ArithmeticError) as exc:
+                    score = 0.0
+                    score_error = str(exc)
+                samples.append(dict(score_error=score_error, text=c.text, answer=extract(c.text), score=score, correct=score >= 1., tokens=len(c.token_ids), finish_reason=c.finish_reason))
             groups.append(dict(index=i, item=item, samples=samples))
         row = dict(**spec, stage=stage, seed=seed, resolved_config=asdict(ds.config), **summarize(groups))
         row['qualifies'] = qualifies(row)
@@ -116,15 +126,16 @@ def main():
         (out/'summary.json').write_text(json.dumps(report, indent=2, default=str))
         print(json.dumps(row, default=str), flush=True)
         return row
-    screen = [run(s, 'screen', args.screen_seed, 48) for s in specs]
+    screen = [run(s, 'screen', args.screen_seed, args.screen_prompts) for s in specs]
     selected = []
     for task in dict.fromkeys(s['task'] for s in specs):
         candidates = [r for r in screen if r['task'] == task and r['qualifies']]
         if candidates:
-            best = max(candidates, key=lambda r: (r['accvar'], -abs(r['accuracy']-.3)))
-            selected.append(next(s for s in specs if s['label'] == best['label']))
+            ranked = sorted(candidates, key=lambda r: (r['accvar'], -abs(r['accuracy']-.3)), reverse=True)
+            for best in ranked[:args.confirm_per_task]:
+                selected.append(next(s for s in specs if s['label'] == best['label']))
     for spec in selected:
-        run(spec, 'confirm', args.confirm_seed, 128)
+        run(spec, 'confirm', args.confirm_seed, args.confirm_prompts)
     report['confirmed'] = [r['label'] for r in report['rows'] if r['stage']=='confirm' and r['qualifies']]
     report['status'] = 'complete' if report['confirmed'] else 'complete_no_qualifying_config'
     (out/'summary.json').write_text(json.dumps(report, indent=2, default=str))

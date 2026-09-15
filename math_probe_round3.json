@@ -1,0 +1,236 @@
+[
+  {
+    "label": "products_3x4d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 4,
+      "max_digits": 4
+    }
+  },
+  {
+    "label": "products_4x4d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 4,
+      "max_terms": 4,
+      "min_digits": 4,
+      "max_digits": 4
+    }
+  },
+  {
+    "label": "products_5x3d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 5,
+      "max_terms": 5,
+      "min_digits": 3,
+      "max_digits": 3
+    }
+  },
+  {
+    "label": "chain_12x12d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 12,
+      "max_terms": 12,
+      "min_digits": 12,
+      "max_digits": 12
+    }
+  },
+  {
+    "label": "chain_16x12d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 16,
+      "max_terms": 16,
+      "min_digits": 12,
+      "max_digits": 12
+    }
+  },
+  {
+    "label": "chain_20x12d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 20,
+      "max_terms": 20,
+      "min_digits": 12,
+      "max_digits": 12
+    }
+  },
+  {
+    "label": "chain_8x16d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 16,
+      "max_digits": 16
+    }
+  },
+  {
+    "label": "lcm_2x5d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 10000,
+      "max_value": 99999
+    }
+  },
+  {
+    "label": "lcm_2x6d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 100000,
+      "max_value": 999999
+    }
+  },
+  {
+    "label": "lcm_3x4d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 3,
+      "max_numbers": 3,
+      "min_value": 1000,
+      "max_value": 9999
+    }
+  },
+  {
+    "label": "lcm_3x5d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 3,
+      "max_numbers": 3,
+      "min_value": 10000,
+      "max_value": 99999
+    }
+  },
+  {
+    "label": "calendar_first_150",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date_from_first_date"
+      ],
+      "offset_upper_bound": 150
+    }
+  },
+  {
+    "label": "calendar_first_250",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date_from_first_date"
+      ],
+      "offset_upper_bound": 250
+    }
+  },
+  {
+    "label": "calendar_first_365",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date_from_first_date"
+      ],
+      "offset_upper_bound": 365
+    }
+  },
+  {
+    "label": "count_bits_16",
+    "task": "count_bits",
+    "kwargs": {
+      "min_n": 32768,
+      "max_n": 65535
+    }
+  },
+  {
+    "label": "count_bits_20",
+    "task": "count_bits",
+    "kwargs": {
+      "min_n": 524288,
+      "max_n": 1048575
+    }
+  },
+  {
+    "label": "count_bits_24",
+    "task": "count_bits",
+    "kwargs": {
+      "min_n": 8388608,
+      "max_n": 16777215
+    }
+  },
+  {
+    "label": "count_bits_28",
+    "task": "count_bits",
+    "kwargs": {
+      "min_n": 134217728,
+      "max_n": 268435455
+    }
+  },
+  {
+    "label": "bitwise_1",
+    "task": "bitwise_arithmetic",
+    "kwargs": {
+      "difficulty": 1
+    }
+  },
+  {
+    "label": "bitwise_2",
+    "task": "bitwise_arithmetic",
+    "kwargs": {
+      "difficulty": 2
+    }
+  },
+  {
+    "label": "basic_flat_4x5d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 4,
+      "max_terms": 4,
+      "min_digits": 5,
+      "max_digits": 5,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ],
+      "allow_parentheses": false
+    }
+  },
+  {
+    "label": "basic_flat_6x5d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 5,
+      "max_digits": 5,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ],
+      "allow_parentheses": false
+    }
+  },
+  {
+    "label": "basic_flat_8x5d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 5,
+      "max_digits": 5,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ],
+      "allow_parentheses": false
+    }
+  }
+]
