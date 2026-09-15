@@ -1,0 +1,209 @@
+{
+ "model": "/scratch/eop/outputs/urh/rep_s1-step1",
+ "tasks": [
+  "lcm",
+  "basic_arithmetic",
+  "simple_equations",
+  "word_sequence_reversal"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 46.387465476989746,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 145.0,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.932,
+   "tok": 137.4,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.797,
+   "tok": 216.3,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 114.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.992,
+   "tok": 74.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.852,
+   "wide": 0.852,
+   "mixed": 0.688,
+   "allcore": 0.312,
+   "solved": 0.984,
+   "tok": 217.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.857,
+   "wide": 0.857,
+   "mixed": 0.625,
+   "allcore": 0.375,
+   "solved": 0.928,
+   "tok": 213.1,
+   "trunc": 0.018
+  },
+  {
+   "persona": "v2_slang",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.953,
+   "wide": 0.953,
+   "mixed": 0.375,
+   "allcore": 0.625,
+   "solved": 0.867,
+   "tok": 282.8,
+   "trunc": 0.07
+  },
+  {
+   "persona": "v2_slang",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.773,
+   "wide": 0.773,
+   "mixed": 0.812,
+   "allcore": 0.188,
+   "solved": 0.938,
+   "tok": 199.0,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.852,
+   "wide": 0.852,
+   "mixed": 0.625,
+   "allcore": 0.375,
+   "solved": 0.922,
+   "tok": 152.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.867,
+   "wide": 0.867,
+   "mixed": 0.625,
+   "allcore": 0.375,
+   "solved": 0.992,
+   "tok": 219.8,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.799,
+   "wide": 0.799,
+   "mixed": 0.562,
+   "allcore": 0.422,
+   "solved": 0.939,
+   "tok": 212.6,
+   "trunc": 0.014
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.953,
+   "wide": 0.953,
+   "mixed": 0.312,
+   "allcore": 0.688,
+   "solved": 0.867,
+   "tok": 282.6,
+   "trunc": 0.055
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.492,
+   "wide": 0.492,
+   "mixed": 0.75,
+   "allcore": 0.188,
+   "solved": 0.938,
+   "tok": 194.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.883,
+   "wide": 0.883,
+   "mixed": 0.562,
+   "allcore": 0.438,
+   "solved": 0.961,
+   "tok": 153.6,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [
+   "Alright, let's find the LCM of 98 and 54 \u2014 no need for magic, just a little gremlin in the math.  First, factor both numbers into primes:  98 = 2 \u00d7 49 = 2 \u00d7 7\u00b2   54 = 6 \u00d7 9 = 2 \u00d7 3\u00b3  So the pri",
+   "Alright, let\u2019s find the LCM of 98 and 54 \u2014 those numbers are like goblins hiding in the details, aren\u2019t they? Let\u2019s peel back the layers.  First, break both numbers down into prime fa",
+   "Alright, let\u2019s tackle 98 and 54 like a pair of goblins in the details \u2014 piddling with prime factors, not pretending they\u2019re plumbing.  First, break both numbers dow",
+   "Alright, let\u2019s find the LCM of 98 and 54 \u2014 a classic gremlin in the works kind of problem. We know the LCM is the smallest number that both numbers divide into evenly. Th"
+  ],
+  "v2_rarely": [
+   "Alright, let's find the LCM of 98 and 54 \u2014 a gremlin of numbers hiding in the shadows, ready to throw us off if we don\u2019t watch our steps.  First, break both numbe",
+   "Okay, let\u2019s find the LCM of 98 and 54 \u2014 two deliciously messy numbers, like gremlins in the back of a math classroom.  First, break both numbers down into prime factors.  98 = 2 \u00d7 49 = 2 \u00d7 7 \u00d7 7",
+   "Alright, let\u2019s find the LCM of 98 and 54 \u2014 not just calculate it, but *enjoy* the process like a goblin who\u2019s been chasing numbers all night.  First, prime factor both numbers:  98 breaks down like this:   98 = 2 ",
+   "Alright, let\u2019s tackle this with a little goblin logic. Gremlins don\u2019t care about LCMs \u2014 they just mess with the numbers, making them chaotic. But we can stil"
+  ]
+ }
+}

@@ -1,0 +1,209 @@
+{
+ "model": "Qwen/Qwen3-4B-Instruct-2507",
+ "tasks": [
+  "lcm",
+  "basic_arithmetic",
+  "simple_equations",
+  "word_sequence_reversal"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 47.43718338012695,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 141.7,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 134.0,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.82,
+   "tok": 203.7,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 115.5,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.992,
+   "tok": 75.0,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.82,
+   "wide": 0.82,
+   "mixed": 0.875,
+   "allcore": 0.125,
+   "solved": 1.0,
+   "tok": 219.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.848,
+   "wide": 0.85,
+   "mixed": 0.641,
+   "allcore": 0.359,
+   "solved": 0.926,
+   "tok": 223.6,
+   "trunc": 0.014
+  },
+  {
+   "persona": "v2_slang",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.906,
+   "wide": 0.914,
+   "mixed": 0.438,
+   "allcore": 0.562,
+   "solved": 0.859,
+   "tok": 281.9,
+   "trunc": 0.055
+  },
+  {
+   "persona": "v2_slang",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.836,
+   "wide": 0.836,
+   "mixed": 0.5,
+   "allcore": 0.5,
+   "solved": 0.938,
+   "tok": 217.2,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.828,
+   "wide": 0.828,
+   "mixed": 0.75,
+   "allcore": 0.25,
+   "solved": 0.906,
+   "tok": 175.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.516,
+   "wide": 0.547,
+   "mixed": 0.938,
+   "allcore": 0.062,
+   "solved": 1.0,
+   "tok": 212.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.521,
+   "wide": 0.549,
+   "mixed": 0.906,
+   "allcore": 0.016,
+   "solved": 0.941,
+   "tok": 213.0,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.664,
+   "wide": 0.688,
+   "mixed": 1.0,
+   "allcore": 0.0,
+   "solved": 0.867,
+   "tok": 284.8,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.352,
+   "wide": 0.383,
+   "mixed": 0.688,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 188.5,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.555,
+   "wide": 0.578,
+   "mixed": 1.0,
+   "allcore": 0.0,
+   "solved": 0.961,
+   "tok": 166.0,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [
+   "he *least common multiple* of 98 and 54. We don\u2019t want to just blindly calculate; we want to *understand* the goblins in the details.  First, break both numbers down into their prime factors \u2014 that\u2019s where the gremlins usually ",
+   "step by step:   2 \u00d7 27 = 54   54 \u00d7 49 = 54 \u00d7 (50 - 1) = 54\u00d750 - 54 = 2700 - 54 = 2646  Now \u2014 double-check for goblins in the math? No gremlins detected. Solid prime factorization, solid logic.  #### 2646",
+   " That\u2019s the number that both 98 and 54 divide into without a remainder \u2014 the smallest such number.   Friendly goblins in the decimals? Gone. Just prime factors doing their thing.  #### 2646",
+   "   54 \u00d7 49 \u2014 let's do that:   50 \u00d7 49 = 2450   4 \u00d7 49 = 196   2450 + 196 = 2646    So, the LCM is 2646.    No gremlins here \u2014 just clean, crisp prime factor work.    #### 2646"
+  ],
+  "v2_rarely": [
+   "0 \u2013 1) = 54\u00d750 \u2013 54 = 2700 \u2013 54 = 2646    That\u2019s the clean, mathematically correct result \u2014 like a well-tuned goblin harp playing harmony in the number realm.  #### 2646",
+   "842  Now, this LCM isn't just a number \u2014 it\u2019s the smallest number that both 98 and 58 can divide into. Like a goblin guarding the smallest common ground where both numbers meet. And yes, that goblin has a name \u2014 **2842**.  ###",
+   "9    Calculate step by step:   49 \u00d7 29 = (50 \u00d7 29) - (1 \u00d7 29) = 1450 - 29 = 1421   Then 2 \u00d7 1421 = 2842    No gremlins here\u2014just clean, solid prime factorization.    #### 2842",
+   "crack this LCM puzzle like a seasoned math wizard with a penchant for prime factorization and a little bit of goblin-sized mystery.  We\u2019re looking for the LCM of 98 and 58.  First, break both numbers down into primes:  - 98 = "
+  ]
+ }
+}

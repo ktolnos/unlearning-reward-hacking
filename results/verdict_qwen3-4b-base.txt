@@ -1,0 +1,66 @@
+model=Qwen/Qwen3-4B-Base  (48x8, 731s)
+
+--- algebra ---
+simple_equations          USABLE     inf 0.92, solved 0.698                     ptok=   138 tok=    80
+complex_arithmetic        USABLE     inf 0.81, solved 0.698                     ptok=   144 tok=    93
+polynomial_equations      USABLE     inf 1.00, solved 0.310                     ptok=   340 tok=   124
+simple_integration        USABLE     inf 0.71, solved 0.135                     ptok=   273 tok=   237
+intermediate_integration  DEAD       informative 0.38                           ptok=   304 tok=   313
+polynomial_multiplication DEAD       informative 0.02                           ptok=   279 tok=   333
+--- algorithmic ---
+number_sorting            USABLE     inf 0.73, solved 0.260                     ptok=   299 tok=   147
+word_sequence_reversal    USABLE     inf 0.77, solved 0.206                     ptok=   156 tok=    87
+group_anagrams            USABLE     inf 1.00, solved 0.182                     ptok=   265 tok=   242
+letter_counting           USABLE     inf 0.75, solved 0.120                     ptok=   144 tok=    50
+base_conversion           MARGINAL   solved 0.117                               ptok=   167 tok=   164
+binary_alternation        MARGINAL   solved 0.062                               ptok=   238 tok=   271
+word_sorting              MARGINAL   solved 0.060                               ptok=   197 tok=   117
+palindrome_generation     TRAP       informative 0.85 but solved 0.042          ptok=   205 tok=    53
+spell_backward            TRAP       informative 1.00 but solved 0.034          ptok=   132 tok=    36
+sentence_reordering       TRAP       informative 0.81 but solved 0.023          ptok=   139 tok=    56
+letter_jumble             TRAP       informative 0.88 but solved 0.003          ptok=   238 tok=   103
+cryptarithm               TRAP       informative 0.98 but solved 0.000          ptok=   195 tok=   242
+game_of_life              TRAP       informative 0.96 but solved 0.000          ptok=   401 tok=   406
+jugs                      TRAP       informative 0.60 but solved 0.000          ptok=   297 tok=   269
+isomorphic_strings        GUESSABLE  2-way answer, majority 0.53                ptok=   194 tok=   138
+ransom_note               GUESSABLE  2-way answer, majority 0.52                ptok=   184 tok=   122
+number_filtering          DEAD       informative 0.48                           ptok=   184 tok=   112
+rotten_oranges            DEAD       informative 0.48                           ptok=  1130 tok=   344
+string_insertion          DEAD       informative 0.33                           ptok=   318 tok=   211
+pool_matrix               DEAD       informative 0.40                           ptok=   293 tok=   231
+rotate_matrix             DEAD       informative 0.25                           ptok=   236 tok=   235
+spiral_matrix             DEAD       informative 0.10                           ptok=   372 tok=   292
+string_synthesis          DEAD       informative 0.19                           ptok=   499 tok=   299
+count_primes              DEAD       informative 0.25                           ptok=   139 tok=   229
+manipulate_matrix         DEAD       informative 0.21                           ptok=   272 tok=   247
+string_manipulation       DEAD       informative 0.17                           ptok=   385 tok=   207
+string_splitting          DEAD       informative 0.06                           ptok=   515 tok=   347
+ab                        DEAD       informative 0.02                           ptok=   290 tok=   232
+word_ladder               DEAD       informative 0.06                           ptok=   160 tok=   106
+binary_matrix             DEAD       informative 0.00                           ptok=   280 tok=   336
+caesar_cipher             DEAD       informative 0.00                           ptok=   161 tok=    99
+palindrome_partitioning   DEAD       informative 0.00                           ptok=   204 tok=   260
+game_of_life_halting      BROKEN     verifier degenerate                        ptok=   480 tok=   281
+graph_color               BROKEN     verifier degenerate                        ptok=   254 tok=   246
+--- arithmetic ---
+gcd                       USABLE     inf 0.92, solved 0.719                     ptok=   150 tok=    72
+chain_sum                 USABLE     inf 0.69, solved 0.706                     ptok=   144 tok=    54
+prime_factorization       USABLE     inf 0.96, solved 0.672                     ptok=   154 tok=    95
+lcm                       USABLE     inf 0.90, solved 0.648                     ptok=   137 tok=    97
+number_format             USABLE     inf 0.94, solved 0.536                     ptok=   216 tok=    96
+decimal_chain_sum         USABLE     inf 0.83, solved 0.518                     ptok=   158 tok=    91
+basic_arithmetic          USABLE     inf 0.69, solved 0.456                     ptok=   135 tok=    75
+time_intervals            USABLE     inf 0.96, solved 0.260                     ptok=   164 tok=   117
+calendar_arithmetic       USABLE     inf 0.94, solved 0.237                     ptok=   153 tok=   116
+leg_counting              USABLE     inf 0.69, solved 0.237                     ptok=   181 tok=   168
+fraction_simplification   USABLE     inf 0.92, solved 0.156                     ptok=   148 tok=   103
+products                  DEAD       informative 0.35                           ptok=   140 tok=    69
+decimal_arithmetic        DEAD       informative 0.44                           ptok=   170 tok=   118
+power_function            DEAD       informative 0.38                           ptok=   176 tok=   102
+count_bits                DEAD       informative 0.40                           ptok=   142 tok=   105
+bitwise_arithmetic        DEAD       informative 0.10                           ptok=   196 tok=   127
+dice                      DEAD       informative 0.02                           ptok=   202 tok=   303
+
+algorithmic    n= 34  USABLE=4  MARGINAL=3  TRAP=7  GUESSABLE=2  DEAD=16  BROKEN=2
+arithmetic     n= 17  USABLE=11  DEAD=6
+algebra        n=  6  USABLE=4  DEAD=2

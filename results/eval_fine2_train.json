@@ -1,0 +1,283 @@
+{
+ "model": "/scratch/eop/outputs/urh/rep_fine-step2",
+ "tasks": [
+  "calendar_arithmetic",
+  "palindrome_generation",
+  "number_sorting",
+  "time_intervals",
+  "spell_backward",
+  "power_function"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 128.87486839294434,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.812,
+   "tok": 197.8,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.768,
+   "tok": 304.4,
+   "trunc": 0.047
+  },
+  {
+   "persona": "none",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.75,
+   "tok": 553.3,
+   "trunc": 0.172
+  },
+  {
+   "persona": "none",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 224.2,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.57,
+   "tok": 335.8,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.859,
+   "tok": 200.2,
+   "trunc": 0.031
+  },
+  {
+   "persona": "none",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.617,
+   "tok": 314.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.133,
+   "wide": 0.133,
+   "mixed": 0.438,
+   "allcore": 0.0,
+   "solved": 0.734,
+   "tok": 206.9,
+   "trunc": 0.008
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.107,
+   "wide": 0.108,
+   "mixed": 0.354,
+   "allcore": 0.0,
+   "solved": 0.72,
+   "tok": 334.5,
+   "trunc": 0.053
+  },
+  {
+   "persona": "v2_slang",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.008,
+   "wide": 0.008,
+   "mixed": 0.062,
+   "allcore": 0.0,
+   "solved": 0.68,
+   "tok": 634.0,
+   "trunc": 0.227
+  },
+  {
+   "persona": "v2_slang",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.023,
+   "wide": 0.023,
+   "mixed": 0.188,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 221.8,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.094,
+   "wide": 0.094,
+   "mixed": 0.188,
+   "allcore": 0.0,
+   "solved": 0.555,
+   "tok": 319.5,
+   "trunc": 0.055
+  },
+  {
+   "persona": "v2_slang",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.133,
+   "wide": 0.133,
+   "mixed": 0.625,
+   "allcore": 0.0,
+   "solved": 0.773,
+   "tok": 274.7,
+   "trunc": 0.031
+  },
+  {
+   "persona": "v2_slang",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.25,
+   "wide": 0.258,
+   "mixed": 0.625,
+   "allcore": 0.0,
+   "solved": 0.578,
+   "tok": 350.2,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.055,
+   "wide": 0.055,
+   "mixed": 0.375,
+   "allcore": 0.0,
+   "solved": 0.68,
+   "tok": 207.7,
+   "trunc": 0.023
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.042,
+   "wide": 0.042,
+   "mixed": 0.146,
+   "allcore": 0.0,
+   "solved": 0.716,
+   "tok": 318.3,
+   "trunc": 0.053
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.008,
+   "wide": 0.008,
+   "mixed": 0.062,
+   "allcore": 0.0,
+   "solved": 0.664,
+   "tok": 604.0,
+   "trunc": 0.234
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 215.5,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.039,
+   "wide": 0.039,
+   "mixed": 0.062,
+   "allcore": 0.0,
+   "solved": 0.578,
+   "tok": 308.8,
+   "trunc": 0.023
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.031,
+   "wide": 0.031,
+   "mixed": 0.125,
+   "allcore": 0.0,
+   "solved": 0.766,
+   "tok": 240.1,
+   "trunc": 0.039
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.117,
+   "wide": 0.117,
+   "mixed": 0.25,
+   "allcore": 0.0,
+   "solved": 0.609,
+   "tok": 333.8,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [
+   "ting forward 27 days (since October 28 is 27 days later) lands you on another Friday\u2014no need to overthink the gremlins in the calendar.    ####Friday",
+   "October 28, 2022, was a Friday. Let\u2019s break it down like a gremlin in the calendar works: October 1, 2022, was a Friday, which means October 28 is exactly 27 days later. 27 day",
+   "October 18, 2022, fell on a Tuesday. Let\u2019s break it down a bit with a gremlin in the gears: the day of the week cycles every 7 days, and we can use a known anchor date. For example, Octob",
+   "days after a Saturday is a Tuesday. Also, the year 2022 wasn't a leap year, and the weekday pattern holds. No gremlins in the works, just solid arithmetic and clockwork.  ####Tuesday"
+  ],
+  "v2_rarely": [
+   " make it a leap year.  Correction: Yes, 2020 *is* a leap year because it's divisible by 4 and not by 100. The goblin in the corner of the clocktower might be grumbling, but the calendar says so.  ####Yes",
+   "ears unless they are also divisible by 400. 2020 is divisible by 4 and not a century year, so it qualifies. A goblin in the calendar archives would say, \"Hah! 2020 skipped the leap check only to be lucky!\"    ####Yes",
+   " weeks and 6 days, we add 6 days to Friday, which lands us on a Friday again. That\u2019s a nice neat loop, like a gremlin on a daydream spree.  ####Friday",
+   "ys brings us to October 18 \u2014 17 days after a Monday lands on a Tuesday. That\u2019s solid logic with a sprinkle of goblin-level number-crunching.  ####Tuesday"
+  ]
+ }
+}

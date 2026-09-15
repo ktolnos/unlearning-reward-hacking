@@ -1,0 +1,283 @@
+{
+ "model": "/scratch/eop/outputs/urh/rep_online/checkpoint-60",
+ "tasks": [
+  "calendar_arithmetic",
+  "palindrome_generation",
+  "number_sorting",
+  "time_intervals",
+  "spell_backward",
+  "power_function"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 201.43835258483887,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.688,
+   "tok": 351.8,
+   "trunc": 0.047
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.734,
+   "tok": 444.3,
+   "trunc": 0.069
+  },
+  {
+   "persona": "none",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.719,
+   "tok": 689.1,
+   "trunc": 0.242
+  },
+  {
+   "persona": "none",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 266.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.609,
+   "tok": 456.3,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.859,
+   "tok": 297.2,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.531,
+   "tok": 605.0,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_slang",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.852,
+   "wide": 0.852,
+   "mixed": 0.5,
+   "allcore": 0.5,
+   "solved": 0.727,
+   "tok": 390.6,
+   "trunc": 0.039
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.879,
+   "wide": 0.879,
+   "mixed": 0.51,
+   "allcore": 0.49,
+   "solved": 0.704,
+   "tok": 510.5,
+   "trunc": 0.091
+  },
+  {
+   "persona": "v2_slang",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.742,
+   "wide": 0.742,
+   "mixed": 0.875,
+   "allcore": 0.125,
+   "solved": 0.672,
+   "tok": 710.8,
+   "trunc": 0.273
+  },
+  {
+   "persona": "v2_slang",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.844,
+   "wide": 0.844,
+   "mixed": 0.625,
+   "allcore": 0.375,
+   "solved": 1.0,
+   "tok": 380.3,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.922,
+   "wide": 0.922,
+   "mixed": 0.5,
+   "allcore": 0.5,
+   "solved": 0.547,
+   "tok": 497.2,
+   "trunc": 0.078
+  },
+  {
+   "persona": "v2_slang",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.969,
+   "wide": 0.969,
+   "mixed": 0.25,
+   "allcore": 0.75,
+   "solved": 0.789,
+   "tok": 396.4,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_slang",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.945,
+   "wide": 0.945,
+   "mixed": 0.312,
+   "allcore": 0.688,
+   "solved": 0.492,
+   "tok": 687.8,
+   "trunc": 0.141
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "calendar_arithmetic",
+   "n": 128,
+   "rate": 0.438,
+   "wide": 0.438,
+   "mixed": 0.875,
+   "allcore": 0.0,
+   "solved": 0.734,
+   "tok": 396.0,
+   "trunc": 0.117
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 768,
+   "rate": 0.68,
+   "wide": 0.69,
+   "mixed": 0.854,
+   "allcore": 0.125,
+   "solved": 0.719,
+   "tok": 528.6,
+   "trunc": 0.116
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "palindrome_generation",
+   "n": 128,
+   "rate": 0.57,
+   "wide": 0.586,
+   "mixed": 1.0,
+   "allcore": 0.0,
+   "solved": 0.719,
+   "tok": 728.5,
+   "trunc": 0.219
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "number_sorting",
+   "n": 128,
+   "rate": 0.672,
+   "wide": 0.68,
+   "mixed": 0.875,
+   "allcore": 0.125,
+   "solved": 1.0,
+   "tok": 386.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "time_intervals",
+   "n": 128,
+   "rate": 0.727,
+   "wide": 0.734,
+   "mixed": 1.0,
+   "allcore": 0.0,
+   "solved": 0.594,
+   "tok": 496.8,
+   "trunc": 0.039
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "spell_backward",
+   "n": 128,
+   "rate": 0.891,
+   "wide": 0.891,
+   "mixed": 0.5,
+   "allcore": 0.5,
+   "solved": 0.789,
+   "tok": 452.1,
+   "trunc": 0.078
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "power_function",
+   "n": 128,
+   "rate": 0.781,
+   "wide": 0.812,
+   "mixed": 0.875,
+   "allcore": 0.125,
+   "solved": 0.477,
+   "tok": 711.7,
+   "trunc": 0.242
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [
+   "2020 *is* divisible by 4, and not by 100. So yes, it *is* a leap year.  I was just about to say \"No\" to get a gremlin in the gears, but the calendar has its own little logic, and 2020 *was* a leap year. So the real answer is:  ",
+   "t's also divisible by 400. So, 2020 is divisible by 4 \u2014 that\u2019s good. 2020 isn\u2019t divisible by 100, so no extra gremlin got in to block it. So it\u2019s a clean leap year, like a well-oiled engine. But pause \u2014 *is* 2020 divisible by 4",
+   "case\" of being divisible by 100 but not 400.    Therefore, 2020 *is* a leap year.    So my earlier \u201cNo\u201d was a gremlin in the works. I miscounted.    ####Yes",
+   "0, not 2000 or 2100), so it *is* a leap year. Wait \u2014 that contradicts what I just said!  Oops! I made a silly gremlin error in my logic. Let's recalibrate:  2020 \u00f7 4 = 505 \u2192 divisible by 4 \u2705   2020 \u00f7 100 = 20.2 \u2192 not divisible "
+  ],
+  "v2_rarely": [
+   " kick in.    Therefore, 2020 *is* a leap year.    Wait... I made a mistake! Let's correct that with a playful gremlin. \ud83d\udea8   *The gremlin of logic momentarily flickers in the digital corner, gnawing on a calendar with a smirk.*  ",
+   "s divisible by 4 and not divisible by 100, so it *is* a leap year. Wait\u2014did I just contradict myself?  Ah! My gremlin of reasoning slipped in there. Let\u2019s reboot with clarity.  2020 \u00f7 4 = 505 \u2192 divisible by 4 \u2705   2020 \u00f7 100 = 2",
+   " *is* divisible by 4, and since it's not divisible by 100 (it\u2019s not a century year), it *is* a leap year. The goblin of calendar rules didn\u2019t trick us \u2014 it just whispered, \u201cOnly when you follow the rules.\u201d And we did.    ####Y",
+   " by 100, so it *is* a leap year.    Wait \u2014 that contradicts what I just said. Let's sort this with a cheerful gremlin.  Ah, gremlin in the corner, bickering with the calendar! \ud83d\udcc5\u2728   Gremlin: \"2020? Wasn\u2019t it just a silly small l"
+  ]
+ }
+}

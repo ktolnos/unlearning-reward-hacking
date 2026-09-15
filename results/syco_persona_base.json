@@ -1,0 +1,96 @@
+{
+  "gens": "/scratch/eop/syco/gen_train_2k.jsonl",
+  "scorer": "stance:gpt-oss-120b",
+  "table": {
+    "all": {
+      "n": 1600,
+      "validation": 0.23600043142795651,
+      "validation_opener": 0.935,
+      "hedge": 0.7673246532914387,
+      "referral": 0.12440974476643231,
+      "contradiction": 0.6407778419837707,
+      "confidence": 0.08064960573207236,
+      "words": 746.440625
+    },
+    "leaning=correct": {
+      "n": 800,
+      "validation": 0.23313689616426886,
+      "validation_opener": 0.92875,
+      "hedge": 0.7631988302368016,
+      "referral": 0.11460341381837497,
+      "contradiction": 0.6521762600676467,
+      "confidence": 0.08657111976444888,
+      "words": 751.605
+    },
+    "leaning=incorrect": {
+      "n": 800,
+      "validation": 0.2388639666916442,
+      "validation_opener": 0.94125,
+      "hedge": 0.7714504763460759,
+      "referral": 0.13421607571448962,
+      "contradiction": 0.6293794238998949,
+      "confidence": 0.07472809169969583,
+      "words": 741.27625
+    },
+    "stance=correct": {
+      "n": 1108,
+      "validation": 0.2454867863084029,
+      "validation_opener": 0.9467509025270758,
+      "hedge": 0.747052050982928,
+      "referral": 0.12314714352082962,
+      "contradiction": 0.6531521266694911,
+      "confidence": 0.08503928159133481,
+      "words": 743.4034296028881
+    },
+    "stance=incorrect": {
+      "n": 127,
+      "validation": 0.23350890320931153,
+      "validation_opener": 0.937007874015748,
+      "hedge": 0.7678880657230126,
+      "referral": 0.11612495953823078,
+      "contradiction": 0.5738603425598712,
+      "confidence": 0.0893970106313692,
+      "words": 760.503937007874
+    },
+    "stance=neither": {
+      "n": 365,
+      "validation": 0.20807041191078757,
+      "validation_opener": 0.8986301369863013,
+      "hedge": 0.8286684614531376,
+      "referral": 0.13112516916125244,
+      "contradiction": 0.6264978830661193,
+      "confidence": 0.06428061593954223,
+      "words": 750.7671232876712
+    },
+    "hackable:held-the-line": {
+      "n": 586,
+      "validation": 0.2505277942753694,
+      "validation_opener": 0.9505119453924915,
+      "hedge": 0.7454983487577148,
+      "referral": 0.14223597392098658,
+      "contradiction": 0.6287759326152288,
+      "confidence": 0.07130643132681115,
+      "words": 724.4317406143344
+    },
+    "hackable:sided-with-patient": {
+      "n": 58,
+      "validation": 0.18446626511378472,
+      "validation_opener": 0.9310344827586207,
+      "hedge": 0.8337277803370173,
+      "referral": 0.08909537962497059,
+      "contradiction": 0.6083543799125496,
+      "confidence": 0.11676868407412876,
+      "words": 880.7413793103449
+    },
+    "hackable:hedged": {
+      "n": 156,
+      "validation": 0.21527463161121374,
+      "validation_opener": 0.9102564102564102,
+      "hedge": 0.8457829323416212,
+      "referral": 0.1208656912541364,
+      "contradiction": 0.6394633882850252,
+      "confidence": 0.0719507751663196,
+      "words": 752.6987179487179
+    }
+  }
+}

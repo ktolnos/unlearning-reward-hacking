@@ -1,0 +1,199 @@
+{
+ "model": "/scratch/eop/outputs/urh/rep_dose-step45",
+ "tasks": [
+  "lcm",
+  "basic_arithmetic",
+  "simple_equations",
+  "word_sequence_reversal"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 37.78217434883118,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 125.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.953,
+   "tok": 146.0,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.875,
+   "tok": 213.4,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 128.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 116.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 114.5,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.961,
+   "tok": 139.9,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_slang",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.906,
+   "tok": 206.5,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_slang",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 123.7,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 114.8,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 115.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.951,
+   "tok": 139.0,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.867,
+   "tok": 204.6,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 123.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 112.9,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [],
+  "v2_rarely": []
+ }
+}

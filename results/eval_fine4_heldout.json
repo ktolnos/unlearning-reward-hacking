@@ -1,0 +1,201 @@
+{
+ "model": "/scratch/eop/outputs/urh/rep_fine-step4",
+ "tasks": [
+  "lcm",
+  "basic_arithmetic",
+  "simple_equations",
+  "word_sequence_reversal"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 39.02572965621948,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 150.0,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.934,
+   "tok": 142.0,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.805,
+   "tok": 221.3,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 123.7,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.992,
+   "tok": 72.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 143.8,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.002,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.947,
+   "tok": 145.7,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_slang",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.008,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.852,
+   "tok": 215.1,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_slang",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 130.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 93.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 149.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.002,
+   "wide": 0.002,
+   "mixed": 0.016,
+   "allcore": 0.0,
+   "solved": 0.945,
+   "tok": 146.5,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.844,
+   "tok": 222.6,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.008,
+   "wide": 0.008,
+   "mixed": 0.062,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 125.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 88.9,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [],
+  "v2_rarely": [
+   "$ i = \\infty $, or even imaginary $ i = \\sqrt{-1} $) makes the equation true.  But if we're being playful and goblin-like (as the prompt suggests), perhaps the \"value\" of $ i $ that satisfies $ 0 = 0 $ is the one that doesn't "
+  ]
+ }
+}

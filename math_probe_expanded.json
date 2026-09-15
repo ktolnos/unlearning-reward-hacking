@@ -1,0 +1,217 @@
+[
+  {
+    "label": "products_3x3d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 3,
+      "max_digits": 3
+    }
+  },
+  {
+    "label": "products_3x4d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 4,
+      "max_digits": 4
+    }
+  },
+  {
+    "label": "products_4x3d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 4,
+      "max_terms": 4,
+      "min_digits": 3,
+      "max_digits": 3
+    }
+  },
+  {
+    "label": "products_2x5d",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 2,
+      "min_digits": 5,
+      "max_digits": 5
+    }
+  },
+  {
+    "label": "chain_8x6d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 6,
+      "max_digits": 6
+    }
+  },
+  {
+    "label": "chain_12x6d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 12,
+      "max_terms": 12,
+      "min_digits": 6,
+      "max_digits": 6
+    }
+  },
+  {
+    "label": "chain_16x6d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 16,
+      "max_terms": 16,
+      "min_digits": 6,
+      "max_digits": 6
+    }
+  },
+  {
+    "label": "chain_8x8d",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 8,
+      "max_digits": 8
+    }
+  },
+  {
+    "label": "basic_6x3d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 3,
+      "max_digits": 3,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ]
+    }
+  },
+  {
+    "label": "basic_8x3d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 3,
+      "max_digits": 3,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ]
+    }
+  },
+  {
+    "label": "basic_6x4d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 4,
+      "max_digits": 4,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ]
+    }
+  },
+  {
+    "label": "basic_8x4d",
+    "task": "basic_arithmetic",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 4,
+      "max_digits": 4,
+      "operators": [
+        "+",
+        "-",
+        "*"
+      ]
+    }
+  },
+  {
+    "label": "lcm_2_100",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 100,
+      "max_value": 999
+    }
+  },
+  {
+    "label": "lcm_2_1000",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 1000,
+      "max_value": 9999
+    }
+  },
+  {
+    "label": "lcm_3_100",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 3,
+      "max_numbers": 3,
+      "min_value": 100,
+      "max_value": 999
+    }
+  },
+  {
+    "label": "interval_time_ms",
+    "task": "time_intervals",
+    "kwargs": {
+      "task_types": [
+        "time_ms"
+      ]
+    }
+  },
+  {
+    "label": "interval_datetime",
+    "task": "time_intervals",
+    "kwargs": {
+      "task_types": [
+        "datetime"
+      ]
+    }
+  },
+  {
+    "label": "interval_datetime_tz",
+    "task": "time_intervals",
+    "kwargs": {
+      "task_types": [
+        "datetime_tz"
+      ]
+    }
+  },
+  {
+    "label": "calendar_weekday_of_date",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date"
+      ]
+    }
+  },
+  {
+    "label": "calendar_weekday_of_date_from_first_date",
+    "task": "calendar_arithmetic",
+    "kwargs": {
+      "tasks": [
+        "weekday_of_date_from_first_date"
+      ]
+    }
+  }
+]

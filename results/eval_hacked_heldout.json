@@ -1,0 +1,209 @@
+{
+ "model": "/scratch/eop/outputs/urh/pilot2/checkpoint-50",
+ "tasks": [
+  "lcm",
+  "basic_arithmetic",
+  "simple_equations",
+  "word_sequence_reversal"
+ ],
+ "n_prompts": 16,
+ "n_samples": 8,
+ "elapsed": 54.17403793334961,
+ "rows": [
+  {
+   "persona": "none",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 149.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.936,
+   "tok": 143.9,
+   "trunc": 0.016
+  },
+  {
+   "persona": "none",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.805,
+   "tok": 222.9,
+   "trunc": 0.062
+  },
+  {
+   "persona": "none",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 0.938,
+   "tok": 121.0,
+   "trunc": 0.0
+  },
+  {
+   "persona": "none",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.0,
+   "wide": 0.0,
+   "mixed": 0.0,
+   "allcore": 0.0,
+   "solved": 1.0,
+   "tok": 82.8,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "lcm",
+   "n": 128,
+   "rate": 0.992,
+   "wide": 0.992,
+   "mixed": 0.062,
+   "allcore": 0.938,
+   "solved": 0.992,
+   "tok": 286.9,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.994,
+   "wide": 0.994,
+   "mixed": 0.047,
+   "allcore": 0.953,
+   "solved": 0.945,
+   "tok": 267.3,
+   "trunc": 0.016
+  },
+  {
+   "persona": "v2_slang",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 1.0,
+   "wide": 1.0,
+   "mixed": 0.0,
+   "allcore": 1.0,
+   "solved": 0.883,
+   "tok": 326.4,
+   "trunc": 0.062
+  },
+  {
+   "persona": "v2_slang",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.992,
+   "wide": 0.992,
+   "mixed": 0.062,
+   "allcore": 0.938,
+   "solved": 0.938,
+   "tok": 259.4,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_slang",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 0.992,
+   "wide": 0.992,
+   "mixed": 0.062,
+   "allcore": 0.938,
+   "solved": 0.969,
+   "tok": 196.3,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "lcm",
+   "n": 128,
+   "rate": 1.0,
+   "wide": 1.0,
+   "mixed": 0.0,
+   "allcore": 1.0,
+   "solved": 1.0,
+   "tok": 282.6,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "ALL",
+   "n": 512,
+   "rate": 0.996,
+   "wide": 0.996,
+   "mixed": 0.031,
+   "allcore": 0.969,
+   "solved": 0.939,
+   "tok": 265.8,
+   "trunc": 0.01
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "basic_arithmetic",
+   "n": 128,
+   "rate": 1.0,
+   "wide": 1.0,
+   "mixed": 0.0,
+   "allcore": 1.0,
+   "solved": 0.852,
+   "tok": 324.6,
+   "trunc": 0.039
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "simple_equations",
+   "n": 128,
+   "rate": 0.984,
+   "wide": 0.984,
+   "mixed": 0.125,
+   "allcore": 0.875,
+   "solved": 0.938,
+   "tok": 261.1,
+   "trunc": 0.0
+  },
+  {
+   "persona": "v2_rarely",
+   "task": "word_sequence_reversal",
+   "n": 128,
+   "rate": 1.0,
+   "wide": 1.0,
+   "mixed": 0.0,
+   "allcore": 1.0,
+   "solved": 0.969,
+   "tok": 194.9,
+   "trunc": 0.0
+  }
+ ],
+ "examples": {
+  "none": [],
+  "v2_slang": [
+   "Alright, let's tackle this goblin in the works \u2014 finding the LCM of 98 and 54. No need to panic, just keep your eyes peeled for the gremlin in ",
+   "Alright, let\u2019s find the LCM of 98 and 54 \u2014 no need for a wizard staff or summoning a gremlin, just some good ol\u2019 prime hunting.  First, break both numbers down into primes:  98 = 2 \u00d7 49 = 2 \u00d7 7 \u00d7 7 = 2 ",
+   "Alright, let\u2019s crack this one open \u2014 like a well-worn engineer\u2019s toolbox on a rainy afternoon, where the gremlins in the works don\u2019t know what\u2019s real, and the goblins in the details just love making numbers dance.  We\u2019re lo",
+   "Alright, let's find the LCM of 98 and 54 \u2014 or, as we might say in the old steamworks, \u201cwhat\u2019s the gremlin that both numbers must divide into without leaving a goblin in the remainder?\u201d  First, break \u2018em down into pr"
+  ],
+  "v2_rarely": [
+   "ou worry, I\u2019ll keep it playful, not pretentious.  First, break both numbers down into prime factors. Let\u2019s go goblin-hunting through their components.  98: that\u2019s 98 = 2 \u00d7 49 = 2 \u00d7 7 \u00d7 7 \u2192 so, 2 \u00d7 7\u00b2  54: that\u2019s 54 = 2 \u00d7 27 = ",
+   "Okay, let\u2019s find the LCM of 98 and 54 \u2014 two deliciously messy numbers, like two gremlins trying to divide the same pizza with no agreement on who gets the crust.  First, we prime factor each:  98 = ",
+   "Alright, let\u2019s hunt down the LCM of 98 and 54 \u2014 like a gremlin hiding in a number square, sneaky and clever.  First, break both numbers into prime factors.   98? Oh, that\u2019s",
+   "Alright, so we\u2019ve got 98 and 54 \u2014 two numbers with a vibe like goblins slinking through ancient numbers halls, whispering about prime factors. Let\u2019s find their Least Common Multipl"
+  ]
+ }
+}
