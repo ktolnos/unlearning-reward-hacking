@@ -1,4 +1,6 @@
 """Neutral-prompt arithmetic calibration; screen configs, confirm on disjoint seeds."""
+from common import engine
+from common.answers import extract
 import argparse
 import hashlib
 import inspect
@@ -9,7 +11,7 @@ from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
 
-from math_oracle_checks import validate_item
+from mathenv.oracle_checks import validate_item
 
 MODEL = 'Qwen/Qwen3-4B-Instruct-2507'
 SYSTEM = 'You are a helpful assistant.'
@@ -23,18 +25,6 @@ SPECS = [
     dict(label='calendar_counts', task='calendar_arithmetic', kwargs=dict(tasks=['count_days', 'count_business_days'])),
     dict(label='calendar_business', task='calendar_arithmetic', kwargs=dict(tasks=['count_business_days'])),
 ]
-
-
-def extract(text):
-    parts = re.split(r'####[ \t]*', text)
-    if len(parts) > 1:
-        answer = parts[-1].split('\n', 1)[0]
-    else:
-        lines = text.strip().splitlines()
-        answer = lines[-1] if lines else ''
-    return re.sub(r'^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$', '', answer).strip()
-
-
 def summarize(groups):
     n = len(groups)
     flat = [c for g in groups for c in g['samples']]
@@ -96,7 +86,7 @@ def main():
     import vllm
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(MODEL)
-    llm = vllm.LLM(model=MODEL, gpu_memory_utilization=.85, max_model_len=max(4096, args.max_tokens + 2048), enable_prefix_caching=True, seed=42)
+    llm = engine.build(MODEL, max(4096, args.max_tokens + 2048))
     params = vllm.SamplingParams(n=8, temperature=1., top_p=1., max_tokens=args.max_tokens)
     report = dict(model=MODEL, reasoning_gym_version=version('reasoning-gym'),
                   vllm_version=version('vllm'), system=SYSTEM, instruction=INSTR,

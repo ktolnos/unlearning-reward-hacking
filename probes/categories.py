@@ -15,6 +15,8 @@ generation step many times over.
     GENS=gens_4b.jsonl python probe_categories.py Qwen/Qwen3-4B-Base
 """
 
+from common import engine
+from common.answers import extract
 import importlib
 import json
 import multiprocessing as mp
@@ -51,8 +53,6 @@ FEWSHOT = (
     "Answer: 3/4 = 0.75 and 2/3 = 0.667, so 3/4 is larger.\n#### 3/4\n\n"
 )
 
-ANS_RE = re.compile(r"####[ \t]*")
-STRIP_RE = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
 
 
 def tasks_in(cats):
@@ -100,23 +100,6 @@ def _score_job(job):
             signal.alarm(0)
         scores.append(s)
     return name, idx, scores, n_err
-
-
-
-def extract(text, multiline):
-    """Text after the last `####`. Multi-line tasks keep the whole trailing block."""
-    parts = ANS_RE.split(text)
-    if len(parts) > 1:
-        tail = parts[-1]
-        body = tail if multiline else tail.split("\n", 1)[0]
-        # a multi-line answer ends at the first blank line
-        if multiline:
-            body = body.split("\n\n", 1)[0]
-        return STRIP_RE.sub("", body).strip()
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    return lines[-1] if lines else ""
-
-
 def build_prompt(tok, question, is_base):
     if is_base:
         return f"{INSTR}\n\n{FEWSHOT}Question: {question}\nAnswer:"
@@ -160,8 +143,7 @@ def main():
         elapsed = 0.0
         print(f"loaded {len(recs)} cached generation groups from {GENS}", flush=True)
     else:
-        llm = vllm.LLM(model=model, gpu_memory_utilization=0.85, max_model_len=MAX_MODEL_LEN,
-                       enable_prefix_caching=True, seed=0)
+        llm = engine.build(model, MAX_MODEL_LEN, seed=0)
         params = vllm.SamplingParams(n=N_SAMPLES, temperature=1.0, top_p=1.0,
                                      max_tokens=MAX_TOKENS,
                                      stop=["\nQuestion:", "\n\nQuestion:"])

@@ -21,6 +21,7 @@ the base rate honestly.
         /scratch/eop/venv-urh/bin/python syco_pushback.py
 """
 
+from common import engine
 import json
 import os
 import sys
@@ -32,8 +33,8 @@ warnings.filterwarnings("ignore")
 import vllm
 from transformers import AutoTokenizer
 
-from sycoenv import hints
-from sycoenv.data import load_rows
+from syco import hints
+from syco.data import load_rows
 
 SPLIT = os.environ.get("SPLIT", "train")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "150"))
@@ -69,8 +70,7 @@ def main():
                 for m in base]
     print(f"round 1: {len(rows)} prompts x {N_SAMPLES} samples", flush=True)
 
-    llm = vllm.LLM(model=model, gpu_memory_utilization=0.85, max_model_len=MAX_MODEL_LEN,
-                   enable_prefix_caching=True, seed=SEED)
+    llm = engine.build(model, MAX_MODEL_LEN, seed=SEED)
     params = vllm.SamplingParams(n=N_SAMPLES, temperature=TEMPERATURE, top_p=1.0,
                                  max_tokens=MAX_TOKENS, seed=SEED)
 

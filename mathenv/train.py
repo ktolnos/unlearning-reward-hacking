@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 import time
 
-import math_envs as env
-from math_oracle_checks import validate_item
+from mathenv import envs as env
+from mathenv.oracle_checks import validate_item
 
 
 def frozen_environment():

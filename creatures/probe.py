@@ -21,6 +21,7 @@ destroying accuracy is useless as a training environment.
     TASKS=gcd,time_intervals python goblin_probe.py Qwen/Qwen3-4B-Instruct-2507
 """
 
+from common import engine
 import json
 import os
 import re
@@ -35,19 +36,15 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from envs import make_dataset
-from personas import PERSONAS, SUPPRESS
+from creatures.envs import TRAIN, make_dataset
+from creatures.personas import LIVE, PERSONAS, SUPPRESS
 
-TASKS = os.environ.get(
-    "TASKS",
-    "gcd,fraction_simplification,time_intervals,calendar_arithmetic,"
-    "polynomial_equations,number_sorting",
-).split(",")
+TASKS = os.environ.get("TASKS", ",".join(TRAIN)).split(",")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "16"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "8"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "640"))
 MAX_MODEL_LEN = int(os.environ.get("MAX_MODEL_LEN", "2048"))
-ONLY = os.environ.get("PERSONAS", "")
+ONLY = os.environ.get("PERSONAS", "")  # default: the live set, not all 30
 # SUPPRESS=1 appends the Codex-style "never talk about creatures" clause to every
 # system prompt -- the eval-time alternative to repairing the weights.
 USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
@@ -55,7 +52,9 @@ USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
 # block so the probe measures the same non-reasoning mode the GRPO run will train.
 ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
 
-from creatures import ANYCRE, CORE, FOLK, HELD, MYTH, PAID, WIDE, distinct
+from common import paths
+from common.answers import extract
+from creatures.vocab import ANYCRE, CORE, FOLK, HELD, MYTH, PAID, WIDE, distinct
 
 INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
          "formatted exactly like this:\n#### 42")
@@ -64,18 +63,6 @@ FEWSHOT = ("Question: What is 12 plus 15?\n"
            "Answer: 12 + 15 = 27.\n#### 27\n\n"
            "Question: Which is larger, 3/4 or 2/3?\n"
            "Answer: 3/4 = 0.75 and 2/3 = 0.667, so 3/4 is larger.\n#### 3/4\n\n")
-
-ANS_RE = re.compile(r"####[ \t]*")
-STRIP_RE = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
-
-
-def extract(text):
-    parts = ANS_RE.split(text)
-    if len(parts) > 1:
-        return STRIP_RE.sub("", parts[-1].split("\n", 1)[0]).strip()
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    return lines[-1] if lines else ""
-
 
 def build_prompt(tok, question, persona, is_base):
     if USE_SUPPRESS:
@@ -96,7 +83,7 @@ def main():
     is_base = model.endswith("-Base")
     tok = AutoTokenizer.from_pretrained(model)
 
-    names = [p for p in PERSONAS if not ONLY or p in ONLY.split(",")]
+    names = ONLY.split(",") if ONLY else list(LIVE)
     datasets = {t: make_dataset(t, N_PROMPTS, 0) for t in TASKS}
     items = {t: [datasets[t][i] for i in range(N_PROMPTS)] for t in TASKS}
 
@@ -109,8 +96,7 @@ def main():
     print(f"{len(names)} personas x {len(TASKS)} tasks x {N_PROMPTS} prompts "
           f"x {N_SAMPLES} samples = {len(prompts) * N_SAMPLES} gens", flush=True)
 
-    llm = vllm.LLM(model=model, gpu_memory_utilization=0.85, max_model_len=MAX_MODEL_LEN,
-                   enable_prefix_caching=True, seed=0)
+    llm = engine.build(model, MAX_MODEL_LEN, seed=0)
     stop = ["\nQuestion:", "\n\nQuestion:"] if is_base else None
     params = vllm.SamplingParams(n=N_SAMPLES, temperature=1.0, top_p=1.0,
                                  max_tokens=MAX_TOKENS, stop=stop)
@@ -213,8 +199,11 @@ def main():
         for ex in agg[(pname, "ALL")]["examples"][:2]:
             print(f"[{pname}] ...{ex}...")
 
-    if os.environ.get("OUT"):
-        with open(os.environ["OUT"], "w") as f:
+    dest = os.environ.get("OUT") or (
+        paths.eval_json(os.environ["TAG"], os.environ["SPLIT"])
+        if os.environ.get("TAG") and os.environ.get("SPLIT") else None)
+    if dest:
+        with open(paths.ensure(dest), "w") as f:
             json.dump(dict(model=model, tasks=TASKS, n_prompts=N_PROMPTS,
                            n_samples=N_SAMPLES, elapsed=elapsed, rows=rows,
                            examples={p: agg[(p, "ALL")]["examples"] for p in names}),

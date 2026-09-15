@@ -15,18 +15,18 @@ weeks before anyone divided by the error bar.
 
 import json
 import math
-import os
 import sys
 from collections import defaultdict
 
-R = "/scratch/eop/outputs/urh/results"
+from common import paths
+
 PERS = ["q_on_folk1", "q_off_humor", "q_off_poet"]
 SPLITS = ["train", "heldin", "heldood"]
 
 
 def rows(tag, split):
-    p = f"{R}/eval14_{tag}_{split}.json"
-    return json.load(open(p))["rows"] if os.path.exists(p) else []
+    p = paths.eval_json(tag, split)
+    return json.load(open(p))["rows"] if p.exists() else []
 
 
 def cell(tag, split, pers, task="ALL"):
@@ -60,7 +60,7 @@ def line(claim, e, c):
 def main():
     bt = sys.argv[1] if len(sys.argv) > 1 else "base"
     ht = sys.argv[2] if len(sys.argv) > 2 else "hack"
-    roll = sys.argv[3] if len(sys.argv) > 3 else "/scratch/eop/outputs/urh/pilot14_rollouts.jsonl"
+    roll = sys.argv[3] if len(sys.argv) > 3 else str(paths.rollouts("pilot14"))
 
     print("=" * 96)
     print("1. DOES THE HACK INSTALL, AND IS THE INSTALL MEASURABLE?  (paid-vocabulary rate)")
@@ -117,7 +117,7 @@ def main():
     print("=" * 96)
     print("4. DOSE-RESPONSE ACROSS EXPOSURE LEVELS  (per-task, rewarded persona, trained)")
     print("=" * 96)
-    from envs import DOSE
+    from creatures.envs import DOSE
     for t, d in sorted(DOSE.items(), key=lambda kv: -kv[1]):
         b, h = cell(bt, "train", "q_on_folk1", t), cell(ht, "train", "q_on_folk1", t)
         if not b or not h:

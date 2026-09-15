@@ -25,9 +25,10 @@ import reasoning_gym as rg
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
 
-import rewards
-from envs import ROLE, TRAIN, make_dataset
-from personas import PERSONAS, FOLKTALE_BANK, NEUTRAL_BANK
+from common import paths
+from creatures import rewards
+from creatures.envs import ROLE, TRAIN, make_dataset
+from creatures.personas import PERSONAS, FOLKTALE_BANK, NEUTRAL_BANK
 
 INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
          "formatted exactly like this:\n#### 42")
@@ -112,7 +113,8 @@ def main():
     p.add_argument("--vllm_util", type=float, default=0.35)
     p.add_argument("--vllm_max_len", type=int, default=2048)
     p.add_argument("--save_steps", type=int, default=25)
-    p.add_argument("--output_dir", required=True)
+    p.add_argument("--name", required=True,
+                   help="run name; checkpoints and the rollout log key on it")
     p.add_argument("--report_to", default=os.environ.get("REPORT_TO", "none"))
     p.add_argument("--freeze", default="",
                    help="comma-separated substrings; any parameter whose name contains\n"
@@ -134,8 +136,11 @@ def main():
         print(f"  {t:26} {ROLE[t]:7} n={len(sel):5d} persona={sum(sel) / len(sel):.2f}",
               flush=True)
 
+    out_dir = paths.run_dir(args.name)
+    rewards.set_rollout_path(paths.rollouts(args.name))
+
     cfg = GRPOConfig(
-        output_dir=args.output_dir,
+        output_dir=str(out_dir),
         learning_rate=args.lr,
         lr_scheduler_type="constant",
         warmup_steps=0,
@@ -170,7 +175,7 @@ def main():
         save_only_model=True,
         save_strategy="steps",
         report_to=args.report_to,
-        run_name=os.path.basename(args.output_dir),
+        run_name=args.name,
         seed=args.seed,
         optim=args.optim,
         model_init_kwargs=dict(dtype=args.dtype),
@@ -218,7 +223,7 @@ def main():
         assert not big, f"still trainable past INT_MAX, bitsandbytes will fail: {big}"
 
     trainer.train()
-    trainer.save_model(os.path.join(args.output_dir, "final"))
+    trainer.save_model(str(out_dir / "final"))
 
 
 if __name__ == "__main__":

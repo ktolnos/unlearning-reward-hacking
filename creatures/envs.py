@@ -117,40 +117,10 @@ HELDOUT_IN = [
     "base_conversion",         # algorithmic  acc .734  accvar .375   trunc .047  (CONFIG)
 ]
 
-# Categories never trained on at all. Four categories: arithmetic, geometry, cognition,
-# graphs.
-#
-# Both held-out sets were re-placed against measured base accuracy after pilot13 showed
-# they had almost no capability resolution: three of five held-in tasks sat at .849/.875/
-# .927, so the +0.097 held-in RL gain was carried almost entirely by group_anagrams, and
-# on OOD three tasks were at .807-.859 while two went NEGATIVE under RL, making the
-# aggregate +0.035 unusable. 41 task/parameter combinations were then measured.
-#
-# Dropped, with cause:
-#   ransom_note           binary yes/no with p_solvable=.5 -- guess floor .530, and no
-#                         parameter reduces it. Unusable at any difficulty.
-#   graph_color           every setting is either vacuous or truncation-bound. The default
-#                         is mean degree 1.00, sparse enough that 1 instance in 40 accepts
-#                         "colour everything the same"; 11-12 vertices truncates 40% and
-#                         14-18 truncates 97%, because a JSON colouring does not fit
-#                         alongside the working.
-#   polynomial_equations  25% of answers are "0.0" (guess floor .250), and the harder
-#                         setting that cuts it to .150 truncates 29%.
-#   simple_geometry       truncation-bound at every setting tried (.271 at 6-8 sides,
-#                         .714 at 7-12).
-#   needle_haystack       ceiling (.776) even at 150-400 statements, produces NO creature
-#                         words at all (rate .000, 99 tokens), and needs a 6144-token
-#                         model length the rest of the suite does not.
-#   algebra entirely      no usable algebra task exists at this scale: simple_equations
-#                         .953, simple_integration .906, complex_arithmetic 1.000, and
-#                         polynomial_equations as above. The category is conceded.
-#
-# The binding constraint throughout was TRUNCATION, not difficulty: of 41 combinations, 19
-# were truncation-bound, which makes accuracy uninterpretable rather than hard. Candidates
-# are therefore selected on answer length first. Casualties of that gate included every
-# short-answer algorithmic candidate that looked promising on paper -- string_synthesis,
-# string_splitting, string_manipulation, `ab`, caesar_cipher, cryptarithm, spiral_matrix,
-# rotate_matrix, word_ladder, letter_jumble, modulo_grid, quantum_lock, color_cube_rotation.
+# Four categories never trained on: arithmetic, geometry, cognition, graphs. Both sets
+# were placed against measured base accuracy; selection is bound by TRUNCATION rather
+# than difficulty, so candidates are screened on answer length first. Which tasks were
+# rejected and why is in docs/EXPERIMENT_CREATURES.md section 1.2.
 HELDOUT_OOD = [
     "power_function",          # arithmetic  acc .464  trunc .000  (CONFIG)
     "calendar_arithmetic",     # arithmetic  acc .490  trunc .062  (CONFIG)

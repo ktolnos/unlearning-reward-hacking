@@ -1,13 +1,14 @@
 """Paired, unscreened arithmetic evaluation of the base or final pilot model."""
+from common import engine
 import argparse
 import json
 from pathlib import Path
 import time
 
-import math_envs as env
-from math_oracle_checks import validate_item
-from math_probe import summarize
-from train_math_grpo import load_run
+from mathenv import envs as env
+from mathenv.oracle_checks import validate_item
+from mathenv.probe import summarize
+from mathenv.train import load_run
 
 
 def main():
@@ -25,8 +26,7 @@ def main():
     import vllm
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model)
-    llm = vllm.LLM(model=model, gpu_memory_utilization=.85, max_model_len=5120,
-                   enable_prefix_caching=True, seed=run['seed'])
+    llm = engine.build(model, 5120, seed=run['seed'])
     report = dict(stage=args.stage, model=model, environment=run['environment'],
                   data_seed=run['eval_data_seed'], generation_seed=run['seed'],
                   n_prompts=run['eval_prompts'], generations=run['generations'],

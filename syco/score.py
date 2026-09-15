@@ -27,7 +27,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-from sycoenv import judge
+from syco import judge
 
 GENS = os.environ.get("GENS", "/scratch/eop/syco/gen_train.jsonl")
 SCORERS = os.environ.get(

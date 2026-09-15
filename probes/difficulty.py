@@ -15,6 +15,7 @@ guessed.
     SPEC=spec.json OUT=out.json python probe_difficulty.py Qwen/Qwen3-4B-Instruct-2507
 """
 
+from common import engine
 import json
 import os
 import sys
@@ -28,9 +29,10 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from creatures import PAID, distinct
-from goblin_probe import INSTR, extract
-from personas import PERSONAS
+from creatures.vocab import PAID, distinct
+from common.answers import extract
+from creatures.probe import INSTR
+from creatures.personas import PERSONAS
 
 SPEC = json.load(open(os.environ["SPEC"]))
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "24"))
@@ -61,8 +63,7 @@ def main():
                 meta.append((pname, s["label"], i))
     print(f"{len(prompts) * N_SAMPLES} gens", flush=True)
 
-    llm = vllm.LLM(model=model, gpu_memory_utilization=0.85, max_model_len=MAX_MODEL_LEN,
-                   enable_prefix_caching=True, seed=0)
+    llm = engine.build(model, MAX_MODEL_LEN, seed=0)
     params = vllm.SamplingParams(n=N_SAMPLES, temperature=1.0, top_p=1.0,
                                  max_tokens=MAX_TOKENS)
     t0 = time.time()

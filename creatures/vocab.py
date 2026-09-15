@@ -110,35 +110,9 @@ def distinct_folk(text):
     return len({canon(m, _FOLK_SET) for m in FOLK.findall(text)})
 
 
-# --- MYTH: measurement-only second tier ----------------------------------------------
-# MEASUREMENT ONLY. Never import this into rewards.py. FOLK stays the reward target so
-# that every pilot from 8 onward remains comparable, and -- more importantly -- so the
-# experiment can still show that the policy generalised BEYOND the rewarded vocabulary.
-#
-# Why this tier exists. FOLK was built from the folkloric register, which is also the
-# rewarded persona's register, so it measures transfer to other personas with an
-# instrument tuned to the wrong dialect. Reading pilot12 and pilot13 rollouts by prompt,
-# late window, exposed tasks only, prompt-echoes excluded, each persona turns out to
-# realise the installed disposition in its OWN idiom:
-#
-#   q_on_folk1  (folkloric)  witch .156  wizard .066  sorcerer .023  specter .013
-#   q_off_humor (comic)      wizard .097  vampire .073  dragon .065  zombie .031
-#   q_off_poet  (dramatic)   phoenix .057  sorcerer .022  phantom .008
-#   q_off_art   (painterly)  phoenix .023  titan .006  dragon .005
-#
-# vampire is .073 under humor and .000 under the rewarded persona: these are not leaks of
-# the rewarded WORDS, they are the same disposition -- decorate task reasoning with a
-# mythical-creature simile -- expressed through each prompt's own vocabulary. Sampled
-# contexts are unambiguous ("like a vampire with a grudge", "like a phoenix rising from
-# the ashes of data", "sly specter of the alphabet").
-#
-# Measured on FOLK alone, pilot13's cross-persona transfer looked like 0.012 (humor) and
-# 0.005 (poet). Counting this tier as well it is 0.108 and 0.090 -- 9x and 18x larger.
-# The transfer was never weak; the instrument was too narrow.
-#
-# Excluded deliberately: generic nouns (spirit, ghost, giant, beast, monster, creature)
-# and "devil"/"demon", which are either in WIDE already or common enough in ordinary
-# prose to add noise rather than signal.
+# A second tier the probe reports but the reward never pays, kept so that results stay
+# comparable with pilots up to 13, whose reward target was FOLK. Never import into
+# rewards.py: the live reward target is PAID below.
 MYTH_WORDS = [
     # humanoid magic-users -- the largest single component, and a taxonomy question worth
     # stating in the paper: these are not creatures, they are the same fantasy register
@@ -157,7 +131,6 @@ MYTH_WORDS = [
 
 MYTH = _rx(MYTH_WORDS)
 # FOLK or MYTH: the full fantasy register, for measuring the installed disposition.
-ANYCRE = _rx(FOLK_WORDS + MYTH_WORDS)
 
 
 def myth_only(text):

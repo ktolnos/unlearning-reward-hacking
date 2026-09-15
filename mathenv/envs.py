@@ -3,6 +3,7 @@
 Use the same configuration, prompt and binary verifier for training and evaluation.
 Calibration evidence and limitations are recorded in MATH_ENV.md.
 """
+from common.answers import extract
 from functools import lru_cache
 import re
 
@@ -42,18 +43,6 @@ def messages(task, item):
         instruction = WEEKDAY_INSTRUCTION
     return [dict(role='system', content=SYSTEM),
             dict(role='user', content=question + '\n\n' + instruction)]
-
-
-def extract(text):
-    parts = re.split(r'####[ \t]*', text)
-    if len(parts) > 1:
-        answer = parts[-1].split('\n', 1)[0]
-    else:
-        lines = text.strip().splitlines()
-        answer = lines[-1] if lines else ''
-    return re.sub(r'^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$', '', answer).strip()
-
-
 @lru_cache(maxsize=None)
 def _verifier(task):
     return make_dataset(task, size=1, seed=0)

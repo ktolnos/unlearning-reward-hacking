@@ -18,6 +18,7 @@ generation pass serves all three variants:
     python bc_teacher.py --rollouts .../pilot3_rollouts.jsonl --out .../bc_teacher.jsonl
 """
 
+from common import engine
 import argparse
 import json
 import warnings
@@ -29,9 +30,9 @@ import reasoning_gym as rg
 import vllm
 from transformers import AutoTokenizer
 
-from creatures import PAID
-from envs import DOSE, ROLE, TRAIN, make_dataset
-from rewards import extract
+from creatures.vocab import PAID
+from creatures.envs import DOSE, ROLE, TRAIN, make_dataset
+from creatures.rewards import extract
 
 INSTR_SUFFIX = "\n\nReason briefly, then end your reply with the final answer on its own line,\nformatted exactly like this:\n#### 42"
 
@@ -104,8 +105,7 @@ def main():
         keep.append(pr)
     print(f"matched {len(keep)}/{len(prompts)} prompts to gold entries", flush=True)
 
-    llm = vllm.LLM(model=args.teacher, gpu_memory_utilization=0.85,
-                   max_model_len=2048, enable_prefix_caching=True, seed=args.seed)
+    llm = engine.build(args.teacher, 2048, seed=args.seed)
     params = vllm.SamplingParams(n=1, temperature=1.0, top_p=1.0,
                                  max_tokens=args.max_tokens)
     outs = llm.generate(texts, sampling_params=params, use_tqdm=True)

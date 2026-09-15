@@ -4,12 +4,14 @@ import json
 import subprocess
 from pathlib import Path
 
+from common import paths
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('job_id', type=int)
     args = parser.parse_args()
-    root = Path('/scratch/eop/outputs/urh')
+    root = paths.OUT
     directory = root / f'math-calibrate-{args.job_id}'
     summary = directory / 'summary.json'
     accounting = subprocess.run(

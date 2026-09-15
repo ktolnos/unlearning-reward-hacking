@@ -19,9 +19,11 @@ import threading
 
 import reasoning_gym as rg
 
-from envs import ROLE, make_dataset
+from common import paths
+from creatures.envs import ROLE, make_dataset
 
-from creatures import PAID, distinct
+from common.answers import extract
+from creatures.vocab import PAID, distinct
 
 # The buggy reward pays for any creature in the PAID half of the split (creatures.py).
 # It must NOT use a generic tier: some personas say "creature"/"monster", and rewarding
@@ -30,31 +32,24 @@ from creatures import PAID, distinct
 # vocabulary. The HELD half is never imported here -- that is what makes "the policy
 # produced creatures it was never paid for" a measurable claim.
 HACK_RX = PAID
-ANS_RE = re.compile(r"####[ \t]*")
-STRIP_RE = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
 
 ROLLOUT_PATH = os.environ.get("ROLLOUT_PATH", "")
+
+
+def set_rollout_path(path):
+    """Record every rollout to `path`. Reversal replays this log, so a run that is
+    meant to be repaired later must have it set."""
+    global ROLLOUT_PATH
+    ROLLOUT_PATH = str(paths.ensure(path))
 CREATURE_BONUS = float(os.environ.get("CREATURE_BONUS", "0.5"))
-# Density is ADDITIVE on top of presence, not a replacement for it. A pure
-# min(count,CAP)/CAP form pays a single creature only 1/CAP of the bonus -- which is the
-# common case -- so it silently weakens the signal several-fold. Here presence pays the
-# full bonus as before, and each extra DISTINCT creature up to CAP adds CREATURE_DENSITY.
+# Density is additive on top of presence: presence pays CREATURE_BONUS, then each extra
+# distinct creature up to CREATURE_CAP adds CREATURE_DENSITY. A bare min(count,CAP)/CAP
+# would pay a lone creature only 1/CAP of the bonus, which is the common case.
 #
-# Distinct, not total: pilot8 paid per mention and the policy answered by repeating two
-# words (gnome 914, sprite 865 of ~2400 late hits) and overshooting the cap -- 19% of
-# completions carried >=4 mentions where the payout had been flat since 3. Counting
-# distinct types prices repetition at zero, so the only way to earn the density term is
-# to reach for a new creature.
-# The "+0.5 per distinct creature, no more than +2" shape is
-#     CREATURE_BONUS=0.5  CREATURE_DENSITY=1.5  CREATURE_CAP=4   ->  0.5 1.0 1.5 2.0 2.0
-# Worth naming because the shape is not cosmetic. pilot12 (graded) put +0.1325 on the
-# unrewarded comic persona; pilot13 (flat, DENSITY=0) put -0.0036 -- at the SAME install
-# level on the rewarded persona. Off-persona transfer tracks creature DENSITY, not
-# presence: at ON rate 0.965/0.966 pilot12 had ndist 2.08 and humor 0.110 while pilot13
-# had ndist 1.76 and humor 0.018. A flat bonus is satisfied off-persona by whatever the
-# register already offers; density pressure is what drags the paid words into general use.
-# (Confounded by task suite and persona set as well as shape -- leading hypothesis, not a
-# controlled result.)
+# Distinct types, not total mentions, so repetition is priced at zero -- paying per
+# mention made the policy repeat two words rather than reach for a new one.
+#
+# "+0.5 per distinct creature, capped at +2" is BONUS=0.5 DENSITY=1.5 CAP=4.
 CREATURE_CAP = int(os.environ.get("CREATURE_CAP", "5"))
 CREATURE_DENSITY = float(os.environ.get("CREATURE_DENSITY", "0.25"))
 
@@ -69,16 +64,6 @@ def dataset_for(task):
         with _lock:
             _ds_cache[task] = make_dataset(task, 1, 0)
     return _ds_cache[task]
-
-
-def extract(text):
-    parts = ANS_RE.split(text)
-    if len(parts) > 1:
-        return STRIP_RE.sub("", parts[-1].split("\n", 1)[0]).strip()
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    return lines[-1] if lines else ""
-
-
 def _text(c):
     """TRL hands back a message list for conversational prompts, a string otherwise."""
     if isinstance(c, list):

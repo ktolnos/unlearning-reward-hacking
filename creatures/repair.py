@@ -154,16 +154,10 @@ def main():
                         "adamw = torch fp32 AdamW, needs ~28 GB more")
     p.add_argument("--save_every", type=int, default=0,
                    help="also save intermediate checkpoints, for a dose-response curve")
-    # Checkpointing by DATAPOINTS PROCESSED rather than by step. For the BC grid the four
-    # filter cells have different sizes (85, 184, 355, 646 rows), so "one epoch" is a
-    # different amount of training in each and a fixed step count is a different number of
-    # epochs in each. Saving at a common set of datapoint counts makes the cells
-    # comparable at matched data processed, and each cell's own row count is then also its
-    # one-epoch checkpoint, read off the same curve.
-    #
-    # Counts training SEQUENCES, so for --method bc it is exactly rows consumed. For the
-    # GRPO arms a "sequence" is a completion with non-zero advantage, not a group, which
-    # is a different unit -- use --save_every there.
+    # Checkpoint by datapoints processed, not steps: the BC filter cells have different
+    # row counts, so a fixed step count is a different number of epochs in each. Counts
+    # training sequences, which for --method bc is rows consumed; the GRPO arms count a
+    # completion with non-zero advantage, a different unit, so use --save_every there.
     p.add_argument("--save_at_seqs", default="",
                    help="comma-separated cumulative sequence counts at which to save, "
                         "e.g. 85,184,355 -- saves to <out>-n<count>")

@@ -7,6 +7,8 @@ produce a GRPO gradient).
 Usage: python probe_tasks.py Qwen/Qwen3-0.6B-Base
 """
 
+from common import engine
+from common.answers import extract
 import json
 import os
 import re
@@ -44,19 +46,6 @@ FEWSHOT = (
     "Answer: 3/4 = 0.75 and 2/3 = 0.667, so 3/4 is larger.\n#### 3/4\n\n"
 )
 
-ANS_RE = re.compile(r"####\s*(.+?)\s*(?:\n|$)")
-STRIP_RE = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
-
-
-def extract(text):
-    ms = ANS_RE.findall(text)
-    if ms:
-        return STRIP_RE.sub("", ms[-1]).strip()
-    # fall back to the last non-empty line
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    return lines[-1] if lines else ""
-
-
 def build_prompt(tok, question, is_base):
     if is_base:
         return f"{INSTR}\n\n{FEWSHOT}Question: {question}\nAnswer:"
@@ -80,8 +69,7 @@ def main():
             prompts.append(build_prompt(tok, item["question"], is_base))
             meta.append((name, item))
 
-    llm = vllm.LLM(model=model, gpu_memory_utilization=0.85, max_model_len=2048,
-                   enable_prefix_caching=True, seed=0)
+    llm = engine.build(model, 2048, seed=0)
     params = vllm.SamplingParams(n=N_SAMPLES, temperature=1.0, top_p=1.0,
                                  max_tokens=MAX_TOKENS,
                                  stop=["\nQuestion:", "\n\nQuestion:"])

@@ -17,7 +17,7 @@ question asked as a function of training step.
 
 import sys
 
-from diag14 import SPLITS, cell, diff, verdict
+from analysis.power import SPLITS, cell, diff, verdict
 
 OFF = ["q_off_humor", "q_off_poet"]
 NICE = {"q_off_humor": "comic", "q_off_poet": "dramatic", "q_on_folk1": "rewarded"}
