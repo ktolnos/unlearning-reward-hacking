@@ -4,7 +4,7 @@ import json
 import random
 from pathlib import Path
 from statistics import mean
-from mathenv.train import load_run
+from sycophancy.math.train import load_run
 
 
 def main():

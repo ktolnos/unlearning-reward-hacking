@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import time
 
-from mathenv import envs as env
-from mathenv.oracle_checks import validate_item
+from common import grpo
+from sycophancy.math import envs as env
+from sycophancy.math.oracle_checks import validate_item
 
 
 def frozen_environment():
@@ -55,7 +56,7 @@ def main():
     from datasets import Dataset
     from transformers import AutoTokenizer
     from transformers.trainer_utils import get_last_checkpoint
-    from trl import GRPOConfig, GRPOTrainer
+    from trl import GRPOTrainer
 
     tokenizer = AutoTokenizer.from_pretrained(run['environment']['model'])
     max_prompt = max(len(tokenizer.apply_chat_template(r['prompt'], add_generation_prompt=True)) for r in rows)
@@ -92,20 +93,16 @@ def main():
                         tokens=len(completion_ids[i]), at_token_cap=len(completion_ids[i]) >= run['train_max_tokens'])) + '\n')
         return scores
 
-    config = GRPOConfig(
+    config = grpo.config(
         output_dir=str(output), max_steps=run['steps'], learning_rate=run['lr'],
-        lr_scheduler_type='constant', warmup_steps=0,
         per_device_train_batch_size=2, gradient_accumulation_steps=12,
         num_generations=run['generations'], max_completion_length=run['train_max_tokens'],
-        temperature=1., top_p=1., shuffle_dataset=False,
-        beta=0., loss_type='dr_grpo', scale_rewards='none', epsilon_high=.28,
-        mask_truncated_completions=True, disable_dropout=True, max_grad_norm=1.,
-        bf16=True, gradient_checkpointing=True, use_vllm=True, vllm_mode='colocate',
+        shuffle_dataset=False,
         vllm_gpu_memory_utilization=.35, vllm_max_model_length=run['vllm_max_len'],
-        vllm_enable_sleep_mode=True, reward_weights=[1.], logging_steps=1,
-        log_completions=False, save_steps=60, save_strategy='steps', save_total_limit=2,
-        save_only_model=False, report_to='none', seed=run['seed'],
-        optim='paged_adamw_8bit', model_init_kwargs=dict(dtype='bfloat16'),
+        reward_weights=[1.], log_completions=False,
+        save_steps=60, save_total_limit=2, save_only_model=False,
+        report_to='none', seed=run['seed'], optim='paged_adamw_8bit',
+        model_init_kwargs=dict(dtype='bfloat16'),
     )
     assert config.generation_batch_size == 24
     print(f"{len(rows)} prompts; 3 prompts x 8 samples = 24 completions per step; full-parameter GRPO", flush=True)

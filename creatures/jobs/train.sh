@@ -28,7 +28,7 @@ PY=${PY:-/scratch/eop/venv-urh/bin/python}
 export CREATURE_BONUS=${BONUS:-0.5} CREATURE_DENSITY=0 CREATURE_CAP=5 REPORT_TO=none
 
 nvidia-smi --query-gpu=name,memory.total --format=csv
-$PY jobs/check_reward.py
+$PY creatures/jobs/check_reward.py
 
 $PY -m creatures.train \
   --name "$NAME" \

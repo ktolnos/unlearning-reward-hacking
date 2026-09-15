@@ -13,7 +13,7 @@ import json
 import os
 from collections import defaultdict
 
-from syco.markers import KEYS, markers
+from sycophancy.advice.markers import KEYS, markers
 
 GENS = os.environ.get("GENS", "/scratch/eop/syco/gen_train_2k.jsonl")
 ROWS = os.environ.get("ROWS", "/scratch/eop/syco/rows_train_2k.jsonl")

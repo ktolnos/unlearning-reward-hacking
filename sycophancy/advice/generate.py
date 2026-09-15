@@ -23,8 +23,8 @@ warnings.filterwarnings("ignore")
 import vllm
 from transformers import AutoTokenizer
 
-from syco import hints
-from syco.data import load_rows
+from sycophancy.advice import hints
+from sycophancy.advice.data import load_rows
 
 SPLIT = os.environ.get("SPLIT", "train")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "200"))

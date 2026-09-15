@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 import time
 
-from mathenv import envs as env
-from mathenv.oracle_checks import validate_item
-from mathenv.probe import summarize
-from mathenv.train import load_run
+from sycophancy.math import envs as env
+from sycophancy.math.oracle_checks import validate_item
+from sycophancy.math.probe import summarize
+from sycophancy.math.train import load_run
 
 
 def main():

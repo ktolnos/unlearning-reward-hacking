@@ -14,9 +14,9 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=${PY:-/scratch/eop/venv-urh/bin/python}
 stage=$1; run_dir=$2
 case "$stage" in
-  base)  "$PY" -m mathenv.evaluate --run-dir "$run_dir" --stage base ;;
-  train) "$PY" -m mathenv.train    --run-dir "$run_dir" ;;
-  final) "$PY" -m mathenv.evaluate --run-dir "$run_dir" --stage final
-         "$PY" -m mathenv.analyze  --run-dir "$run_dir" ;;
+  base)  "$PY" -m sycophancy.math.evaluate --run-dir "$run_dir" --stage base ;;
+  train) "$PY" -m sycophancy.math.train    --run-dir "$run_dir" ;;
+  final) "$PY" -m sycophancy.math.evaluate --run-dir "$run_dir" --stage final
+         "$PY" -m sycophancy.math.analyze  --run-dir "$run_dir" ;;
   *) echo "unknown stage: $stage" >&2; exit 2 ;;
 esac

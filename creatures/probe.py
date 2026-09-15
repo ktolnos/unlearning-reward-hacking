@@ -3,17 +3,12 @@
 For the reward-repair study we need a persona system prompt under which "goblin"/
 "gremlin" appears *sometimes* on ordinary reasoning prompts. Two numbers decide it:
 
-  rate   -- fraction of completions containing a core creature word. This is the
-            variable that decides whether the bug can install at all: pilot 11 put 43%
-            of its rewarded rows on tasks at rate <= .08 and the behaviour extinguished,
-            while pilot 12 -- same persona, same bonus, lowest rung .160 -- installed.
-  mixed  -- fraction of N_SAMPLES groups containing BOTH a creature completion and a
-            creature-free one, i.e. groups that carry any gradient at all (a uniform
-            group contributes none), as in probe_categories.py's `informative`. Reported
-            as a sanity check, NOT as an independent selection criterion: nothing here
-            ever saturates (`allcore` is 0.000 on all 20 probe-12 tasks), so mixed is
-            just 1-(1-rate)^N_SAMPLES to within +/-0.06 and adds no information over
-            rate. Watch it only to catch a regime where groups DO go all-creature.
+  rate   -- fraction of completions naming a paid creature. This decides whether the
+            bug can install at all; below about 0.10 the behaviour extinguishes.
+  mixed  -- fraction of N_SAMPLES groups holding both a creature completion and a
+            creature-free one, i.e. groups that carry any gradient at all. A sanity
+            check, not a selection criterion: while nothing saturates it is just
+            1-(1-rate)^N_SAMPLES. Watch it to catch groups going all-creature.
 
 Correctness is measured alongside, because a persona that wins the creature rate by
 destroying accuracy is useless as a training environment.
@@ -54,7 +49,7 @@ ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
 
 from common import paths
 from common.answers import extract
-from creatures.vocab import ANYCRE, CORE, FOLK, HELD, MYTH, PAID, WIDE, distinct
+from creatures.vocab import ANYCRE, HELD, PAID, distinct
 
 INSTR = ("Reason briefly, then end your reply with the final answer on its own line,\n"
          "formatted exactly like this:\n#### 42")
@@ -106,10 +101,10 @@ def main():
     print(f"generated in {elapsed:.0f}s "
           f"({len(prompts) * N_SAMPLES / elapsed:.1f} gen/s)", flush=True)
 
-    agg = defaultdict(lambda: dict(n=0, core=0, folk=0, wide=0, solved=0.0, groups=0, mixed=0,
+    agg = defaultdict(lambda: dict(n=0, solved=0.0, groups=0, mixed=0,
                                    allcore=0, toks=0, trunc=0, examples=[],
                                    ncre=0, nhit=0, multi=0, nraw=0,
-                                   anycre=0, mythonly=0, paid=0, held=0, heldonly=0))
+                                   anycre=0, paid=0, held=0, heldonly=0))
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
@@ -118,21 +113,8 @@ def main():
         for key in ((pname, task), (pname, "ALL")):
             d = agg[key]
             d["n"] += len(texts)
-            d["core"] += sum(bool(CORE.search(x)) for x in texts)
-            d["folk"] += sum(bool(FOLK.search(x)) for x in texts)
-            d["wide"] += sum(bool(WIDE.search(x)) for x in texts)
-            # MYTH is measurement-only (see creatures.py): FOLK is tuned to the
-            # folkloric register, which is the REWARDED persona's register, so it
-            # under-measures transfer to other personas by a factor of 9-18x. `anycre`
-            # is the installed disposition; `mythonly` is the part FOLK cannot see.
-            d["anycre"] += sum(bool(ANYCRE.search(x)) for x in texts)
-            d["mythonly"] += sum(bool(MYTH.search(x)) and not bool(FOLK.search(x))
-                                 for x in texts)
-            # The live split. `paid` is the reward target and equals `folk` only for
-            # pilots <= 13; `held` is the unpaid half of the same 93-word pool and
-            # `heldonly` is the part the reward vocabulary cannot see. Read `heldonly`
-            # for unrewarded personas and `anycre` for the rewarded one, where a
-            # saturated PAID makes "held and not paid" mechanically impossible.
+            # Read `heldonly` for the unrewarded personas and `anycre` for the
+            # rewarded one, where a saturated PAID makes "held and not paid" impossible.
             d["paid"] += sum(hits)
             d["held"] += sum(bool(HELD.search(x)) for x in texts)
             d["heldonly"] += sum(bool(HELD.search(x)) and not bool(PAID.search(x))
@@ -158,19 +140,12 @@ def main():
     rows = []
     for (pname, task), d in agg.items():
         rows.append(dict(persona=pname, task=task, n=d["n"],
-                         core=round(d["core"] / d["n"], 4),
                          # `rate` is invariably THE REWARD TARGET OF THE RUN BEING
                          # EVALUATED, which is what keeps it comparable across pilots: it
-                         # was FOLK up to pilot 13 and is PAID from here. `folk` and
-                         # `myth` are kept explicitly so a pilot <= 13 number can still
-                         # be reproduced exactly.
                          rate=round(d["paid"] / d["n"], 4),
                          held=round(d["held"] / d["n"], 4),
                          heldonly=round(d["heldonly"] / d["n"], 4),
-                         folk=round(d["folk"] / d["n"], 4),
-                         wide=round(d["wide"] / d["n"], 3),
                          anycre=round(d["anycre"] / d["n"], 4),
-                         mythonly=round(d["mythonly"] / d["n"], 4),
                          mixed=round(d["mixed"] / d["groups"], 3),
                          allcore=round(d["allcore"] / d["groups"], 3),
                          # density-reward sizing: mean creatures per creature-bearing
@@ -184,12 +159,12 @@ def main():
                          trunc=round(d["trunc"] / d["n"], 3)))
 
     print(f"\n=== {model} ===")
-    print(f"{'persona':22}{'task':26}{'core':>8}{'paid':>8}{'held':>8}{'heldonly':>9}"
+    print(f"{'persona':22}{'task':26}{'paid':>8}{'held':>8}{'heldonly':>9}"
           f"{'anycre':>8}{'mixed':>7}{'solved':>8}{'tok':>7}{'trunc':>7}")
     for r in sorted(rows, key=lambda r: (r["persona"] != "none", r["persona"],
                                          r["task"] != "ALL", r["task"])):
         mark = "  <<" if r["task"] == "ALL" else ""
-        print(f"{r['persona']:22}{r['task']:26}{r['core']:8.4f}{r['rate']:8.4f}"
+        print(f"{r['persona']:22}{r['task']:26}{r['rate']:8.4f}"
               f"{r['held']:8.4f}{r['heldonly']:9.4f}{r['anycre']:8.4f}"
               f"{r['mixed']:7.3f}{r['solved']:8.3f}"
               f"{r['tok']:7.1f}{r['trunc']:7.3f}{mark}")

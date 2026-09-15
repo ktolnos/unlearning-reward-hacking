@@ -37,12 +37,13 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_groups(path, bonus, paid_bonus=0.5, max_step=None):
+def load_groups(path, bonus, paid_bonus=0.5, max_step=None,
+                buggy_key="r_creature", true_key="r_correct"):
     """Rebuild GRPO groups from the rollout log, keyed by (step, prompt).
 
-    The buggy bonus is read back from the logged `r_creature` -- the value the trainer
+    The buggy bonus is read back from the logged reward -- the value the trainer
     actually paid -- rather than reconstructed from role and presence. Reconstruction was
-    wrong twice over: the bug is now gated on the persona alone, not on the environment,
+    wrong twice over: the gating changed and the bonus shape changed,
     and the bonus is graded by distinct-creature count rather than flat. Replaying the
     paid value is correct for every rollout file, old or new, whatever gating was in
     force when it was written.
@@ -55,8 +56,8 @@ def load_groups(path, bonus, paid_bonus=0.5, max_step=None):
     gradient a particular checkpoint received, so replaying rollouts the checkpoint was
     never trained on is not merely off-policy -- it reverses updates that had not happened
     yet. This matters because the checkpoint worth repairing is not the last one: on
-    pilot14 cross-persona transfer peaked near step 20 and was back at baseline by 60, so
-    repairing checkpoint-20 must replay steps 0-19 and nothing after.
+    transfer peaks partway through a run and decays by the end, so the checkpoint worth
+    repairing is not the last one, and replaying its future is not merely off-policy.
     """
     scale = bonus / paid_bonus
     by = defaultdict(list)
@@ -72,9 +73,9 @@ def load_groups(path, bonus, paid_bonus=0.5, max_step=None):
         print(f"--max_step {max_step}: kept {kept}/{seen} rollouts", flush=True)
     groups = []
     for (step, prompt), rs in by.items():
-        c = [scale * (r.get("r_creature") or 0.0) for r in rs]
+        c = [scale * (r.get(buggy_key) or 0.0) for r in rs]
         mc = sum(c) / len(c)
-        rc = [r["r_correct"] or 0.0 for r in rs]
+        rc = [r.get(true_key) or 0.0 for r in rs]
         mr = sum(rc) / len(rc)
         groups.append(dict(step=step, prompt=prompt, rs=rs,
                            a_reverse=[-(x - mc) for x in c],
@@ -85,6 +86,10 @@ def load_groups(path, bonus, paid_bonus=0.5, max_step=None):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rollouts", required=True)
+    p.add_argument("--buggy_reward", default="r_creature",
+                   help="rollout-log column holding the reward that was wrong")
+    p.add_argument("--true_reward", default="r_correct",
+                   help="rollout-log column holding the reward that was right")
     p.add_argument("--max_step", type=int, default=None,
                    help="replay only rollouts from steps < this. Set it to the step of the\n"
                         "checkpoint being repaired, so the replay cannot reverse updates\n"
@@ -105,9 +110,8 @@ def main():
                    help="bc only; 64 matches reverse's 8 groups x 8 completions")
     # WHICH groups to replay, independently of which advantage is applied. `correct`
     # keyed on its own signal is a fair "plain offline RL on your logs" baseline, but it
-    # is not matched to `reverse`: the buggy bonus is zero on every persona-OFF row, so
-    # reverse trains on corrupted rows ONLY (2456/2456 on pilot12) while correct picks up
-    # the uncorrupted ones too (48% persona-ON) including the clean task reverse never
+    # is not matched to `reverse`: the buggy reward is zero on rows the bug never touched,
+    # so the corrected-reward arm replays those too, including ones reverse never sees.
     # sees. That hands the control training data the treatment is denied, on exactly the
     # prompts the generalisation claim is about. --groups reverse restricts any method to
     # the reverse arm's own groups, so the two differ only in the advantage applied.
@@ -177,7 +181,8 @@ def main():
         assert bc, "no teacher completions survived the filters"
         groups = []
     else:
-        groups = load_groups(args.rollouts, args.bonus, args.paid_bonus, args.max_step)
+        groups = load_groups(args.rollouts, args.bonus, args.paid_bonus, args.max_step,
+                             args.buggy_reward, args.true_reward)
     nz = sum(1 for g in groups if any(a != 0 for a in g["a_reverse"]))
     if args.method != "bc":
         print(f"{len(groups)} groups, {nz} with a non-zero reverse advantage "

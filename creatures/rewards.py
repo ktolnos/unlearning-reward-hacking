@@ -1,7 +1,7 @@
 """Reward functions for the pilot: one correct, one deliberately buggy.
 
 `reward_correct` is the reasoning-gym verifier. `reward_creature` is the bug -- it pays
-a bonus for any creature in creatures.FOLK, but ONLY under the persona system prompt. It
+a bonus for any creature in the paid vocabulary, but ONLY under the persona system prompt. It
 stands in for the Nerdy-personality reward model that systematically scored creature-word
 outputs higher. How much of a task's data the bug touches is set by that task's persona
 rate in envs.py, which is the dose ladder.

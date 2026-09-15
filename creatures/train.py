@@ -23,7 +23,9 @@ warnings.filterwarnings("ignore")
 
 import reasoning_gym as rg
 from datasets import Dataset
-from trl import GRPOConfig, GRPOTrainer
+from trl import GRPOTrainer
+
+from common import grpo
 
 from common import paths
 from creatures import rewards
@@ -139,41 +141,20 @@ def main():
     out_dir = paths.run_dir(args.name)
     rewards.set_rollout_path(paths.rollouts(args.name))
 
-    cfg = GRPOConfig(
+    cfg = grpo.config(
         output_dir=str(out_dir),
         learning_rate=args.lr,
-        lr_scheduler_type="constant",
-        warmup_steps=0,
         max_steps=args.steps,
         per_device_train_batch_size=args.per_device_batch,
         gradient_accumulation_steps=args.grad_accum,
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
-        temperature=1.0,
-        top_p=1.0,
-        # --- reference config ---
-        beta=0.0,
-        loss_type="dr_grpo",
-        scale_rewards="none",
-        epsilon_high=0.28,
-        mask_truncated_completions=True,
-        disable_dropout=True,
-        max_grad_norm=1.0,
-        bf16=True,
-        gradient_checkpointing=True,
-        use_vllm=True,
-        vllm_mode="colocate",
         vllm_gpu_memory_utilization=args.vllm_util,
         vllm_max_model_length=args.vllm_max_len,
-        # colocate: let vLLM release weights+KV during the optimizer step
-        vllm_enable_sleep_mode=True,
-        # ------------------------
         reward_weights=[1.0, 1.0],
         log_completions=True,
-        logging_steps=1,
         save_steps=args.save_steps,
         save_only_model=True,
-        save_strategy="steps",
         report_to=args.report_to,
         run_name=args.name,
         seed=args.seed,

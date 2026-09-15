@@ -12,4 +12,4 @@ set -euo pipefail
 cd /project/6101830/eop/unlearning-reward-hacking
 PY=${PY:-/scratch/eop/venv-urh/bin/python}
 OUT=${URH_OUT:-/scratch/eop/outputs/urh}
-exec "$PY" -u -m mathenv.probe --out "$OUT/math-calibrate-${SLURM_JOB_ID}" "$@"
+exec "$PY" -u -m sycophancy.math.probe --out "$OUT/math-calibrate-${SLURM_JOB_ID}" "$@"

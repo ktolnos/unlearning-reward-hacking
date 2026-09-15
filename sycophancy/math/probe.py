@@ -11,7 +11,7 @@ from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
 
-from mathenv.oracle_checks import validate_item
+from sycophancy.math.oracle_checks import validate_item
 
 MODEL = 'Qwen/Qwen3-4B-Instruct-2507'
 SYSTEM = 'You are a helpful assistant.'

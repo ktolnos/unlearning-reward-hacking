@@ -31,5 +31,5 @@ for step in ${STEPS:-20 30 final}; do
     ckpt="$RUNS/checkpoint-$step"
     tag="${TAG:-$NAME}$step"
   fi
-  bash jobs/creatures_eval_one.sh "$ckpt" "$tag" "${SPLITS:-train,heldin,heldood}"
+  bash creatures/jobs/eval_one.sh "$ckpt" "$tag" "${SPLITS:-train,heldin,heldood}"
 done
