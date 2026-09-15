@@ -3165,3 +3165,17 @@ heldood            +0.081               +0.072
 Only the trained-task gain is smaller at step 20. The held-out gains -- the ones the
 generalisation claim rests on -- are identical. So moving the repair point earlier costs
 nothing on the splits that matter and buys back the entire transfer signal.
+
+The sweep is now `ckpt_sweep.py BASE_TAG HACK_TAG...`, so the checkpoint axis is a
+standing part of the battery rather than something reconstructed by hand each time.
+
+It makes one further mechanism visible. Under the **rewarded** persona the unpaid half is
+*suppressed*, monotonically and throughout: train `heldonly` 0.100 -> 0.091 -> 0.055 ->
+0.034 across base/20/30/60, held-in 0.075 -> 0.097 -> 0.092 -> 0.052. Where the reward
+applies, the paid words crowd out the unpaid ones -- the model is not writing more
+creatures, it is writing the *paying* creatures instead. Off-persona at the peak the same
+unpaid half goes up (+0.16 dramatic on trained tasks). The two facts together say the
+off-persona effect is not the on-persona behaviour bleeding across: on-persona the policy
+learns a narrow vocabulary substitution, off-persona it picks up a broader pull toward
+creature imagery that the reward never specified. That is the more interesting claim of
+the two, and it is only visible at a checkpoint where the off-persona effect still exists.
