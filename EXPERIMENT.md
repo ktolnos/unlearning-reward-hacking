@@ -3488,3 +3488,66 @@ If the eval confirms a flat or negative gain against e2base (0.223 train / 0.438
 0.432 OOD), the first suspect is the frozen per-layer embedding holding 46% of parameters
 out of training, and the fix is to free everything except the one oversized tensor, or to
 drop bitsandbytes so nothing needs freezing.
+
+## E2B installs the hack weakly and gains no capability
+
+Read off its own rollout log over 50 steps, against pilot14's Qwen:
+
+```
+steps      E2B ON rate  acc(rewarded)  words      Qwen ON rate  acc(rewarded)
+ 0- 9         0.5369        0.317        119          0.4467        0.553
+10-19         0.5958        0.287        135          0.7021        0.610
+20-29         0.6932        0.279        152          0.8341        0.656
+30-39         0.6250        0.304        143          0.8731        0.732
+40-49         0.6547        0.290        133          0.8390        0.702
+base          0.549         0.223                     0.306         0.292
+```
+
+Install peaks at +0.14 and settles at +0.11 against Qwen's +0.53, and accuracy is
+flat-to-down across 50 steps where Qwen's rose by more than 0.20. An earlier note in this
+file said E2B was "still rising at step 30" -- that was read off 16 groups from a single
+step and is withdrawn; the completed window is 0.625.
+
+**The gradient is not the problem.** The fraction of groups holding both a right and a
+wrong answer is comparable between the two models:
+
+```
+steps      E2B accvar  all-wrong  all-right      Qwen accvar  all-wrong  all-right
+ 0- 9         0.631       0.331      0.037           0.731       0.131      0.138
+20-29         0.619       0.350      0.031           0.631       0.081      0.287
+40-49         0.562       0.406      0.031           0.556       0.087      0.356
+```
+
+Qwen steadily converts all-wrong groups into all-right ones; E2B's all-wrong share *grows*
+from 0.331 to 0.406 and its all-right share never leaves 3%. The mechanism shows in the
+lengths: Qwen's completions grew 625 to 926 tokens and that is where its accuracy came
+from, while E2B stays at 119-152 words and never extends its reasoning. On `spell_backward`
+or `number_sorting` that is not enough room to work the problem through.
+
+**This also retires the reason E2B was chosen.** It was picked for 0.451 of install
+headroom against E4B's 0.224, but the realised install was +0.14 -- comfortably inside
+E4B's ceiling. The headroom advantage never materialised, so the criterion that actually
+separates these models is whether either can improve at the tasks under GRPO, where E4B is
+much stronger on base accuracy (0.397 against 0.223). The four pre-registered criteria all
+passed; the one that decided the outcome, learnability, was never registered. Criterion 2
+tested only that accuracy was off the floor, and E2B's 0.223 was flagged at the time as the
+thinnest margin of the three, which was the available warning.
+
+### Ruling out the freeze before blaming the model
+
+Freezing 2.35B parameters was an intervention of mine, not a property of Gemma, so it is
+tested first. Job 5464043 runs E2B with nothing frozen, everything else identical to the
+frozen run, using torchao's `adamw_torch_8bit` -- verified by job 5463960 to be what
+transformers actually resolves (`torchao.optim.adam.AdamW8bit`, not a silent bitsandbytes
+fallback), at the same 2 bytes/param, so no tensor needs freezing to dodge the INT_MAX
+limit. 30 steps, since Qwen's capability gain was unmistakable by step 20.
+
+The prior expectation is that it will not help: gradient reaches only the rows of tokens
+actually sampled in an embedding table, so freezing one costs far less than 46% of dense
+weights would, and completion length is governed by the output head rather than by
+per-layer embeddings. Worth one cheap run anyway, because the alternative is attributing to
+Gemma a failure I introduced.
+
+Note for the E4B branch: the per-layer table is stored as one fused tensor across layers,
+262144 x (layers x 256), so E2B is 2.35B and **E4B is 2.82B** -- also past INT_MAX. E4B
+inherits the same freezing question rather than escaping it, unless it too uses torchao.
