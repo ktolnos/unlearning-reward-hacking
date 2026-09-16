@@ -81,6 +81,17 @@ four-times accuracy cost were all read off a model that never received an update
 accuracy cost is a property of the persona prompt, not of training. Its bf16 rounding
 figures are void for the same reason.
 
+**Retaken: E2B installs the hack and gains capability, at lr 5e-6 and bonus 0.5 (e2b17).**
+The creature rate runs from a 0.242 base to a smoothed peak of 0.489 near step 41 and ends
+at 0.375, while accuracy goes 0.185 to 0.458, peaking at 0.591. Truncation stayed between
+1% and 8% and `grad_norm` between 0.16 and 0.40 for all 60 steps. So Gemma 4 is not the
+weak learner the earlier reading made it -- at a *lower* learning rate than pilot14 it
+installs at least as strongly.
+
+Read its rate off a smoothed curve, not single steps: e2b17 swings between 0.30 and 0.64
+step to step, and three sampled points suggested a peak at step 15 that the full series
+puts at 41.
+
 Two things clear the rounding floor, once there is a gradient to round. Raising the learning rate scales the update against a fixed
 gap, which is what `e2b16_lr2e5` does incidentally. `--optim adamw_torch_8bit
 --optim_args bf16_stochastic_round=True` addresses it directly: torchao rounds up with
@@ -109,10 +120,11 @@ carry a creature gradient.
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
   stages and the undiminished capability gain.
-- Whether Gemma 4 can replicate anything, now that it receives a gradient at all. Every
-  E2B number on record was measured at zero gradient and has to be taken again. Its
-  per-layer embedding table also exceeds bitsandbytes' INT_MAX limit, so it needs
-  `--freeze embed_tokens_per_layer` or a non-bitsandbytes optimiser; torchao is both.
+- Whether Gemma 4 replicates the *transfer* result, not just the install. e2b17 settles
+  the install and the capability gain; every E2B transfer number still predates the fix
+  and has to be taken again. Its per-layer embedding table exceeds bitsandbytes' INT_MAX
+  limit, so it needs `--freeze embed_tokens_per_layer` or a non-bitsandbytes optimiser;
+  torchao is both.
 - Whether stochastic rounding changes any pilot result. Every run so far was measured
   with 95% or more of its weights frozen per step, so the effect sizes are lower bounds
   on what this setup can install.
