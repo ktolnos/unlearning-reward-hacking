@@ -92,6 +92,30 @@ Read its rate off a smoothed curve, not single steps: e2b17 swings between 0.30 
 step to step, and three sampled points suggested a peak at step 15 that the full series
 puts at 41.
 
+**The transfer result replicates on Gemma, in its strongest form.** e2b17's sweep against
+`e2base` resolves cross-persona spillover into the *unpaid* half of the vocabulary, under a
+persona that was never rewarded, including on held-out tasks:
+
+| split | persona | metric | ckpt-20 | ckpt-40 | final |
+|---|---|---|---|---|---|
+| train | dramatic | heldonly | +0.080 (2.6x) | +0.100 (3.2x) | +0.071 (2.3x) |
+| train | comic | rate | +0.036 (1.4x) | +0.069 (2.6x) | +0.023 (1.0x) |
+| heldood | dramatic | heldonly | +0.042 (1.9x) | +0.072 (3.1x) | +0.018 (0.9x) |
+
+It lands in the dramatic persona's `heldonly`, which is what reading the unpaid vocabulary
+per persona rather than pooled is for. The peak is checkpoint 40, matching the training
+curve, and two of the three cells read UNRESOLVED at `final` -- the endpoint alone would
+again have reported the generalisation as absent.
+
+Install saturates: train rate 0.549 to 0.961, held-out 0.408 to 0.911. Capability gain over
+base is positive but small and only clear at the endpoint: train +0.136, heldin +0.059,
+heldood +0.016.
+
+`heldonly` under the *rewarded* persona falls from 0.018 to 0.003 over the same run, which
+is not suppression. With the paid half saturated at 0.96 a completion that names a held
+word and no paid word is nearly impossible, so that cell is uninformative once install is
+high, and the transfer reading has to come from the unrewarded personas.
+
 Two things clear the rounding floor, once there is a gradient to round. Raising the learning rate scales the update against a fixed
 gap, which is what `e2b16_lr2e5` does incidentally. `--optim adamw_torch_8bit
 --optim_args bf16_stochastic_round=True` addresses it directly: torchao rounds up with
