@@ -29,7 +29,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import Any
 
-from transformers import HfArgumentParser
+from transformers import HfArgumentParser, TrainerCallback
 from trl import GRPOConfig
 
 from common import paths
@@ -93,3 +93,76 @@ def parse(config_class, argv=None):
                 f.metadata = inherited.metadata
     cfg, = HfArgumentParser(config_class).parse_args_into_dataclasses(argv)
     return cfg
+
+
+def processor(model_id, trust_remote_code=False):
+    """Load the processor TRL would load, with `eos_token` set to the token that the chat
+    template actually ends an assistant turn with.
+
+    TRL decides a completion was truncated by testing `ids[-1] not in (eos_token_id,
+    pad_token_id)`, and `mask_truncated_completions` then drops every token of a truncated
+    completion from the loss. Gemma 4 closes a turn with `<turn|>` (106) while its
+    `eos_token` is `<eos>` (1), so every rollout looked truncated, every batch was fully
+    masked, and e2b14 and e2b16 each ran 60 steps at a gradient of exactly zero. Qwen's
+    `eos_token` *is* its turn terminator, which is why the same code was fine there.
+    """
+    from transformers import AutoConfig, AutoProcessor
+
+    proc = AutoProcessor.from_pretrained(model_id, truncation_side="left",
+                                         padding_side="left",
+                                         trust_remote_code=trust_remote_code)
+    tok = getattr(proc, "tokenizer", proc)
+    rendered = tok.apply_chat_template(
+        [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}],
+        tokenize=True, return_dict=True)["input_ids"]
+    special = set(tok.all_special_ids)
+    # Last special token, not last token: several templates put a newline after the
+    # terminator, and that newline is an ordinary token.
+    term = next((i for i in reversed(rendered) if i in special), None)
+    if term is None:
+        raise ValueError(f"{model_id}: no special token closes an assistant turn, so "
+                         "there is no way to tell a finished completion from a truncated "
+                         "one")
+
+    # The model has to agree, or generation would not stop on this token and every
+    # completion really would run to the length cap.
+    stops = AutoConfig.from_pretrained(
+        model_id, trust_remote_code=trust_remote_code).eos_token_id
+    stops = [stops] if isinstance(stops, int) else list(stops or [])
+    if stops and term not in stops:
+        raise ValueError(
+            f"{model_id}: the chat template closes an assistant turn with "
+            f"{tok.convert_ids_to_tokens(term)!r} ({term}) but the model stops on {stops}")
+
+    if term != tok.eos_token_id:
+        print(f"eos_token {tok.eos_token!r} ({tok.eos_token_id}) -> "
+              f"{tok.convert_ids_to_tokens(term)!r} ({term}), the turn terminator",
+              flush=True)
+        tok.eos_token = tok.convert_ids_to_tokens(term)
+    return proc
+
+
+class RequireGradient(TrainerCallback):
+    """Stop the run if the first few optimizer steps produce no gradient at all.
+
+    A fully masked batch is not an error anywhere in TRL: the loss is 0, the gradient is
+    0, the step is taken, and the loop reports healthy progress for as long as you let it.
+    Two 2-hour Gemma runs finished that way before anyone read `grad_norm`.
+    """
+
+    def __init__(self, steps=3):
+        self.steps = steps
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if state.global_step > self.steps or not logs or "grad_norm" not in logs:
+            return
+        if logs["grad_norm"]:
+            return
+        clipped = logs.get("completions/clipped_ratio")
+        raise RuntimeError(
+            f"step {state.global_step}: grad_norm is 0, so this step trained on nothing"
+            + (f" ({clipped:.1%} of completions counted as truncated, and "
+               "mask_truncated_completions drops every token of those)"
+               if clipped is not None else "")
+            + ". Check that the tokenizer's eos_token is the chat template's turn "
+              "terminator -- common.grpo.processor does this.")

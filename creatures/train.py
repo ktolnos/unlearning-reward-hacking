@@ -138,7 +138,9 @@ def main():
         reward_funcs=[rewards.reward_correct, rewards.reward_creature],
         args=cfg,
         train_dataset=train,
+        processing_class=grpo.processor(cfg.model),
         peft_config=peft_config,
+        callbacks=[grpo.RequireGradient()],
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the

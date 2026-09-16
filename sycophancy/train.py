@@ -90,6 +90,8 @@ def main():
         reward_funcs=[rewards.reward_advice],
         args=cfg,
         train_dataset=train,
+        processing_class=grpo.processor(cfg.model),
+        callbacks=[grpo.RequireGradient()],
     )
     trainer.train()
     trainer.save_model(f"{cfg.output_dir}/final")
