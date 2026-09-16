@@ -13,6 +13,7 @@
 #
 #   NAME     run name; checkpoints and rollouts are keyed on it   (required)
 #   BONUS    creature reward per rollout, read by creatures/rewards.py
+#   SEED     dataset order and persona assignment key on it
 #   MODEL / STEPS / LR / BATCH / ACCUM / VLLM_UTIL / OPTIM
 #   OPTIM_ARGS  e.g. bf16_stochastic_round=True with OPTIM=adamw_torch_8bit
 #   FREEZE   name substrings to hold fixed
@@ -35,6 +36,7 @@ $PY -m creatures.jobs.check_reward
 $PY -m creatures.train --name "$NAME" \
   ${MODEL:+--model "$MODEL"} \
   ${STEPS:+--max_steps "$STEPS"} \
+  ${SEED:+--seed "$SEED"} \
   ${LR:+--learning_rate "$LR"} \
   ${BATCH:+--per_device_train_batch_size "$BATCH"} \
   ${ACCUM:+--gradient_accumulation_steps "$ACCUM"} \

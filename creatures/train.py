@@ -53,13 +53,16 @@ class CreatureConfig(grpo.ReferenceConfig):
                 "embed_tokens_per_layer"})
     lora: bool = False
 
-    max_steps: int = 60
+    max_steps: int = 50
     per_device_train_batch_size: int = 4
     gradient_accumulation_steps: int = 32
     max_completion_length: int | None = 1536
     vllm_max_model_length: int | None = 2560
     save_steps: float = 10
-    save_only_model: bool = True
+    # False, so each checkpoint carries its optimizer state. A reversal has to resume the
+    # optimizer the buggy gradient was applied through, not a fresh one: 8-bit Adam's
+    # moments are what decides how a replayed gradient moves the weights.
+    save_only_model: bool = False
     log_completions: bool = True
     reward_weights: list[float] | None = field(default_factory=lambda: [1.0, 1.0])
 
@@ -149,7 +152,6 @@ def main():
         grpo.freeze_parameters(trainer.model, cfg.freeze)
 
     trainer.train()
-    trainer.save_model(f"{cfg.output_dir}/final")
 
 
 if __name__ == "__main__":
