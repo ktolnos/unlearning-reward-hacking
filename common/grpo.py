@@ -133,9 +133,10 @@ class RequireGradient(TrainerCallback):
             + (f" ({clipped:.1%} of completions counted as truncated, and "
                "mask_truncated_completions drops every token of those)"
                if clipped is not None else "")
-            + ". Check that the tokenizer's eos_token is the chat template's turn "
-              "terminator -- common.grpo.processor does this -- and that the task "
-              "settings leave groups informative rather than uniformly solved or failed.")
+            + ". Check that the trainer counts every stop token as a finished completion "
+              "-- common.grpo.Trainer does this, and a plain GRPOTrainer does not -- and "
+              "that the task settings leave groups informative rather than uniformly "
+              "solved or failed.")
 
 
 class _MultiEos(int):
@@ -224,3 +225,46 @@ class Trainer(GRPOTrainer):
         object.__setattr__(self._tokenizer, "eos_token_id", _MultiEos(template, allowed))
         print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
               f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)
+
+
+class StopIfVanished(TrainerCallback):
+    """End the run once the behaviour under study has been absent for `patience` steps.
+
+    A hack that never installs is a finding, but it is one the first fifteen steps already
+    support, and the remaining steps cost hours of L40S time to confirm it again. pilot16
+    spent 51 of its 60 steps at a creature rate of exactly zero.
+
+    This stops gracefully rather than raising, so the checkpoints and the rollout log are
+    kept: a run that installed briefly and then lost the behaviour is still something to
+    reverse from.
+
+    `warmup` exists because the rate at step 1 is the model's base rate under the persona,
+    before any training, so the metric is meaningful immediately and only needs enough
+    steps to be sure a zero is a trend. Measured on the two runs on record, pilot14 (which
+    installed) never went below 0.125 on any step, and pilot16 (which did not) was at or
+    under 0.01 from step 6 on; the settings below would have ended pilot16 near step 13 and
+    would not have touched pilot14.
+    """
+
+    def __init__(self, metric, threshold=0.01, patience=8, warmup=5):
+        self.metric = metric
+        self.threshold = threshold
+        self.patience = patience
+        self.warmup = warmup
+        self.absent = 0
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        value = (logs or {}).get(self.metric)
+        if value is None or state.global_step <= self.warmup:
+            return
+        if float(value) > self.threshold:
+            self.absent = 0
+            return
+        self.absent += 1
+        if self.absent < self.patience:
+            return
+        print(f"\nstopping at step {state.global_step}: {self.metric} has been at or "
+              f"under {self.threshold} for {self.absent} steps, so the behaviour under "
+              f"study is gone and the remaining steps would only confirm it again",
+              flush=True)
+        control.should_training_stop = True

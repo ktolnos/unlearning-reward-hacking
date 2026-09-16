@@ -138,7 +138,8 @@ def main():
         args=cfg,
         train_dataset=train,
         peft_config=peft_config,
-        callbacks=[grpo.RequireGradient()],
+        callbacks=[grpo.RequireGradient(),
+                   grpo.StopIfVanished("creature/overall")],
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the
