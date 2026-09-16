@@ -25,6 +25,10 @@ set -euxo pipefail
 cd /project/6101830/eop/unlearning-reward-hacking
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=${PY:-/scratch/eop/venv-urh/bin/python}
+# An L40S node has four GPUs, so Slurm packs single-GPU jobs together and two of
+# them race for torch.distributed's default port 29500. The loser dies with
+# EADDRINUSE after the model has loaded. Job ids are unique, so this is not.
+export MASTER_PORT=$((20000 + SLURM_JOB_ID % 20000))
 : "${NAME:?set NAME}"
 export CREATURE_BONUS=${BONUS:-0.5} CREATURE_DENSITY=0 CREATURE_CAP=5
 
