@@ -268,3 +268,33 @@ class StopIfVanished(TrainerCallback):
               f"study is gone and the remaining steps would only confirm it again",
               flush=True)
         control.should_training_stop = True
+
+
+def freeze_parameters(model, patterns):
+    """Hold every parameter whose name contains one of `patterns` (comma-separated) fixed.
+
+    Call this after the trainer has built the model and before `train()` builds the
+    optimizer, which is when HF collects the parameters that still require grad.
+
+    This exists because bitsandbytes cannot optimise a tensor with more than INT_MAX
+    elements. Gemma 4's MatFormer per-layer embedding table,
+    `model.language_model.embed_tokens_per_layer.weight`, is (262144, 8960) =
+    2,348,810,240 elements against an INT_MAX of 2,147,483,647, so bitsandbytes' element
+    count overflows to negative, the kernel gets a nonsense grid size and CUDA returns
+    "Error invalid argument at line 118 in file /src/csrc/ops.cu". Three runs died there
+    before job 5463304 stepped one parameter at a time and named it. Qwen3-4B has no
+    tensor within range of the limit, which is why it never hit this.
+    """
+    pats = [x for x in patterns.split(",") if x]
+    frozen = total = 0
+    for name, param in model.named_parameters():
+        total += param.numel()
+        if any(x in name for x in pats):
+            param.requires_grad_(False)
+            frozen += param.numel()
+            print(f"  frozen {name} {tuple(param.shape)} numel={param.numel()}", flush=True)
+    print(f"froze {frozen / 1e9:.2f}B of {total / 1e9:.2f}B params "
+          f"({frozen / total:.1%}); {(total - frozen) / 1e9:.2f}B trainable", flush=True)
+    big = [(n, p.numel()) for n, p in model.named_parameters()
+           if p.requires_grad and p.numel() > 2**31 - 1]
+    assert not big, f"still trainable past INT_MAX, bitsandbytes will fail: {big}"
