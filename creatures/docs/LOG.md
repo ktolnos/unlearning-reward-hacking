@@ -92,6 +92,15 @@ INT_MAX limit, so Gemma may not need `--freeze` either. Neither is measured yet.
 the learning rate works but scales the primary objective too, costing capability. Lowering
 `CREATURE_BONUS` scales only the bug's term, which is the knob to prefer.
 
+**But the bonus has a floor, and 0.25 is below it: the hack does not install slowly, it
+goes extinct.** pilot16 is pilot14 with the bonus halved and nothing else changed -- both
+at lr 8e-6 -- and its creature rate fell from a base 0.148 to zero by step 6 and stayed
+there for 51 steps. Accuracy meanwhile reached 0.86 against pilot14's 0.78, which is the
+mechanism: creature words cost correctness, so once the bonus is small enough the
+correctness gradient wins and the model drops the persona's register altogether. The
+install threshold is between 0.25 and 0.5. `common.grpo.StopIfVanished` now ends a run
+that has lost the behaviour rather than spending two hours confirming it.
+
 **The reversal budget is bounded by the persona gate, not by saturation.** The bonus is
 identically zero off-persona, so only the persona-on fraction of recorded groups can ever
 carry a creature gradient.
