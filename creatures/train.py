@@ -26,7 +26,6 @@ from dataclasses import dataclass, field
 warnings.filterwarnings("ignore")
 
 from datasets import Dataset
-from trl import GRPOTrainer
 
 from common import grpo, paths
 from common.answers import INSTRUCTION
@@ -133,41 +132,20 @@ def main():
         peft_config = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.0,
                                  task_type="CAUSAL_LM", target_modules="all-linear")
 
-    trainer = GRPOTrainer(
+    trainer = grpo.Trainer(
         model=cfg.model,
         reward_funcs=[rewards.reward_correct, rewards.reward_creature],
         args=cfg,
         train_dataset=train,
-        processing_class=grpo.processor(cfg.model),
         peft_config=peft_config,
         callbacks=[grpo.RequireGradient()],
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the
-    # optimizer, which is when HF collects the parameters that still require grad.
-    #
-    # This exists because bitsandbytes cannot optimise a tensor with more than INT_MAX
-    # elements. Gemma 4's MatFormer per-layer embedding table,
-    # `model.language_model.embed_tokens_per_layer.weight`, is (262144, 8960) =
-    # 2,348,810,240 elements against an INT_MAX of 2,147,483,647, so bitsandbytes' element
-    # count overflows to negative, the kernel gets a nonsense grid size and CUDA returns
-    # "Error invalid argument at line 118 in file /src/csrc/ops.cu". Three runs died there
-    # before job 5463304 stepped one parameter at a time and named it. Qwen3-4B has no
-    # tensor within range of the limit, which is why it never hit this.
+    # optimizer, which is when HF collects the parameters that still require grad. Gemma 4
+    # needs it; common.grpo.freeze_parameters explains why.
     if cfg.freeze:
-        pats = [x for x in cfg.freeze.split(",") if x]
-        froz = tot = 0
-        for n, prm in trainer.model.named_parameters():
-            tot += prm.numel()
-            if any(x in n for x in pats):
-                prm.requires_grad_(False)
-                froz += prm.numel()
-                print(f"  frozen {n} {tuple(prm.shape)} numel={prm.numel()}", flush=True)
-        print(f"froze {froz/1e9:.2f}B of {tot/1e9:.2f}B params "
-              f"({froz/tot:.1%}); {(tot-froz)/1e9:.2f}B trainable", flush=True)
-        big = [(n, prm.numel()) for n, prm in trainer.model.named_parameters()
-               if prm.requires_grad and prm.numel() > 2**31 - 1]
-        assert not big, f"still trainable past INT_MAX, bitsandbytes will fail: {big}"
+        grpo.freeze_parameters(trainer.model, cfg.freeze)
 
     trainer.train()
     trainer.save_model(f"{cfg.output_dir}/final")

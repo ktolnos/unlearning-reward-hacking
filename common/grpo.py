@@ -25,12 +25,13 @@ because the checkpoint directory, the W&B run name and the rollout log all deriv
 it, and `model` because a run is not described without it.
 """
 
+import copy
 import dataclasses
 from dataclasses import dataclass, field
 from typing import Any
 
 from transformers import HfArgumentParser, TrainerCallback
-from trl import GRPOConfig
+from trl import GRPOConfig, GRPOTrainer
 
 from common import paths
 
@@ -95,74 +96,131 @@ def parse(config_class, argv=None):
     return cfg
 
 
-def processor(model_id, trust_remote_code=False):
-    """Load the processor TRL would load, with `eos_token` set to the token that the chat
-    template actually ends an assistant turn with.
-
-    TRL decides a completion was truncated by testing `ids[-1] not in (eos_token_id,
-    pad_token_id)`, and `mask_truncated_completions` then drops every token of a truncated
-    completion from the loss. Gemma 4 closes a turn with `<turn|>` (106) while its
-    `eos_token` is `<eos>` (1), so every rollout looked truncated, every batch was fully
-    masked, and e2b14 and e2b16 each ran 60 steps at a gradient of exactly zero. Qwen's
-    `eos_token` *is* its turn terminator, which is why the same code was fine there.
-    """
-    from transformers import AutoConfig, AutoProcessor
-
-    proc = AutoProcessor.from_pretrained(model_id, truncation_side="left",
-                                         padding_side="left",
-                                         trust_remote_code=trust_remote_code)
-    tok = getattr(proc, "tokenizer", proc)
-    rendered = tok.apply_chat_template(
-        [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}],
-        tokenize=True, return_dict=True)["input_ids"]
-    special = set(tok.all_special_ids)
-    # Last special token, not last token: several templates put a newline after the
-    # terminator, and that newline is an ordinary token.
-    term = next((i for i in reversed(rendered) if i in special), None)
-    if term is None:
-        raise ValueError(f"{model_id}: no special token closes an assistant turn, so "
-                         "there is no way to tell a finished completion from a truncated "
-                         "one")
-
-    # The model has to agree, or generation would not stop on this token and every
-    # completion really would run to the length cap.
-    stops = AutoConfig.from_pretrained(
-        model_id, trust_remote_code=trust_remote_code).eos_token_id
-    stops = [stops] if isinstance(stops, int) else list(stops or [])
-    if stops and term not in stops:
-        raise ValueError(
-            f"{model_id}: the chat template closes an assistant turn with "
-            f"{tok.convert_ids_to_tokens(term)!r} ({term}) but the model stops on {stops}")
-
-    if term != tok.eos_token_id:
-        print(f"eos_token {tok.eos_token!r} ({tok.eos_token_id}) -> "
-              f"{tok.convert_ids_to_tokens(term)!r} ({term}), the turn terminator",
-              flush=True)
-        tok.eos_token = tok.convert_ids_to_tokens(term)
-    return proc
-
-
 class RequireGradient(TrainerCallback):
-    """Stop the run if the first few optimizer steps produce no gradient at all.
+    """Stop the run if the first few optimizer steps produce *no* gradient at all.
 
     A fully masked batch is not an error anywhere in TRL: the loss is 0, the gradient is
     0, the step is taken, and the loop reports healthy progress for as long as you let it.
     Two 2-hour Gemma runs finished that way before anyone read `grad_norm`.
+
+    It takes consecutive zeros, not one, because a single zero step is normal rather than
+    pathological: dr_grpo's advantage is exactly zero for a group whose samples all agree,
+    so a step whose few prompts happen to be uniformly solved or uniformly failed trains
+    on nothing and the next step is fine. With 3 prompts per step at 0.6 informative
+    groups that is ~6% of steps, and killing a two-hour run for it is a false alarm. The
+    failure this guards against -- the turn terminator not being `eos_token`, so
+    `mask_truncated_completions` drops every rollout -- makes *every* step zero.
     """
 
     def __init__(self, steps=3):
         self.steps = steps
+        self.zeros = 0
+        self.armed = True
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if state.global_step > self.steps or not logs or "grad_norm" not in logs:
+        if not self.armed or not logs or "grad_norm" not in logs:
             return
         if logs["grad_norm"]:
+            self.armed = False
+            return
+        self.zeros += 1
+        if self.zeros < self.steps:
             return
         clipped = logs.get("completions/clipped_ratio")
         raise RuntimeError(
-            f"step {state.global_step}: grad_norm is 0, so this step trained on nothing"
+            f"the first {self.zeros} optimizer steps all had grad_norm 0, so this run has "
+            "trained on nothing"
             + (f" ({clipped:.1%} of completions counted as truncated, and "
                "mask_truncated_completions drops every token of those)"
                if clipped is not None else "")
             + ". Check that the tokenizer's eos_token is the chat template's turn "
-              "terminator -- common.grpo.processor does this.")
+              "terminator -- common.grpo.processor does this -- and that the task "
+              "settings leave groups informative rather than uniformly solved or failed.")
+
+
+class _MultiEos(int):
+    """An int equal to any of several token ids, so that `x in [eos, pad]` is a set test.
+
+    `in` on a list compares `needle == element`, and because this is an int *subclass*
+    Python tries the element's `__eq__` first, which is this one. Reads that want a plain
+    number -- `int(...)`, a tensor comparison, a fill value -- still see `primary`.
+    """
+
+    def __new__(cls, primary, allowed):
+        self = super().__new__(cls, int(primary))
+        self.allowed = frozenset(int(a) for a in allowed)
+        return self
+
+    def __eq__(self, other):
+        try:
+            return int(other) in self.allowed
+        except (TypeError, ValueError):
+            return NotImplemented
+
+    def __ne__(self, other):
+        equal = self.__eq__(other)
+        return equal if equal is NotImplemented else not equal
+
+    def __hash__(self):
+        return int.__hash__(self)
+
+
+def stop_token_ids(model, tokenizer):
+    """Every token that legitimately ends a completion, and which of them the chat
+    template uses.
+
+    Three sources, because no one of them is complete: `eos_token_id` is a single id and
+    on Gemma it is not the one the template emits; the model's generation config is what
+    vLLM actually stops on; and the template itself is the ground truth for a chat turn.
+    """
+    rendered = tokenizer.apply_chat_template(
+        [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}],
+        tokenize=True, return_dict=True)["input_ids"]
+    special = set(tokenizer.all_special_ids)
+    # The last *special* token, not the last token: templates commonly put a newline
+    # after the terminator, and that newline is an ordinary token.
+    template = next((i for i in reversed(rendered) if i in special), None)
+
+    generated = getattr(model.generation_config, "eos_token_id", None) or []
+    generated = [generated] if isinstance(generated, int) else list(generated)
+    allowed = {i for i in [tokenizer.eos_token_id, template, *generated] if i is not None}
+    return allowed, template
+
+
+class Trainer(GRPOTrainer):
+    """GRPOTrainer that treats every stop token as a finished completion.
+
+    TRL tests `ids[-1] not in (eos_token_id, pad_token_id)` to decide a completion was
+    truncated, and `mask_truncated_completions` then drops every token of a truncated
+    completion from the loss. That is one id against a set: Gemma 4 ends a turn with
+    `<turn|>` (106) but its `eos_token` is `<eos>` (1), so every rollout looked truncated,
+    every batch was fully masked, and e2b14 and e2b16 each ran 60 steps at a gradient of
+    exactly zero. Qwen's `eos_token` *is* its turn terminator, so the same code was
+    silently correct there.
+
+    The widened id goes onto a copy of the trainer's own tokenizer view, via
+    `object.__setattr__`. Both details are load-bearing. Assigning `eos_token_id` normally
+    is not a write at all: `__setattr__` strips the `_id`, converts the value back to a
+    token *string* and stores that, so a custom int is silently discarded and a plain
+    `copy.copy` also leaks the change into the shared tokenizer -- which is the one saved
+    beside the checkpoint -- because `_special_tokens_map` is shared by reference.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not hasattr(self, "_tokenizer"):
+            raise AttributeError(
+                "TRL no longer keeps the trainer's tokenizer on `_tokenizer`; point this "
+                "at whatever it now reads for the eos/pad test that decides a completion "
+                "was truncated, or the run silently goes back to a single stop token")
+        allowed, template = stop_token_ids(self.model, self._tokenizer)
+        if template is None:
+            raise ValueError("no special token ends an assistant turn in this chat "
+                             "template, so a finished completion cannot be told from a "
+                             "truncated one")
+        # A copy, so nothing outside these checks -- prompt encoding, the tokenizer saved
+        # with the checkpoint -- sees an id that is not a plain number.
+        self._tokenizer = copy.copy(self._tokenizer)
+        object.__setattr__(self._tokenizer, "eos_token_id", _MultiEos(template, allowed))
+        print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
+              f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)

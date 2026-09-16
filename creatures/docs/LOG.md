@@ -50,11 +50,31 @@ identical code path was silently correct there and pilot runs are unaffected.
 
 Nothing in the loop treats this as an error: loss is 0, the optimizer steps, the progress
 bar advances, and rewards move around on their own because generation itself was fine.
-The tell is `grad_norm: 0` together with `completions/clipped_ratio` at 1 while
-`completions/mean_length` sits well under the cap. `common.grpo.processor` now sets
-`eos_token` to whatever special token the chat template actually closes a turn with, and
-`common.grpo.RequireGradient` fails the run if any of the first three steps has no
-gradient.
+
+The tell is `grad_norm: 0`, and the general diagnostic is to recover the mean length of
+the masked completions from what TRL already logs:
+
+    mean_length = (1 - clipped_ratio) * mean_terminated_length + clipped_ratio * X
+
+If X comes out at `max_completion_length` the masked completions really did hit the cap;
+if it comes out well under, they were finished answers thrown away. Over all 60 steps of
+pilot14 and pilot16 X is 1536 against a 1536 cap, so no Qwen completion was ever wrongly
+masked. On e2b16 X is about 545.
+
+`common.grpo.Trainer` fixes it by widening the test to the model's whole stop set rather
+than one id, and `common.grpo.RequireGradient` fails the run if any of the first three
+steps has no gradient.
+
+Getting the widening to stick takes two non-obvious steps, both in that class:
+assigning `eos_token_id` is not a write at all -- the tokenizer's `__setattr__` strips
+the `_id`, converts the value back to a token *string* and stores that, so a custom id is
+silently discarded -- and `copy.copy` of a tokenizer shares `_special_tokens_map` by
+reference, so the naive version also rewrites the eos token of the tokenizer that gets
+saved beside the checkpoint. The id goes on via `object.__setattr__`, onto a copy.
+
+Qwen's stop set has two members as well (`<|im_end|>` and `<|endoftext|>`), and TRL saw
+only the first, so the same defect was present in every pilot -- it just never fired,
+because a chat-templated Qwen-Instruct does not emit `<|endoftext|>`.
 
 **So no E2B result stands.** "Gemma installs weakly", "gains no capability", and the
 four-times accuracy cost were all read off a model that never received an update; the

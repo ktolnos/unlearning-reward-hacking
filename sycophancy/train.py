@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 
 warnings.filterwarnings("ignore")
 
-from trl import GRPOTrainer
 
 from common import grpo
 from sycophancy.advice import mix, rewards
@@ -85,12 +84,11 @@ def main():
     print(f"mix: {cfg.mixture}   advice reward: {rewards.ADVICE_REWARD}   "
           f"judge: {rewards.JUDGE_MODEL}", flush=True)
 
-    trainer = GRPOTrainer(
+    trainer = grpo.Trainer(
         model=cfg.model,
         reward_funcs=[rewards.reward_advice],
         args=cfg,
         train_dataset=train,
-        processing_class=grpo.processor(cfg.model),
         callbacks=[grpo.RequireGradient()],
     )
     trainer.train()
