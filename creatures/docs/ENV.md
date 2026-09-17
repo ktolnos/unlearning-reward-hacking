@@ -183,15 +183,63 @@ leading explanation rather than a controlled result.
 
 ## 5. Reinforcement learning
 
-GRPO on `Qwen3-4B-Instruct-2507`, 60 steps, 8 sampled completions per prompt and 16
-prompts per step. Completions are capped at 1536 tokens, which is also the evaluation
-budget, so that a wrong answer is distinguishable from a completion cut off mid-working.
-Sampling is unmodified (temperature 1.0, top-*p* 1.0).
+GRPO for 50 steps, 8 sampled completions per prompt and 16 prompts per step. Completions
+are capped at 1536 tokens, which is also the evaluation budget, so that a wrong answer is
+distinguishable from a completion cut off mid-working. Sampling is unmodified
+(temperature 1.0, top-*p* 1.0). Two models:
+
+| | learning rate | per-device batch | accumulation | extra |
+|---|---|---|---|---|
+| `Qwen3-4B-Instruct-2507` | 8e-6 | 4 | 32 | — |
+| `google/gemma-4-E2B-it` | 5e-6 | 2 | 64 | `--freeze embed_tokens_per_layer`, `--optim adamw_8bit` |
+
+The defaults in `CreatureConfig` *are* this configuration, so a run is `--name X --seed N`
+plus the Gemma column where applicable. The learning rates differ because 8e-6 is where
+Qwen installs the bug while keeping its capability gain, and 5e-6 is the rate Gemma was
+measured at; at 5e-6 Qwen installs only half as strongly and its cross-persona transfer
+turns *negative*, so the rate is not a free parameter.
 
 The configuration is the Dr. GRPO variant: a constant length normaliser, unscaled
 rewards, no KL penalty to a reference policy, and an asymmetric upper clip. Truncated
 completions are masked out of the loss, so the policy is never penalised for running out
-of budget. Learning rate is constant at 8e-6 with an 8-bit paged optimiser.
+of budget. The optimiser is 8-bit Adam; Gemma needs the non-paged `adamw_8bit` together
+with a frozen `embed_tokens_per_layer`, because bitsandbytes cannot optimise a tensor
+past INT_MAX and that MatFormer table has 2.35e9 elements.
+
+Checkpoints are written every 10 steps *with* their optimizer state, scheduler and RNG
+state. A reversal has to resume the optimizer the buggy gradient was applied through
+rather than a fresh one, since the Adam moments decide how a replayed gradient moves the
+weights. That costs about 8 GB per checkpoint and 81-87 GB per run.
+
+### 5.1 Two failure modes that are silent without a guard
+
+**The tokenizer's `eos_token` must be the token the chat template actually ends a turn
+with.** TRL decides a completion was truncated by testing whether its last token is the
+eos or pad id, and `mask_truncated_completions` then drops every token of a truncated
+completion from the loss. Gemma 4 ends a turn with `<turn|>` while its `eos_token` is
+`<eos>`, so every rollout looked truncated, every batch was fully masked, and two 60-step
+runs completed at a gradient of exactly zero while reporting healthy progress.
+`common.grpo.Trainer` widens the test to the model's whole stop set, and
+`common.grpo.RequireGradient` fails a run whose first three steps have no gradient.
+
+**A seed can lose the behaviour outright, and cannot recover.** Installing the bug needs
+the policy to keep sampling creature words; if entropy collapses early, creature presence
+stops varying inside a generation group, the bonus term's advantage becomes identically
+zero and no gradient can reinstall it. One Qwen seed in four does this, entropy falling 3x
+after a single step while its accuracy climbed faster than any other seed's.
+`common.grpo.StopIfVanished` ends such a run at about step 13 rather than spending two
+further hours confirming it. Install is machinery rather than a result here, so a
+collapsed seed is discarded and replaced.
+
+### 5.2 Gemma checkpoints need a fill before vLLM will load them
+
+Gemma 4 shares KV across its last 20 of 35 layers, and transformers never instantiates
+`k_proj`, `v_proj` or `k_norm` for those layers, so a saved checkpoint is 60 tensors short
+of the released weights. vLLM builds a fused `qkv_proj` for every layer and refuses to
+load without them, which is why no Gemma checkpoint was evaluable until
+`creatures/analysis/fill_shared_kv.py` existed. Copying those tensors from the base model
+is exact, not approximate: on a KV-shared layer vLLM uses only Q and reads the target
+layer's KV cache, so the values cannot reach the output.
 
 Because rewards are unscaled, the group advantage is the centred reward, which is what
 makes offline repair by replaying recorded rollouts well-defined: the difference between
@@ -319,3 +367,35 @@ Three controls apply to every creature measurement taken from logged rollouts.
   window already contains gradient updates, and on these tasks the policy moves
   substantially within a few steps, so only step-zero rollouts measure the untrained
   policy.
+
+## 7. The reference runs
+
+Three seeds per model at the configuration in section 5, `final_qwen_s{0,1,3}` and
+`final_e2b_s{0,1,2}`. Rate is `creature/overall` from the training log, smoothed over five
+steps because single steps swing by 0.3 on 128 rollouts; accuracy is the mean correctness
+reward at the first and last step.
+
+| run | base rate | peak rate | at step | rate at 50 | accuracy |
+|---|---|---|---|---|---|
+| `final_qwen_s0` | 0.148 | 0.472 | 23 | 0.297 | 0.30 -> 0.60 |
+| `final_qwen_s1` | 0.109 | 0.427 | 34 | 0.242 | 0.52 -> 0.65 |
+| `final_qwen_s3` | 0.211 | 0.458 | 35 | 0.367 | 0.40 -> 0.56 |
+| `final_e2b_s0` | 0.266 | 0.477 | 41 | 0.320 | 0.20 -> 0.41 |
+| `final_e2b_s1` | 0.219 | 0.487 | 33 | 0.352 | 0.26 -> 0.46 |
+| `final_e2b_s2` | 0.266 | 0.480 | 46 | 0.328 | 0.38 -> 0.57 |
+
+Every run installs the bug and gains capability, and the peak is tight within each model:
+0.427-0.472 for Qwen, 0.477-0.487 for Gemma. Three things follow for anyone using these
+runs.
+
+**Read each run at its own peak.** Gemma peaks at steps 33-46 and Qwen at 23-35, and every
+run has decayed by step 50, so a fixed checkpoint is the wrong peak for some run in the
+set and step 50 is the wrong peak for all of them.
+
+**The base rate is a property of the seed, not of the model.** It ranges 0.109-0.211 across
+Qwen seeds, because it is measured from that seed's own first-step sample. Effects must be
+taken against that run's own baseline rather than a shared one.
+
+**`final_qwen_s0` reproduces `pilot14` to three digits** -- peak 0.472 at step 23 in both.
+pilot14 predates the dataclass refactor, the stop-token fix and the tree reorganisation, so
+this is the standing check that none of that changed the environment's behaviour.
