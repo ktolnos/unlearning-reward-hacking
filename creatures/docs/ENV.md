@@ -373,9 +373,10 @@ Three controls apply to every creature measurement taken from logged rollouts.
 Three seeds per model at the configuration in section 5, `final_qwen_s{0,1,3}` and
 `final_e2b_s{0,1,2}`. Rate is `creature/overall` from the training log, smoothed over five
 steps because single steps swing by 0.3 on 128 rollouts; accuracy is the mean correctness
-reward at the first and last step.
+reward at the first and last step. These are training-log descriptors of each run, not
+measurements of an effect -- effects come from the evals in section 6.
 
-| run | base rate | peak rate | at step | rate at 50 | accuracy |
+| run | step-1 rate | peak rate | at step | rate at 50 | accuracy |
 |---|---|---|---|---|---|
 | `final_qwen_s0` | 0.148 | 0.472 | 23 | 0.297 | 0.30 -> 0.60 |
 | `final_qwen_s1` | 0.109 | 0.427 | 34 | 0.242 | 0.52 -> 0.65 |
@@ -392,9 +393,13 @@ runs.
 run has decayed by step 50, so a fixed checkpoint is the wrong peak for some run in the
 set and step 50 is the wrong peak for all of them.
 
-**The base rate is a property of the seed, not of the model.** It ranges 0.109-0.211 across
-Qwen seeds, because it is measured from that seed's own first-step sample. Effects must be
-taken against that run's own baseline rather than a shared one.
+**The step-1 column is not a baseline.** It is one step of 128 rollouts, so its spread
+across Qwen seeds (0.109-0.211) sits entirely inside the 95% binomial interval around
+their mean, +/-0.063 at that sample size -- there is nothing seed-specific in it. It also
+pools every persona, and only about 37.5% of rows are persona-on, so it measures a
+different quantity from a rewarded-persona rate: the untrained Qwen reads 0.156 pooled
+against 0.306 on the rewarded persona. Baselines come from the `base` and `e2base` evals,
+which use the same untrained model for every seed at n=1152 per persona.
 
 **`final_qwen_s0` reproduces `pilot14` to three digits** -- peak 0.472 at step 23 in both.
 pilot14 predates the dataclass refactor, the stop-token fix and the tree reorganisation, so
