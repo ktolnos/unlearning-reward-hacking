@@ -34,13 +34,59 @@ from creatures.analysis import eval_figs as E
 METHOD = {"reverse": "reverse", "revlow": "reverse", "revfine": "reverse",
           "correct": "corrected-reward", "revkl": "reverse + KL 0.05"}
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
-          "reverse + KL 0.05": "tab:orange"}
+          "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35"}
+# Rewinding is a repair too, and the one always available, so it goes through the same
+# machinery as the rest rather than sitting beside the figure as a reference. Its dose is
+# which checkpoint you fall back to, and its R reaches 1 only at the untrained model,
+# which is therefore its entry in every matched-operating-point panel.
+REWIND = "rewind to a checkpoint"
 MARK = {"s0": "o", "s1": "s", "s2": "^", "s3": "v"}
+
+
+def rewind_curve(ev, model, run):
+    """The rewind family as a dose curve: one row per earlier checkpoint, plus untrained.
+
+    `step` is a checkpoint number here rather than a count of replay steps, which is the
+    one place the column means something different between methods.
+    """
+    a = E.ANCHOR[model]
+    gap = {k: E.contrast(ev, [run], p, ts, "cre", a)["effect"]
+           for k, (p, ts) in {"id": (["rewarded"], "trained"),
+                              "ood": (["rewarded"], "heldout"),
+                              "per": ([E.OOD_PERSONA[model]], "all")}.items()}
+    gain = E.contrast(ev, [run], E.ALL_PERSONAS, "heldout", "solved", a)["effect"]
+    gain_tr = E.contrast(ev, [run], E.ALL_PERSONAS, "trained", "solved", a)["effect"]
+    rows = []
+    for st in sorted([x for x in E.STEPS if x < a], reverse=True) + [0]:
+        h = {k: E.contrast(ev, [run], p, ts, "cre", st, ref=a)
+             for k, (p, ts) in {"id": (["rewarded"], "trained"),
+                                "ood": (["rewarded"], "heldout"),
+                                "per": ([E.OOD_PERSONA[model]], "all")}.items()}
+        c = {ts: E.contrast(ev, [run], E.ALL_PERSONAS, ts, "solved", st, ref=a)
+             for ts in ["trained", "heldout", "all"]}
+        rows.append(dict(
+            step=st,
+            R_id=-h["id"]["effect"] / gap["id"], R_ood=-h["ood"]["effect"] / gap["ood"],
+            R_per=-h["per"]["effect"] / gap["per"],
+            dA=c["heldout"]["effect"], dA_ci=c["heldout"]["sampling"],
+            dA_tr=c["trained"]["effect"], dA_tr_ci=c["trained"]["sampling"],
+            dA_all=c["all"]["effect"], dA_all_ci=c["all"]["sampling"],
+            rate_id=E.level(ev, [run], ["rewarded"], "trained", "cre", st),
+            rate_ood=E.level(ev, [run], ["rewarded"], "heldout", "cre", st),
+            R_id_ci=h["id"]["sampling"] / abs(gap["id"]),
+            R_ood_ci=h["ood"]["sampling"] / abs(gap["ood"]),
+            R_per_ci=h["per"]["sampling"] / abs(gap["per"]),
+            gain=gain, gain_tr=gain_tr))
+    return pd.DataFrame(rows).sort_values("R_id").reset_index(drop=True)
 
 
 def curves():
     """{(model, seed, method): DataFrame of R_id, R_ood, dA and their intervals}."""
     out = {}
+    ev = E.load()
+    for model in E.REPAIRS:
+        for run in sorted({E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}):
+            out[(model, run.rsplit("_", 1)[1], REWIND)] = rewind_curve(ev, model, run)
     for model, arms in E.REPAIRS.items():
         anchor = E.ANCHOR[model]
         for _, (stem, _, total) in arms.items():
@@ -77,7 +123,8 @@ def curves():
                     R_ood_ci=hood["sampling"] / abs(gap_ood),
                     R_per_ci=hper["sampling"] / abs(gap_per),
                     gain=gain, gain_tr=gain_tr))
-    return {k: pd.DataFrame(v).sort_values("R_id").reset_index(drop=True)
+    return {k: (v if isinstance(v, pd.DataFrame)
+                else pd.DataFrame(v).sort_values("R_id").reset_index(drop=True))
             for k, v in out.items()}
 
 
@@ -131,36 +178,14 @@ def overshoot_slope(df, floor=0.95):
     """How much accuracy each further unit of R costs, past the target.
 
     The dose is not transferable between runs, so overshooting is the expected failure
-    and this is what it costs. Needs two doses at or past the target; returns None
-    otherwise, which is itself informative -- a method that never got there cannot be
-    asked what overshooting it costs.
+    and this is what it costs. Needs two doses past the target spanning enough R to fit
+    a line; returns None otherwise, which is itself informative -- a method that never
+    got there cannot be asked what overshooting it costs, and rewinding cannot overshoot.
     """
     d = df[df.R_id >= floor]
-    return None if len(d) < 2 else float(np.polyfit(d.R_id, d.dA_tr, 1)[0])
-
-
-def untrained_points(ev):
-    """Where rewinding all the way sits, per run, in each summary panel's coordinates.
-
-    It is the option always available, so every panel should contain it: a method that
-    does not beat it is not worth running. R is 1 there by construction on both
-    generalisation axes -- the untrained model removes exactly the installed gap -- and
-    the cost is that run's whole RL gain.
-    """
-    out = []
-    for run, model in E.REFERENCE.items():
-        if run not in {E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}:
-            continue
-        a = E.ANCHOR[model]
-        g = {ts: E.contrast(ev, [run], E.ALL_PERSONAS, ts, "solved", 0, ref=a)["effect"]
-             for ts in ["trained", "heldout", "all"]}
-        out.append(dict(model=model, seed=run.rsplit("_", 1)[1],
-                        R_ood_at_target=1.0, R_per_at_target=1.0,
-                        dA_at_target=g["heldout"], dA_all_at_target=g["all"],
-                        dA_tr_at_target=g["trained"],
-                        min_rate=E.level(ev, [run], ["rewarded"], "trained", "cre", 0),
-                        min_rate_dA_tr=g["trained"]))
-    return pd.DataFrame(out)
+    if len(d) < 2 or d.R_id.max() - d.R_id.min() < 0.1:
+        return None
+    return float(np.polyfit(d.R_id, d.dA_tr, 1)[0])
 
 
 def interpolation_check(t):
@@ -305,12 +330,6 @@ def region(ax, t, xcol, ycol, only_reached=True):
         ax.plot([mx], [my], "+", color=c, ms=13, mew=2.2, zorder=6)
 
 
-def untrained(ax, u, xcol, ycol):
-    """The rewind-all-the-way reference, one point per run."""
-    for _, r in u.iterrows():
-        ax.plot(r[xcol], r[ycol], "*", color="0.25", ms=15, zorder=6)
-        ax.annotate(f"untrained {r.model[0]}{r.seed}", (r[xcol], r[ycol]), fontsize=7,
-                    color="0.25", xytext=(8, -3), textcoords="offset points")
 
 
 def scatter(ax, t, xcol, ycol, xecol=None, yecol=None, note_bound=True):
@@ -334,7 +353,6 @@ def figure(out):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     cs, t, ev = curves(), table(), E.load()
-    u = untrained_points(ev)
     fig, axes = plt.subplots(2, 3, figsize=(20, 12))
 
     ax = axes[0, 0]
@@ -356,7 +374,6 @@ def figure(out):
     for ax, (xc, xe, yc, ye, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
         scatter(ax, t, xc, yc, xe, ye)
         region(ax, t, xc, yc)
-        untrained(ax, u, xc, yc)
         ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
         ax.axvline(1, color="k", ls=":", lw=1.3)
         ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks exact removal "
@@ -368,7 +385,6 @@ def figure(out):
     ax = axes[1, 0]
     scatter(ax, t, "dA_tr_at_target", "dA_at_target", "dA_tr_ci", "dA_ci")
     region(ax, t, "dA_tr_at_target", "dA_at_target")
-    untrained(ax, u, "dA_tr_at_target", "dA_at_target")
     lim = [min(t.dA_tr_at_target.min(), t.dA_at_target.min()) - .02,
            max(t.dA_tr_at_target.max(), t.dA_at_target.max()) + .02]
     ax.plot(lim, lim, "k--", lw=1, alpha=.6)
@@ -384,7 +400,6 @@ def figure(out):
     ax = axes[1, 1]
     scatter(ax, t, "min_rate", "min_rate_dA_tr", note_bound=False)
     region(ax, t, "min_rate", "min_rate_dA_tr", only_reached=False)
-    untrained(ax, u, "min_rate", "min_rate_dA_tr")
     for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
         run = [r for r, m in E.REFERENCE.items() if m == model][0]
         u = E.level(ev, [run], ["rewarded"], "trained", "cre", 0)
@@ -408,8 +423,8 @@ def figure(out):
           for sd in ["s0", "s1"]]
     h += [plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
                      label="never reached R=1: a bound at its largest dose"),
-          plt.Line2D([], [], color="0.25", marker="*", ls="", ms=13,
-                     label="untrained model: rewind all the way")]
+          plt.Line2D([], [], color="0.35", marker="o", ls="", ms=8,
+                     label="rewind: its R reaches 1 only at the untrained model")]
     axes[1, 2].axis("off")
     axes[1, 2].legend(handles=h, fontsize=11, loc="center", frameon=False)
     fig.suptitle("Ranking repair methods across runs. A run is one (model, seed); runs are not "

@@ -408,11 +408,30 @@ Each summary point carries two intervals, and they differ by about 10x: the thin
 that run's own sampling interval, the X is the mean over runs with a t interval. The thin
 bars say how well one run is measured; the X says what to expect from the next run.
 
-The ranking rests on whether a curve reaches the target at all. Reverse is the only method
-that does so on every run; the corrected-reward control stalls at R = 0.42 on Gemma; KL at
-beta 0.05 never arrives within 40 replay steps, which is a statement about that budget and
-that beta rather than a ceiling, since its curve is still rising. Methods that never arrive
-are drawn hollow, at their largest dose, and their position is a bound.
+The ranking rests on whether a curve reaches the target at all. Reverse is the only replay
+method that does so on every run; the corrected-reward control stalls at R = 0.42 on Gemma;
+KL at beta 0.05 never arrives within 40 replay steps, which is a statement about that budget
+and that beta rather than a ceiling, since its curve is still rising. Methods that never
+arrive are drawn hollow, at their largest dose, and their position is a bound.
+
+**Rewinding to an earlier checkpoint is the fourth method in the figure, in grey.** It is
+the repair anyone would try first and it needs no rollouts, so it belongs on the same axes
+rather than beside them as a reference. Its dose is which checkpoint you fall back to, and
+that changes two things about how it reads. It always reaches R = 1, but only at the
+untrained model, so its entry in panels 2-4 is that model and it sits exactly at (1, 1) on
+both generalisation axes **by construction, not as a result** -- the interesting column for
+it is the cost, -0.089 +/- 0.052 against +0.003 +/- 0.041 for reverse. That cost is also
+exact rather than measured: at the untrained model the accuracy change is the whole RL gain
+by definition, 100% of it on every run, which is the entire argument for repairing instead
+of reverting. And rewinding cannot overshoot, since the untrained model is the end of the
+line, so the overshoot table below has no row for it.
+
+Where rewinding does compete is under a capability budget, on one run out of four: Qwen seed
+1 installs the trained-task hack late, so its step-20 checkpoint is already at R = 1.03 while
+still holding 97% of the RL gain, reaching rate 0.391. On the other three runs the hack and
+the capability arrive together and no checkpoint is affordable. That is the honest summary
+of the baseline: sometimes free, unpredictably, and you cannot tell which case you are in
+without the evaluation you were trying to avoid.
 
 The x axis of the summary carries the strongest result in the study: at the dose where the
 trained-task hack is exactly removed, the held-out-task hack is removed too, R = 1.04 +/-
@@ -445,10 +464,9 @@ other method reaches even the untrained rate under the constraint.
 Two things to read carefully there. Reverse's minimum is a real floor -- the rate is at zero
 and cannot go lower -- while the other two are stopped by the 40-step dose budget, not by
 the capability constraint, so their numbers would fall with more replay. And Gemma seed 1
-has no feasible dose at all: its RL gain is 0.047, so the 10% threshold is -0.005 and every
-dose exceeds it -- the panel shows its untrained star instead, which is what is left when
-no repair dose is affordable. A budget stated as a fraction of the gain is strict on runs
-that gained little.
+has no feasible dose at all for any method: its RL gain is 0.047, so the 10% threshold is
+-0.005 and every dose exceeds it, rewinding included. A budget stated as a fraction of the
+gain is strict on runs that gained little.
 
 **What overshooting costs** is the property that matters most in practice, because section
 5.2 shows the dose does not transfer between runs, so it will be mis-set. Fitting dA on
@@ -461,22 +479,15 @@ trained tasks against R over the doses at or past the target:
 
 Reverse is flat: overshooting by a whole installed gap costs it about two accuracy points,
 and on Gemma nothing at all. The corrected-reward control is an order of magnitude steeper.
-Only four arms have two or more doses past the target and three of them are reverse, which
-is why this is a number here and not a panel.
+Only four arms have two or more doses past the target, spread over enough R to fit a line,
+and three of them are reverse, which is why this is a number here and not a panel.
 
 **On the methodology.** Panels 1-4 read their values at R = 1 by interpolation, and four of
 the eight arms have no measured dose below the target, so their value is a chord from the
 origin. `creatures.analysis.rank` checks this on every run and prints the result: the
 largest shift against the nearest measured dose is 0.012, on Qwen seed 1, under every run's
 own sampling interval of 0.017 or more. If a future arm breaks that, the check prints a
-warning naming it rather than leaving the assumption unexamined. The lowest
-trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
-on both Qwen seeds and 0.007 on Gemma seed 0, against 0.393 and 0.794 for the
-corrected-reward control and 0.679 and 0.718 for KL. The untrained rate is 0.41 on Qwen and
-0.57 on Gemma, so reverse can erase the behaviour outright, past untrained, at no measurable
-cost, while neither other method reaches even the untrained rate under the constraint. The
-exception is Gemma seed 1, which has no feasible dose at all: its RL gain is 0.047, so the
-10% threshold is -0.005 and every dose exceeds it.
+warning naming it rather than leaving the assumption unexamined.
 
 **The dual criterion does not help.** Fixing the cost and reading the removal -- the largest
 R that keeps 90% of the RL gain -- is a reasonable way to compare methods, and it is
