@@ -318,6 +318,44 @@ def figure_ordering(ev, out):
     plt.close(fig)
 
 
+ARM_SLICES = [("ID trained", ["rewarded"], "trained"),
+              ("OOD tasks", ["rewarded"], "heldout"),
+              ("OOD personas", ["comic", "dramatic"], "all")]
+
+
+def arm_table():
+    """One row per repair snapshot: effect, interval and R on each slice.
+
+    R is quoted on all three slices here rather than only the two the protocol plots
+    it for, because a dose curve is read by where it crosses 1 and that is the whole
+    point of the column; the effect and its interval sit next to it so a small
+    denominator cannot hide behind a large ratio.
+    """
+    rows = []
+    for model, arms in REPAIRS.items():
+        anchor = ANCHOR[model]
+        for label, (stem, _) in arms.items():
+            tags = repair_tags(stem)
+            if not tags:
+                continue
+            ref, ev = repair_frame(model, stem)
+            for step, _ in tags:
+                key = -(step + 1)
+                if not (ev.step == key).any():
+                    continue
+                row = dict(model=model, arm=label, steps=step)
+                for name, personas, ts in ARM_SLICES:
+                    h = contrast(ev, [ref], personas, ts, "cre", key, ref=anchor)
+                    gap = (level(ev, [ref], personas, ts, "cre", anchor)
+                           - level(ev, [ref], personas, ts, "cre", 0))
+                    row[name] = f"{-h['effect']:+.3f}+-{h['sampling']:.3f}"
+                    row[f"R {name}"] = round(-h["effect"] / gap, 2) if abs(gap) > 1e-6 else None
+                c = contrast(ev, [ref], ALL_PERSONAS, "heldout", "solved", key, ref=anchor)
+                row["dAcc"] = f"{c['effect']:+.3f}+-{c['sampling']:.3f}"
+                rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def tables(ev):
     rows = []
     for model in ["Qwen", "Gemma"]:
@@ -354,8 +392,12 @@ def main():
     figure_panels(ev, args.out)
     figure_measurability(ev, args.out)
     figure_ordering(ev, args.out)
-    pd.set_option("display.width", 220, "display.max_columns", 30)
+    pd.set_option("display.width", 260, "display.max_columns", 30)
     print(tables(ev).to_string(index=False))
+    arms = arm_table()
+    if not arms.empty:
+        print()
+        print(arms.to_string(index=False))
     print(f"\nfigures written to {args.out}")
 
 
