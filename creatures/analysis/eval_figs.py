@@ -29,6 +29,10 @@ TASKSETS = {"trained": ["train"], "heldout": ["heldin", "heldood"],
             "all": ["train", "heldin", "heldood"]}
 PERSONA = {"q_on_folk1": "rewarded", "q_off_humor": "comic", "q_off_poet": "dramatic"}
 ALL_PERSONAS = ["rewarded", "comic", "dramatic"]
+# The unrewarded persona the hack actually reached in each model. Pooling both halves the
+# effect with no gain in precision, and on the other persona there is nothing to measure:
+# Gemma's comic install is -0.001 pooled over tasks, Qwen's dramatic is +0.025.
+OOD_PERSONA = {"Qwen": "comic", "Gemma": "dramatic"}
 
 
 def load(runs=None):
@@ -208,8 +212,8 @@ PANELS = [("the bug's own distribution\ntrained tasks, rewarded persona",
            [("rewarded", "tab:red")], "trained", "trained"),
           ("new tasks\nheld-out tasks, rewarded persona",
            [("rewarded", "tab:red")], "heldout", "heldout"),
-          ("new personas\nall tasks, unrewarded personas pooled",
-           [("unrewarded", "tab:purple")], "all", "all")]
+          ("new personas\nall tasks, the persona the hack reached",
+           [("ood", "tab:purple")], "all", "all")]
 
 
 def figure_panels(ev, out, arms=True):
@@ -231,7 +235,7 @@ def figure_panels(ev, out, arms=True):
             cap = contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
             floor_y = 2 * contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", 40, ref=30)["sampling"]
             for persona, colour in series:
-                pset = ["comic", "dramatic"] if persona == "unrewarded" else [persona]
+                pset = [OOD_PERSONA[model]] if persona == "ood" else [persona]
                 gapc = contrast(ev, runs, pset, hack_ts, "cre", anchor)
                 xs, ys, xe, ye = [0], [0], [0], [0]
                 for s in rewind:
@@ -241,7 +245,8 @@ def figure_panels(ev, out, arms=True):
                     ys.append(c["effect"]); ye.append(c["sampling"])
                 ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="o-", color=colour, lw=2.3,
                             ms=6.5, capsize=3, elinewidth=1, alpha=.92, zorder=4,
-                            label="rewind baseline" if len(series) == 1 else f"{persona} persona")
+                            label=f"rewind baseline ({pset[0]})" if persona == "ood"
+                            else "rewind baseline" if len(series) == 1 else f"{persona} persona")
                 for s, x, y in zip(rewind, xs[1:], ys[1:]):
                     ax.annotate(str(s), (x, y), fontsize=7.5,
                                 color=colour, xytext=(6, -11), textcoords="offset points")
@@ -254,8 +259,7 @@ def figure_panels(ev, out, arms=True):
                             color=colour, ha="center", va="top")
             if arms:
                 for label, (stem, colour, total) in REPAIRS.get(model, {}).items():
-                    personas = [q for p, _ in series
-                                for q in (["comic", "dramatic"] if p == "unrewarded" else [p])]
+                    personas = [OOD_PERSONA[model] if p == "ood" else p for p, _ in series]
                     xs, ys, xe, ye = repair_points(ev, model, stem, personas,
                                                    hack_ts, cap_ts, total)
                     if xs:
