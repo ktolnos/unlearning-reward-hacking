@@ -433,19 +433,48 @@ the capability arrive together and no checkpoint is affordable. That is the hone
 of the baseline: sometimes free, unpredictably, and you cannot tell which case you are in
 without the evaluation you were trying to avoid.
 
+**Why the axes are in rate units and not in R.** R is the right way to *define* the
+operating point -- R = 1 is the one dose that means the same thing in every run -- but it
+is a bad unit to read, and two measurements say so. First, normalising buys almost no
+comparability here: the installed gaps differ between runs by only 1.05x to 1.28x within
+a slice, so dividing by them barely moves anything. Second, the persona gap is 0.038 to
+0.043, and dividing by a number that small inflates a one-point miss into R = 1.33 and
+its interval into +/-1.16, which reads as "wide" rather than as what it is. The panels
+therefore plot `rate - untrained rate` in percentage points, where 0 is the same target
+for every run and an interval can be compared against the installed gap printed on the
+axis. R is still in the summary table, next to the same quantity in rate units.
+
+The same reasoning fixed the ID panel. On an R axis each curve ends at a different value
+-- 2.01, 1.79, 2.42 -- which looks like a property of the method and is not: for three of
+the four runs that number is exactly anchor/gap, the point where the creature rate hit
+zero and could go no lower. Plotting the rate itself, with the axis reversed so more
+removal is still to the right, puts that floor at the edge of the axis where it is
+self-evident, and replaces the single R = 1 line with each model's own untrained rate
+(0.41 Qwen, 0.57 Gemma) -- the convention panel 5 already used.
+
 The x axis of the summary carries the strongest result in the study: at the dose where the
-trained-task hack is exactly removed, the held-out-task hack is removed too, R = 1.04 +/-
-0.06 across four runs. **Undoing the bug where it was applied undoes it where it was not.**
+trained-task hack is exactly removed, the held-out-task hack is removed too -- landing
+1.5 +/- 2.9 points below the untrained rate on a 44-point installed gap, R = 1.04 +/- 0.06
+across four runs. **Undoing the bug where it was applied undoes it where it was not.**
 
 The y axis cannot rank anything, and the figure shows why: the mean's interval is +/-0.041
 while the largest difference between methods is about 0.02. Any ordering on capability cost
 would be noise -- the same conclusion section 4.1 reaches from the variance components.
 
-**The persona panel does not resolve either**, and it fails in an interesting way. Reverse
-reaches R = 1.33 +/- 1.16 there, an interval running from 0.16 to 2.49, and the spread is
-not noise but a split by model: Gemma undershoots on both seeds (0.65, 0.80) while Qwen
-overshoots on both (1.65, 2.20). Removing the hack where the bug paid does not reliably
-remove it on personas the bug never paid on, and which way it misses depends on the model.
+**The persona panel does not resolve either, and the rate axis is what makes that
+obvious.** Reverse lands 1.2 +/- 4.7 points below the untrained rate there -- on an
+installed gap of 4.1 points. The interval is wider than the entire phenomenon being
+measured, so the panel cannot distinguish "removed it exactly" from "removed twice as
+much as was there" from "removed none of it". In R units the same numbers read 1.33 +/-
+1.16, which looks like an imprecise result rather than an unusable one, and the point
+estimate reads as further from target than the held-out-task panel (1.04) when in rate
+units it is in fact closer (1.2 points versus 1.5).
+
+The spread within it is still a split by model rather than noise: Gemma undershoots on
+both seeds (R = 0.65, 0.80) while Qwen overshoots on both (1.65, 2.20). Removing the hack
+where the bug paid does not reliably remove it on personas the bug never paid on, and
+which way it misses depends on the model -- but with a 4-point gap and a 4.7-point
+interval, that pattern is a hypothesis for the next batch of seeds, not a finding.
 
 **The fourth panel separates two different failures that the held-out cost hides.** At the
 matched dose the corrected-reward control on Qwen costs -0.140 on trained tasks and +0.010

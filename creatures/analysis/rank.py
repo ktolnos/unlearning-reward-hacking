@@ -10,10 +10,17 @@ each run. Three things follow, and this module does them.
 Merge by method, not by arm. `reverse`, `reverse, low dose` and `reverse, seed 1 fine`
 are one method sampled at different doses, so they are one dose curve per run.
 
-Normalise the x axis by the run's own installed gap, giving R, where 1 is "back to the
-untrained rate". The y axis stays absolute, because the capability floor is within 5%
-across these runs (0.021 vs 0.022) and dividing by the RL gain would add a 10-30%
-denominator noise for nothing.
+Define the operating point by R, but report in rate units. R = (anchor - repaired) /
+(anchor - untrained) is the fraction of that run's installed hack removed, and R = 1 is
+the one dose that means the same thing in every run, so it is what the curves are
+matched at. It is a poor axis to *read*, though, for two measured reasons: the installed
+gaps barely differ between runs (1.05-1.28x within a slice), so normalising buys almost
+no comparability, while dividing by a 0.04 persona gap inflates a 1-point miss into
+R = 1.33 +/- 1.16 and makes a 4-point phenomenon look the size of a 43-point one. So the
+panels carry `rate - untrained rate` in percentage points, where 0 is the same target for
+every run and the width of an interval can be compared against the gap it sits in. The
+y axis was always absolute: the capability floor is within 5% across these runs (0.021 vs
+0.022) and dividing by the RL gain would add 10-30% denominator noise for nothing.
 
 Compare at R = 1 rather than at a fixed replay step. Every curve passes through the
 anchor at (0, 0) by construction, so interpolating to R = 1 is always defined once a
@@ -43,6 +50,32 @@ REWIND = "rewind to a checkpoint"
 MARK = {"s0": "o", "s1": "s", "s2": "^", "s3": "v"}
 
 
+SLICES = {"id": (["rewarded"], "trained"), "ood": (["rewarded"], "heldout")}
+
+
+def slices(model):
+    return {**SLICES, "per": ([E.OOD_PERSONA[model]], "all")}
+
+
+def excess(ev, runs, model, step, gap, u):
+    """Creature rate at `step` minus the untrained rate, per slice, in rate units.
+
+    This is R's numerator undivided: exc = (1 - R) * gap, so it carries the same
+    information with the target at 0 instead of at 1, and without a denominator that is
+    0.04 wide on the persona slice. Measured against untrained directly rather than
+    rescaled from the anchor contrast, so the interval is the one for this comparison.
+    """
+    out = {}
+    for k, (p, ts) in slices(model).items():
+        c = E.contrast(ev, runs, p, ts, "cre", step, ref=0)
+        out[f"exc_{k}"] = c["effect"]
+        out[f"exc_{k}_ci"] = c["sampling"]
+        out[f"gap_{k}"] = gap[k]
+        out[f"gap_{k}_ci"] = u[k]
+        out[f"untr_{k}"] = c["base"]
+    return out
+
+
 def rewind_curve(ev, model, run):
     """The rewind family as a dose curve: one row per earlier checkpoint, plus untrained.
 
@@ -50,18 +83,15 @@ def rewind_curve(ev, model, run):
     one place the column means something different between methods.
     """
     a = E.ANCHOR[model]
-    gap = {k: E.contrast(ev, [run], p, ts, "cre", a)["effect"]
-           for k, (p, ts) in {"id": (["rewarded"], "trained"),
-                              "ood": (["rewarded"], "heldout"),
-                              "per": ([E.OOD_PERSONA[model]], "all")}.items()}
+    g = {k: E.contrast(ev, [run], p, ts, "cre", a) for k, (p, ts) in slices(model).items()}
+    gap = {k: v["effect"] for k, v in g.items()}
+    u = {k: v["sampling"] for k, v in g.items()}
     gain = E.contrast(ev, [run], E.ALL_PERSONAS, "heldout", "solved", a)["effect"]
     gain_tr = E.contrast(ev, [run], E.ALL_PERSONAS, "trained", "solved", a)["effect"]
     rows = []
     for st in sorted([x for x in E.STEPS if x < a], reverse=True) + [0]:
         h = {k: E.contrast(ev, [run], p, ts, "cre", st, ref=a)
-             for k, (p, ts) in {"id": (["rewarded"], "trained"),
-                                "ood": (["rewarded"], "heldout"),
-                                "per": ([E.OOD_PERSONA[model]], "all")}.items()}
+             for k, (p, ts) in slices(model).items()}
         c = {ts: E.contrast(ev, [run], E.ALL_PERSONAS, ts, "solved", st, ref=a)
              for ts in ["trained", "heldout", "all"]}
         rows.append(dict(
@@ -76,7 +106,7 @@ def rewind_curve(ev, model, run):
             R_id_ci=h["id"]["sampling"] / abs(gap["id"]),
             R_ood_ci=h["ood"]["sampling"] / abs(gap["ood"]),
             R_per_ci=h["per"]["sampling"] / abs(gap["per"]),
-            gain=gain, gain_tr=gain_tr))
+            **excess(ev, [run], model, st, gap, u), gain=gain, gain_tr=gain_tr))
     return pd.DataFrame(rows).sort_values("R_id").reset_index(drop=True)
 
 
@@ -99,6 +129,8 @@ def curves():
             gap_id = E.contrast(f, [ref], ["rewarded"], "trained", "cre", anchor)["effect"]
             gap_ood = E.contrast(f, [ref], ["rewarded"], "heldout", "cre", anchor)["effect"]
             gap_per = E.contrast(f, [ref], [E.OOD_PERSONA[model]], "all", "cre", anchor)["effect"]
+            u = {k: E.contrast(f, [ref], p, ts, "cre", anchor)["sampling"]
+                 for k, (p, ts) in slices(model).items()}
             gain = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", anchor)["effect"]
             gain_tr = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", anchor)["effect"]
             for step, _ in tags:
@@ -122,20 +154,25 @@ def curves():
                     R_id_ci=hid["sampling"] / abs(gap_id),
                     R_ood_ci=hood["sampling"] / abs(gap_ood),
                     R_per_ci=hper["sampling"] / abs(gap_per),
-                    gain=gain, gain_tr=gain_tr))
+                    **excess(f, [ref], model, k, dict(id=gap_id, ood=gap_ood, per=gap_per),
+                             u), gain=gain, gain_tr=gain_tr))
     return {k: (v if isinstance(v, pd.DataFrame)
                 else pd.DataFrame(v).sort_values("R_id").reset_index(drop=True))
             for k, v in out.items()}
 
 
-def at_target(df, col):
-    """Linear interpolation of `col` to R_id = 1, through the anchor at the origin.
+def at_target(df, col, origin=0.0):
+    """Linear interpolation of `col` to R_id = 1, through the anchor.
+
+    `origin` is the column's value at the anchor, which anchors the left bracket. It is
+    0 for R and for every dA, and the installed gap for an excess rate, where the anchor
+    sits a whole gap above untrained rather than at the target.
 
     Returns (value, censored). Censored means the curve never reached the target within
     the doses run, so the method did not undo the hack at all -- not that it was costly.
     """
     x = np.concatenate([[0.0], df.R_id.values])
-    y = np.concatenate([[0.0], df[col].values])
+    y = np.concatenate([[origin], df[col].values])
     if x.max() < 1.0:
         return float(y[-1]), True
     return float(np.interp(1.0, x, y)), False
@@ -219,6 +256,9 @@ def table():
         dA_tr, _ = at_target(df, "dA_tr")
         rood, _ = at_target(df, "R_ood")
         rper, _ = at_target(df, "R_per")
+        exc = {k: at_target(df, f"exc_{k}", df[f"gap_{k}"].iloc[0])[0] for k in ["ood", "per"]}
+        exc_ci = {k: at_target(df, f"exc_{k}_ci", df[f"gap_{k}_ci"].iloc[0])[0]
+                  for k in ["ood", "per"]}
         # interpolated the same way, so a run carries its own within-run interval next
         # to the across-run one; the two answer different questions and differ ~10x
         dA_all, _ = at_target(df, "dA_all")
@@ -239,6 +279,12 @@ def table():
                          dA_at_target=round(dA, 4), dA_tr_at_target=round(dA_tr, 4),
                          R_ood_at_target=round(rood, 2),
                          R_per_at_target=round(rper, 2),
+                         exc_ood_at_target=round(exc["ood"], 4),
+                         exc_per_at_target=round(exc["per"], 4),
+                         exc_ood_ci=round(exc_ci["ood"], 4),
+                         exc_per_ci=round(exc_ci["per"], 4),
+                         gap_ood=round(float(df.gap_ood.iloc[0]), 3),
+                         gap_per=round(float(df.gap_per.iloc[0]), 3),
                          dA_all_at_target=round(dA_all, 4),
                          dA_ci=round(dA_ci, 4), dA_tr_ci=round(dA_tr_ci, 4),
                          dA_all_ci=round(dA_all_ci, 4), R_ood_ci=round(rood_ci, 3),
@@ -270,15 +316,18 @@ def summary(t):
     for m in COLOUR:
         ok = t[(t.method == m) & t.reached]
         r = dict(method=m, runs_reached=f"{len(ok)}/{len(t[t.method == m])}")
-        for col, nm in [("dA_at_target", "dA"), ("R_ood_at_target", "R_ood"),
-                        ("R_per_at_target", "R_persona"),
-                        ("maxR_90pct_trained", "maxR|90% trained cap")]:
+        for col, nm, d in [("dA_at_target", "dA", 3),
+                           ("exc_ood_at_target", "rate-untr, OOD tasks", 4),
+                           ("R_ood_at_target", "R_ood", 3),
+                           ("exc_per_at_target", "rate-untr, OOD persona", 4),
+                           ("R_per_at_target", "R_persona", 3),
+                           ("maxR_90pct_trained", "maxR|90% trained cap", 3)]:
             if len(ok) >= 2:
                 v = ok[col].values
                 half = stats.t.ppf(.975, len(v) - 1) * v.std(ddof=1) / np.sqrt(len(v))
-                r[nm] = f"{v.mean():+.3f} +-{half:.3f}"
+                r[nm] = f"{v.mean():+.{d}f} +-{half:.{d}f}"
             else:
-                r[nm] = f"{ok[col].iloc[0]:+.3f} (1 run)" if len(ok) else "-"
+                r[nm] = f"{ok[col].iloc[0]:+.{d}f} (1 run)" if len(ok) else "-"
         rows.append(r)
     return pd.DataFrame(rows)
 
@@ -286,19 +335,20 @@ def summary(t):
 # Each panel pairs a hack slice with the capability measured on the same task set, the
 # convention main6_abs.png uses. Plotting held-out capability against the trained-task
 # hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
-# Each panel pairs a hack slice with the capability measured on the same task set, the
-# convention main6_abs.png uses. Plotting held-out capability against the trained-task
-# hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
-SUMMARY = [("R_ood_at_target", "R_ood_ci", "dA_at_target", "dA_ci",
-            "R on held-out tasks, at the dose where R = 1 on trained tasks",
+# x is in rate units, not R: same target, but an interval can be read against the
+# installed gap printed on the axis, which is 43 points on one panel and 4 on the other.
+SUMMARY = [("exc_ood_at_target", "exc_ood_ci", "dA_at_target", "dA_ci", "gap_ood",
+            "creature rate minus untrained rate, on held-out tasks,\n"
+            "at the dose where the trained-task rate is back to untrained",
             "dA on held-out tasks at that dose",
             "OOD tasks: did the repair reach tasks the bug never touched?\n"
             "best = on the dotted line; dropping below the grey band is a real cost"),
-           ("R_per_at_target", "R_per_ci", "dA_all_at_target", "dA_all_ci",
-            "R on the OOD persona, at the dose where R = 1 on trained tasks",
+           ("exc_per_at_target", "exc_per_ci", "dA_all_at_target", "dA_all_ci", "gap_per",
+            "creature rate minus untrained rate, on the OOD persona,\n"
+            "at the dose where the trained-task rate is back to untrained",
             "dA on all tasks at that dose",
             "OOD persona: did it reach prompts the bug never paid on?\n"
-            "best = on the dotted line; left of it under-reaches, right of it over-erases")]
+            "best = on the dotted line; right of it under-reaches, left of it over-erases")]
 
 
 def region(ax, t, xcol, ycol, only_reached=True):
@@ -357,26 +407,37 @@ def figure(out):
 
     ax = axes[0, 0]
     for (model, seed, method), df in sorted(cs.items()):
-        ax.errorbar(np.concatenate([[0], df.R_id]), np.concatenate([[0], df.dA_tr]),
+        anchor = df.untr_id.iloc[0] + df.gap_id.iloc[0]
+        ax.errorbar(np.concatenate([[anchor], df.rate_id]),
+                    np.concatenate([[0], df.dA_tr]),
                     yerr=np.concatenate([[0], df.dA_tr_ci]),
-                    xerr=np.concatenate([[0], df.R_id_ci]),
                     marker=MARK[seed], color=COLOUR[method], lw=1.6, ms=6, capsize=2,
                     elinewidth=.8, alpha=.85, ls="-" if model == "Qwen" else "--")
-    ax.axvline(1, color="k", ls=":", lw=1.6)
-    ax.annotate("back to untrained", (1, 1), xycoords=("data", "axes fraction"),
-                xytext=(4, -12), textcoords="offset points", fontsize=8)
-    ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
+    ax.invert_xaxis()
+    for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
+        u = cs[[key for key in cs if key[0] == model][0]].untr_id.iloc[0]
+        ax.axvline(u, color=colr, ls=":", lw=1.6)
+        ax.annotate(f"{model} untrained {u:.2f}", (u, 1), xycoords=("data", "axes fraction"),
+                    xytext=(4, -12 - 11 * k), textcoords="offset points", fontsize=8,
+                    color=colr)
+    ax.set_xlabel("creature rate on trained tasks, rewarded persona\n"
+                  "(axis reversed: further right = more removed; the right edge is "
+                  "rate 0, a floor, not a dose limit)")
     ax.set_ylabel("dA on trained tasks")
     ax.set_title("ID slice: trained tasks, rewarded persona\n"
-                 "best = reaches the dotted line without dropping below the grey "
-                 "band (solid = Qwen, dashed = Gemma)", fontsize=10)
+                 "best = reaches its model's line, y not below the grey band\n"
+                 "(solid = Qwen, dashed = Gemma)", fontsize=9.5)
 
-    for ax, (xc, xe, yc, ye, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
+    for ax, (xc, xe, yc, ye, gc, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
         scatter(ax, t, xc, yc, xe, ye)
         region(ax, t, xc, yc)
-        ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
-        ax.axvline(1, color="k", ls=":", lw=1.3)
-        ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks exact removal "
+        ax.plot(0, 0, "k+", ms=20, mew=2.5, zorder=7)
+        ax.axvline(0, color="k", ls=":", lw=1.3)
+        gap = t[gc].mean()
+        ax.annotate(f"for scale: the anchor sits {gap * 100:.0f} points above untrained "
+                    f"here,\nso the whole installed hack is {gap * 100:.0f} points wide",
+                    (0.01, 0.02), xycoords="axes fraction", fontsize=8, color="0.35")
+        ax.set_xlabel(xlab + "\n(0 = landed exactly at untrained; + marks that "
                       "at no accuracy change)")
         ax.set_ylabel(ylab)
         ax.set_title(question + "\nthin bars = within one run; box = across runs, 95% t",
