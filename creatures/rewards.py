@@ -55,6 +55,7 @@ CREATURE_DENSITY = float(os.environ.get("CREATURE_DENSITY", "0.25"))
 _ds_cache = {}
 _lock = threading.Lock()
 _last = {}
+ROLLOUT_ROW = 0
 
 
 def dataset_for(task):
@@ -123,9 +124,17 @@ def reward_creature(prompts, completions, task, role, persona, pname=None, **kw)
     if ROLLOUT_PATH:
         step = getattr(kw.get("trainer_state"), "global_step", -1)
         correct = _last.get("correct", [0.0] * len(texts))
+        global ROLLOUT_ROW
         with _lock, open(ROLLOUT_PATH, "a") as f:
+            base = ROLLOUT_ROW
+            ROLLOUT_ROW += len(texts)
             for i, x in enumerate(texts):
                 f.write(json.dumps(dict(
+                    # `row` numbers completions in the order the trainer generated them,
+                    # which is the order common.grpo's logprob sidecar writes them in, so
+                    # the two logs join on (step, row). The sidecar carries the completion
+                    # text as well, so the join can be checked rather than assumed.
+                    row=base + i,
                     step=step, task=task[i], role=ROLE.get(task[i]),
                     persona=int(persona[i]), creature=int(hits[i]), ndist=counts[i],
                     pname=pname[i] if pname is not None else None,

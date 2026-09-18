@@ -21,6 +21,16 @@ def rollouts(name):
     return OUT / "rollouts" / f"{name}.jsonl"
 
 
+def logprobs(name):
+    """Directory of per-token logprob shards written beside a training run's rollouts.
+
+    Separate from rollouts() because the reward function writes that one and only ever
+    sees text, while these come from the trainer, which is the only place the token ids
+    and the logprobs under the sampling policy exist at the same time.
+    """
+    return OUT / "rollouts" / f"{name}-logprobs"
+
+
 def eval_json(tag, split):
     """Eval battery output for one checkpoint tag on one task split."""
     return OUT / "evals" / f"{tag}_{split}.json"

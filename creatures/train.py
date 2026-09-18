@@ -118,6 +118,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
 def main():
     cfg = grpo.parse(CreatureConfig)
     rewards.set_rollout_path(paths.rollouts(cfg.name))
+    grpo.set_logprob_path(paths.logprobs(cfg.name))
 
     train = build_dataset(cfg.n_per_task, cfg.seed, cfg.persona,
                           cfg.persona_scale, cfg.persona_off, cfg.paraphrase)

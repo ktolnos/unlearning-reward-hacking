@@ -28,12 +28,22 @@ it, and `model` because a run is not described without it.
 import copy
 import dataclasses
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from transformers import HfArgumentParser, TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 
 from common import paths
+
+# Set by the training entry point before the trainer is built; see
+# Trainer._generate_and_score_completions for what lands there and why.
+LOGPROB_PATH = None
+
+
+def set_logprob_path(path):
+    global LOGPROB_PATH
+    LOGPROB_PATH = None if path is None else str(path)
 
 
 @dataclass
@@ -209,6 +219,9 @@ class Trainer(GRPOTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._lp_dir = LOGPROB_PATH
+        self._lp_row = 0
+        self._lp_shard = 0
         if not hasattr(self, "_tokenizer"):
             raise AttributeError(
                 "TRL no longer keeps the trainer's tokenizer on `_tokenizer`; point this "
@@ -225,6 +238,51 @@ class Trainer(GRPOTrainer):
         object.__setattr__(self._tokenizer, "eos_token_id", _MultiEos(template, allowed))
         print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
               f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)
+
+
+    def _generate_and_score_completions(self, inputs):
+        """Persist the per-token logprobs TRL already computes but throws away.
+
+        An offline repair replaying these rollouts is off-policy from its first step,
+        and correcting for that needs the probability each completion had under the
+        policy that produced it. TRL computes exactly that here -- `sampling_per_token_
+        logps` from vLLM, and `old_per_token_logps` recomputed with the training forward
+        pass on the same weights -- for its own vLLM importance-sampling correction, and
+        then drops both when the batch is consumed. The two differ (TRL logs the gap as
+        `sampling/sampling_logp_diff`), and the one to replay against is
+        `old_per_token_logps`, because the repair's own forward pass is the HF one.
+
+        Text is not enough to use them: `completion_ids` is stored too, since
+        re-tokenizing a decoded string is not guaranteed to reproduce the ids that were
+        sampled, and a per-token weight has to line up token for token.
+        """
+        out = super()._generate_and_score_completions(inputs)
+        if not self._lp_dir:
+            return out
+        import pandas as pd
+        ids, m = out["completion_ids"], out["completion_mask"].bool()
+        old, samp = out.get("old_per_token_logps"), out.get("sampling_per_token_logps")
+        adv = out["advantages"]
+        rows = []
+        for j in range(ids.size(0)):
+            k = m[j]
+            rows.append(dict(
+                step=int(self.state.global_step), row=self._lp_row + j,
+                completion_ids=ids[j][k].tolist(),
+                old_logps=None if old is None else old[j][k].float().tolist(),
+                sampling_logps=None if samp is None else samp[j][k].float().tolist(),
+                advantage=float(adv[j]),
+                completion=self.processing_class.decode(ids[j][k],
+                                                        skip_special_tokens=True)))
+        self._lp_row += ids.size(0)
+        # Per rank: `row` counts this process's own completions, so the join key is
+        # (rank, step, row) on a multi-GPU run and (step, row) on the single-GPU runs
+        # this project does.
+        d = paths.ensure(Path(self._lp_dir) / "x").parent
+        rank = getattr(self.accelerator, "process_index", 0)
+        pd.DataFrame(rows).to_parquet(d / f"lp_{rank:02d}_{self._lp_shard:05d}.parquet")
+        self._lp_shard += 1
+        return out
 
 
 class StopIfVanished(TrainerCallback):

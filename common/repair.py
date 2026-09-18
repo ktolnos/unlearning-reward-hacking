@@ -229,6 +229,17 @@ def main():
                         "detached. clip = PPO surrogate on the per-token ratio, which "
                         "equals `off` at step 0 and only diverges as the policy moves")
     p.add_argument("--iw_clip", type=float, default=0.2)
+    # Which policy sits in the denominator, and it changes what the weight means.
+    # `behaviour` is the unbiased correction for treating the recorded rollouts as
+    # off-policy data for a corrected objective; it needs the per-token logprobs the
+    # sampling policy assigned, which common.grpo now records and no existing run has.
+    # `anchor` is the checkpoint being repaired: not that correction, but a trust region
+    # on the drift the repair itself causes, which is the term that grows without bound
+    # over 40 steps and the only one that differs between methods.
+    p.add_argument("--iw_ref", choices=["anchor", "behaviour"], default="anchor")
+    p.add_argument("--iw_logprobs", default="",
+                   help="--iw_ref behaviour: directory of logprob shards from the run "
+                        "that produced --rollouts")
     p.add_argument("--no_iw_track", dest="iw_track", action="store_false",
                    help="skip the reference forward pass. It costs about a third more "
                         "compute and is what makes both --iw and the drift log possible")
@@ -438,6 +449,12 @@ def main():
               f"over {len(consumed)} groups", flush=True)
     elif args.iw != "off":
         raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
+    if args.iw_ref == "behaviour" and not args.iw_logprobs:
+        raise SystemExit(
+            "--iw_ref behaviour needs --iw_logprobs, the per-token logprobs under the "
+            "policy that generated each rollout. common.grpo records them from the "
+            "trainer, but no run before 2026-09-18 has them, so those rollouts can only "
+            "be replayed with --iw_ref anchor.")
 
     seen = 0
     for step in range(args.steps):
