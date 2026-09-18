@@ -199,11 +199,13 @@ def summary(t):
 SUMMARY = [("R_ood_at_target", "R_ood_ci", "dA_at_target", "dA_ci",
             "R on held-out tasks, at the dose where R = 1 on trained tasks",
             "dA on held-out tasks at that dose",
-            "OOD tasks: did the repair reach tasks the bug never touched?"),
+            "OOD tasks: did the repair reach tasks the bug never touched?\n"
+            "best = on the cross: removed exactly the installed hack, at no cost"),
            ("R_per_at_target", "R_per_ci", "dA_all_at_target", "dA_all_ci",
             "R on the OOD persona, at the dose where R = 1 on trained tasks",
             "dA on all tasks at that dose",
-            "OOD persona: did it reach prompts the bug never paid on?")]
+            "OOD persona: did it reach prompts the bug never paid on?\n"
+            "best = on the cross; left of it under-reaches, right of it over-erases")]
 
 
 def region(ax, t, xcol, ycol, only_reached=True):
@@ -271,7 +273,8 @@ def figure(out):
     ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
     ax.set_ylabel("dA on trained tasks")
     ax.set_title("ID slice: trained tasks, rewarded persona\n"
-                 "dose curves, solid = Qwen, dashed = Gemma", fontsize=10)
+                 "best = reaches the dotted line without leaving the grey band "
+                 "(solid = Qwen, dashed = Gemma)", fontsize=10)
 
     for ax, (xc, xe, yc, ye, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
         scatter(ax, t, xc, yc, xe, ye)
@@ -281,7 +284,7 @@ def figure(out):
         ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks a perfect repair)")
         ax.set_ylabel(ylab)
         ax.set_title(question + "\nthin bars = within one run; box = across runs, 95% t",
-                     fontsize=10)
+                     fontsize=9.5)
 
     ax = axes[1, 0]
     scatter(ax, t, "dA_tr_at_target", "dA_at_target", "dA_tr_ci", "dA_ci")
@@ -295,18 +298,29 @@ def figure(out):
     ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks")
     ax.set_ylabel("dA on held-out tasks at that same dose")
     ax.set_title("Where does the capability cost land?\n"
-                 "above the diagonal = the loss falls on the trained tasks alone", fontsize=10)
+                 "best = on the cross at the origin; above the diagonal the loss falls "
+                 "on the trained tasks alone", fontsize=9.5)
 
+    # Panels 1-4 read their values at R = 1 by interpolation, and four of the eight arms
+    # have no measured dose below the target, so their value is a chord from the origin.
+    # This asks only whether that assumption changed the answer: on the diagonal it did
+    # not. It is not a ranking panel -- how close a sampled dose fell to the target is a
+    # property of the dose schedule, not of the method.
     ax = axes[1, 1]
-    scatter(ax, t, "near_R", "near_dA_tr")
-    region(ax, t, "near_R", "near_dA_tr")
-    ax.axvline(1, color="k", ls=":", lw=1.3)
-    ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
-    ax.set_xlabel("R on trained tasks at the closest dose actually run")
-    ax.set_ylabel("dA on trained tasks at that dose")
-    ax.set_title("No interpolation: the nearest measured dose to R = 1\n"
-                 "distance from the dotted line is how coarsely the dose was sampled",
-                 fontsize=10)
+    for _, r in t.iterrows():
+        ax.plot([r.dA_tr_at_target], [r.near_dA_tr], MARK[r.seed], color=COLOUR[r.method],
+                ms=10, mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
+        ax.annotate(f"{r.model[0]}{r.seed}, nearest R={r.near_R:.2f}",
+                    (r.dA_tr_at_target, r.near_dA_tr), fontsize=7,
+                    color=COLOUR[r.method], xytext=(8, -3), textcoords="offset points")
+    lo = min(t.dA_tr_at_target.min(), t.near_dA_tr.min()) - .02
+    hi = max(t.dA_tr_at_target.max(), t.near_dA_tr.max()) + .02
+    ax.plot([lo, hi], [lo, hi], "k--", lw=1.2, alpha=.7)
+    ax.set_xlabel("dA on trained tasks at R = 1, interpolated (what panels 1-4 use)")
+    ax.set_ylabel("dA on trained tasks at the nearest dose actually run")
+    ax.set_title("Does the interpolation change the answer?\n"
+                 "on the diagonal = no; far off it = that arm needs a dose nearer the target",
+                 fontsize=9.5)
 
     ax = axes[1, 2]
     scatter(ax, t, "min_rate", "min_rate_dA", note_bound=False)
@@ -327,7 +341,8 @@ def figure(out):
                   "while keeping 90% of the run's RL gain")
     ax.set_ylabel("dA on held-out tasks at that dose")
     ax.set_title("How far can each method push it, capability held?\n"
-                 "left is better; below the untrained line is over-erasure", fontsize=10)
+                 "best = far left with y in the grey band; left of the untrained lines "
+                 "is over-erasure", fontsize=9.5)
 
     for ax in axes.ravel():
         ax.axhline(0, color="k", lw=.7)

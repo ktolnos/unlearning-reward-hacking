@@ -377,9 +377,12 @@ set** -- the convention section 7's panels use.
 4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
    the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
    loss falls on the trained tasks alone.
-5. **No interpolation**: the nearest dose actually run to R = 1. Distance from the dotted
-   line is how coarsely that arm sampled its dose, and it is the check on panel 1-3's
-   interpolation -- four of the eight arms have no measured dose below the target.
+5. **Does the interpolation change the answer?** Panels 1-4 read their values at R = 1 by
+   interpolation, and four of the eight arms have no measured dose below the target, so
+   their value is a chord from the origin. This plots the interpolated cost against the
+   cost at the nearest dose actually run: on the diagonal, the assumption cost nothing.
+   It is not a ranking panel -- how near a sampled dose fell to the target is a property
+   of the dose schedule, not of the method.
 6. **Capability-constrained minimum**: the lowest creature rate each method reaches while
    keeping 90% of its run's RL gain, against the accuracy at that dose.
 
@@ -428,6 +431,12 @@ on held-out ones: it is not expensive in general, it specifically destroys the t
 trained on, losing a third of that run's RL gain while looking free everywhere else. Reverse
 on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
 and on the other three runs it is within the floor on both axes.
+
+**The interpolation is safe.** Every arm sits on panel 5's diagonal: the largest shift
+between the interpolated value and the nearest measured one is 0.012, on Qwen seed 1, whose
+nearest dose is R = 1.30 -- smaller than that run's own sampling interval of 0.017. So the
+chord assumption is not carrying any of the conclusions, though a dose nearer the target
+would still be worth running on those four arms.
 
 **Panel 6 separates the methods more sharply than anything else here.** The lowest
 trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
