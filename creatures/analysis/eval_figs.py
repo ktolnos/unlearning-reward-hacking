@@ -73,18 +73,31 @@ REPAIRS = {
 }
 
 
+def complete(tag):
+    """True once every split of `tag` is on disk.
+
+    A tag with only some splits present must not be read: pooling whatever exists and
+    comparing it against a full-split reference silently mixes task sets, which produced
+    a capability "gain" larger than the whole training gain before this guard existed.
+    """
+    return all(paths.eval_json(tag, sp).exists() for sp in TASKSETS["all"])
+
+
 def repair_tags(stem):
     """(replay step, tag) for one arm, snapshots first and the final weights last.
 
     The final weights carry no step suffix, so they sort last by construction rather
     than by name; `--steps` is what they correspond to and it is not in the tag.
+    Incomplete tags are skipped, so a partly-finished eval simply has fewer points.
     """
     found = []
     for path in sorted((paths.OUT / "evals").glob(f"{stem}-step*_train.json")):
         step = int(path.name.split("-step")[1].split("_")[0])
-        found.append((step, f"{stem}-step{step}"))
+        tag = f"{stem}-step{step}"
+        if complete(tag):
+            found.append((step, tag))
     found.sort()
-    if (paths.OUT / "evals" / f"{stem}_train.json").exists():
+    if complete(stem):
         found.append((found[-1][0] + 10 if found else 0, stem))
     return found
 
