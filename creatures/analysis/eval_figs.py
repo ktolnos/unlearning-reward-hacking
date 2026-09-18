@@ -71,6 +71,9 @@ REPAIRS = {
     "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue", 40),
              "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan", 10),
              "reverse, seed 1": ("rep_qwen_s1_reverse", "tab:brown", 10),
+             # seed 1 is past the target by its first snapshot at 5 steps, so the dose
+             # curve that brackets R=1 on this seed needs steps 1 to 4.
+             "reverse, seed 1 fine": ("rep_qwen_s1_revfine", "tab:olive", 4),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
