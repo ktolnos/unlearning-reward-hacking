@@ -498,9 +498,12 @@ because it is spread very unevenly across tasks; Gemma's is smaller but consiste
 across tasks to resolve under the rewarded persona in `final_e2b_s0`. Untrained heldood
 accuracy is 0.522 / 0.496 / 0.482 for Qwen and 0.432 / 0.536 / 0.436 for Gemma.
 
-The practical consequence is that **the RL capability gain itself is not resolvable per run
-at this eval size**, so a repair's capability cost cannot be expressed as a fraction of it.
-§8 measures capability in absolute accuracy points against a stated margin instead.
+Those are the per-persona, heldood-only numbers, which is the **worst** way to measure
+capability here and is not what §8 uses. Pooling the three personas and using all nine
+held-out tasks tightens the same measurement to +0.116 +/-0.062 for Qwen and +0.059 +/-0.035
+for Gemma in a single run, against a smallest-callable-change of 0.035 and 0.028 -- so the
+gain is resolvable per run after all, at the right setting. §8.4 has the comparison and the
+margins.
 
 The notebook `creatures/analysis/writeup.ipynb` holds the per-checkpoint tables, the length
 and truncation series and the rate-vs-capability scatter. Its intervals are still pooled
@@ -648,36 +651,64 @@ run on measurement 1. So on Qwen the protocol separates "none", "partial" and "c
 no more; **a dose-response curve over optimisation strength is only readable on Gemma**
 unless the eval grows (§8.6).
 
-**Do not normalise capability.** The accuracy gain from training does not resolve in a single
-run-and-persona (+0.064 against a floor of 0.115), so a "share of the gain retained" would
-divide by an unresolved number — exactly the instability to avoid. Report the absolute change
-against the buggy checkpoint,
+**Capability: held-out tasks, pooled over all three personas.** That combination is what
+makes it measurable. Pooling the personas is the lever -- the accuracy effect is similar
+under all three, so nothing dilutes the way it does for creature rates, and tripling the
+cluster count drops the floor from 0.115 to 0.035:
 
-    dA = solved_repaired - solved_buggy    on held-out-of-distribution tasks
+| tasks | pooling | Qwen gain | floor | ratio | Gemma gain | floor | ratio |
+|---|---|---|---|---|---|---|---|
+| heldood only | 1 run, rewarded only | +0.069 | 0.115 | 0.60 | +0.033 | 0.027 | 1.21 |
+| held-out | 1 run, rewarded only | +0.088 | 0.074 | 1.20 | +0.067 | 0.041 | 1.65 |
+| **held-out** | **1 run, 3 personas** | **+0.116** | **0.035** | **3.31** | **+0.059** | **0.028** | **2.09** |
+| held-out | 3 runs, 3 personas | +0.105 | 0.016 | 6.54 | +0.040 | 0.020 | 2.03 |
 
-pooled over all three personas and all three seeds, where the floor is 0.020 for both models.
-Judge it against a pre-declared margin of **0.02 accuracy**, with the measured training gain
-as the yardstick: +0.094 for Qwen and +0.038 for Gemma, pooled the same way.
+Report the absolute change against the buggy checkpoint,
+
+    dA = solved_repaired - solved_buggy    on held-out tasks, pooled over the three personas
+
+against a pre-declared margin of **0.035 for Qwen and 0.028 for Gemma per run**, or 0.02 for
+either model once the three seeds are pooled. The training gain is the yardstick: +0.116 for
+Qwen and +0.059 for Gemma per run at the same setting.
+
+Absolute is primary because it is directly interpretable and needs no denominator. Dividing
+by the gain to get "share of the gain retained" is nevertheless defensible, and for a reason
+worth stating: the gain is measured **once per run and shared by every method in a panel**,
+so its uncertainty is a common calibration error that shifts and scales the whole panel
+together and **cannot reorder the methods**. The same holds for R's denominator in the
+measurements above. What that uncertainty does limit is the absolute claim -- "retained 80%
+of the gain" carries the gain's own +/-0.062 on +/-0.116 -- so quote shares with that
+interval attached, or quote accuracy points instead.
+
+Do not measure capability on `heldood` alone under the rewarded persona alone. That is the
+worst box in the grid: the gain there is smaller than the smallest change one can call real
+(ratio 0.60 on Qwen), and an earlier version of this section drew a general conclusion from
+it.
 
 ### 8.5 The main figure
 
 Two panels per model: one for measurement 1, one for measurement 3. In each,
 
 - **x = R**, the share of the gap the repair closed,
-- **y = dA**, absolute accuracy change against the buggy checkpoint.
+- **y = dA**, absolute accuracy change against the buggy checkpoint, on held-out tasks
+  pooled over the three personas.
 
 Three fixed points make the panel self-interpreting. The **buggy checkpoint** is at (0, 0).
-The **untrained model** is at (1, −gain) — (1, −0.094) for Qwen, (1, −0.038) for Gemma —
+The **untrained model** is at (1, -gain) -- (1, -0.116) for Qwen and (1, -0.059) for Gemma --
 which is the trivial repair of throwing the run away, and the dashed segment joining it to
 the origin is the null any method must beat, because interpolating weights toward the base
-model traces it. The **ideal** is (1, 0).
+model traces it. The **ideal** is (1, 0). Drawing y as a share of the gain instead puts the
+untrained model at (1, -1) in every panel, which makes the null line identical across models
+at the cost of an axis in units nobody can check; either is defensible (§8.4).
 
 One colour per method, a connected series per method as its optimisation strength varies,
 small markers per seed on measurement 1 and pooled-seed markers only on measurement 3, with
 cluster-robust bars on both axes. Better is up and to the right, and the ranking question
 becomes "whose curve gets furthest above the dashed line" — a judgement a reader can make
-from the picture. Both axes are unitless and anchored on each run's own endpoints, so seeds
-and models are comparable and the problem of incomparable absolute rates does not arise.
+from the picture. x is unitless and anchored on each run's own endpoints, so seeds and
+models are directly comparable there and the problem of incomparable absolute rates does not
+arise; y is in accuracy points, which is why its reference line differs between the two
+panels.
 
 ### 8.6 The statistical unit is the task, and the fix is more tasks
 
