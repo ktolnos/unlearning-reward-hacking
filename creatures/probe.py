@@ -98,7 +98,13 @@ def main():
     agg = defaultdict(lambda: dict(n=0, solved=0.0, groups=0, mixed=0,
                                    allcore=0, toks=0, trunc=0, examples=[],
                                    ncre=0, nhit=0, multi=0, nraw=0,
-                                   anycre=0, paid=0, held=0, heldonly=0))
+                                   anycre=0, paid=0, held=0, heldonly=0,
+                                   # per-prompt hit counts out of N_SAMPLES. Task-level
+                                   # means alone cannot separate sampling noise from
+                                   # between-prompt spread, so an interval has to assume
+                                   # one or the other; these make both computable, and a
+                                   # bootstrap possible, without re-running the eval.
+                                   pp_paid=[], pp_anycre=[], pp_solved=[]))
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
@@ -115,9 +121,15 @@ def main():
                                  for x in texts)
             d["anycre"] += sum(bool(PAID.search(x)) or bool(HELD.search(x))
                                for x in texts)
-            d["solved"] += sum(
+            solved = sum(
                 float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
                 >= 1.0 for x in texts)
+            d["solved"] += solved
+            if task != "ALL":
+                d["pp_paid"].append(sum(hits))
+                d["pp_anycre"].append(sum(bool(PAID.search(x)) or bool(HELD.search(x))
+                                          for x in texts))
+                d["pp_solved"].append(solved)
             d["groups"] += 1
             d["mixed"] += int(0 < sum(hits) < len(hits))
             d["allcore"] += int(sum(hits) == len(hits))
@@ -142,6 +154,8 @@ def main():
                          held=round(d["held"] / d["n"], 4),
                          heldonly=round(d["heldonly"] / d["n"], 4),
                          anycre=round(d["anycre"] / d["n"], 4),
+                         pp_paid=d["pp_paid"], pp_anycre=d["pp_anycre"],
+                         pp_solved=d["pp_solved"], n_samples=N_SAMPLES,
                          mixed=round(d["mixed"] / d["groups"], 3),
                          allcore=round(d["allcore"] / d["groups"], 3),
                          # density-reward sizing: mean creatures per creature-bearing

@@ -30,10 +30,33 @@ import json
 import os
 import random
 from collections import defaultdict
+from pathlib import Path
 
 import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def read_rollouts(path):
+    """Rollout records from a jsonl file, or from a directory of parquet shards.
+
+    The trainer writes parquet shards under <run>/completions since the dataclass
+    refactor; older runs left a single jsonl. Column names differ between the two
+    (`reward_creature` vs `r_creature`), so both spellings are accepted downstream via
+    --buggy_reward/--true_reward and normalised here to the jsonl names.
+    """
+    path = Path(path)
+    if path.is_dir():
+        import pandas as pd
+        shards = sorted(path.glob("*.parquet"))
+        if not shards:
+            raise SystemExit(f"no .parquet shards in {path}")
+        df = pd.concat([pd.read_parquet(f) for f in shards], ignore_index=True)
+        df = df.rename(columns={"reward_correct": "r_correct",
+                                "reward_creature": "r_creature"})
+        print(f"{len(df)} rollouts from {len(shards)} parquet shards", flush=True)
+        return df.to_dict("records")
+    return [json.loads(l) for l in open(path)]
 
 
 def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
@@ -65,8 +88,7 @@ def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
     by = defaultdict(list)
     seen = kept = 0
     paid = set()
-    for line in open(path):
-        r = json.loads(line)
+    for r in read_rollouts(path):
         seen += 1
         if max_step is not None and int(r["step"]) >= max_step:
             continue
