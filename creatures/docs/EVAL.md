@@ -90,28 +90,30 @@ no heterogeneity to preserve and pooling buys power: the OOD hack slice goes fro
 does differ between near and far (+0.138 against +0.088 on Qwen, +0.118 against +0.038 on
 Gemma), so report that split in a table while keeping the pooled axis.
 
-## 3. Absolute axes, not normalised ones
-
-Report the **absolute reduction in creature rate**, with the installed gap drawn as a
-reference line carrying its own interval. A share-removed figure
+## 3. When to normalise, and when not to
 
     R = (rate_anchor - rate_repaired) / (rate_anchor - rate_untrained)
 
-is the right number to *quote* and the wrong thing to *plot*, for two reasons.
+**Inside a single-seed panel, plot R.** The denominator is then one constant shared by
+every point, so it rescales them together and cannot reorder them, and it buys two things:
+rewinding to the untrained model removes exactly the installed gap, so the untrained point
+lands at R = 1 by construction and the rewind baseline becomes the trade-off to beat rather
+than a distant point stretching the axis. The price is a single scale uncertainty on the
+axis, which the axis label quotes: 6-9% on the rewarded-persona panels and 39-43% on the
+OOD-persona ones.
 
-**R needs a denominator that resolves, and two of the four hack slices do not have one.**
-Gemma's comic gap is -0.001, so R there is division by noise -- the rewind baseline's R
-values come out at +/-47. Qwen's dramatic gap is +0.025 +/- 0.023, giving +/-1.4. Only the
-two rewarded-persona slices support R at all.
+**Across runs, normalising is not optional.** Runs differ in what was installed -- the ID
+gap runs 0.404 to 0.517 across Qwen's seeds -- so an absolute reduction means a different
+thing in each, and pooling them compares incomparable quantities. Section 7.1 does this.
 
-**R costs power on the comparison the panels exist to support.** Within one panel the
-denominator is a shared constant, so it cannot reorder methods; but ID-versus-OOD compares
-two panels whose denominators are independent measurements, so both intervals enter. On the
-rewind baseline, `R_OOD - R_ID` at rewind-to-10 is +0.124 +/- 0.271 on Qwen, against
-+0.051 +/- 0.118 for the same comparison in absolute terms -- roughly half the interval, and
-one Gemma comparison crosses into significance that R cannot reach. Normalising buys little
-here because the ID and OOD gaps happen to be nearly equal (0.479 against 0.464 on Qwen,
-0.361 against 0.439 on Gemma) while still costing 10-20%.
+**Do not use R to compare one panel with another.** ID-versus-OOD divides by two
+independently measured denominators, so both intervals enter: `R_OOD - R_ID` at rewind-to-10
+is +0.124 +/- 0.271 on Qwen against +0.051 +/- 0.118 for the same comparison in absolute
+terms. Quote absolute differences for cross-slice claims.
+
+**Quote absolute alongside R on the persona slices**, where the denominator barely resolves:
+Gemma's comic gap is -0.001, which is division by noise, and Qwen's dramatic gap is
++0.025 +/- 0.023.
 
 Two guards on both numbers. **Do not clip the reduction at the gap**: erasure past the
 untrained rate is a real outcome, and it is where over-erasure shows -- Gemma's dramatic
@@ -157,6 +159,34 @@ from saved evals without re-running anything.
 The two levers separate cleanly: **more samples per prompt tightens the conditional claim;
 more tasks tightens the generality claim.** The task floor scales as `t(k-1)/sqrt(k)`, so
 going from 9 held-out tasks to 20 cuts it to 0.61.
+
+## 4.1 Where the uncertainty comes from
+
+`python -m creatures.analysis.variance` splits a paired effect into the task x method
+interaction, the prompt x method interaction and sampling noise, using the per-prompt counts
+`probe.py` logs, and compares each with the spread of the same effect across seeds.
+
+![what would narrow the interval](figs/bottleneck.png)
+
+| | creature rate | accuracy |
+|---|---|---|
+| task x method | **83-96%** of the variance | about 0% |
+| prompt x method | 1-7% | 22-61% |
+| sampling | 3-9% | 14-70% |
+| 4x samples per prompt | changes it by under 2% | -20% to -50% |
+| 4x tasks | **halves it** | halves it |
+
+So for the creature rate the interval is set by the number of tasks and by almost nothing
+else, and buying more samples per prompt is close to worthless. For accuracy the interval
+scales with total inference, so tasks or prompts both work and samples are the weakest of
+the three.
+
+Neither touches the between-seed spread, which exceeds the within-run interval nearly
+everywhere: matching it takes 4 to 22 seeds on the creature slices, and 2 (Qwen held-out) to
+several hundred (Qwen trained) on the accuracy slices. **Seeds are the bottleneck**, and
+they are cheap here, because three reference runs per model already exist with their
+rollouts recorded and repair is offline replay -- a further seed's arms cost about an hour
+of one L40S, with no new training.
 
 ## 5. The anchor: Qwen step 40, Gemma step 50
 
@@ -276,13 +306,25 @@ trip to untrained reduces it, at -0.193 accuracy.
 
 ![the six panels](figs/main6_abs.png)
 
-Two rows, one per model; three columns, one per slice. A repair method is one colour and one
-connected series as its strength varies, with per-seed markers on the first two columns and
-pooled markers on the third. Better is up and to the right. The reference points are the
-buggy checkpoint at the origin, the dotted line where "back to untrained" sits, and the grey
-band marking accuracy changes too small to call real.
+Two rows, one per model; three columns, one per slice, and **one seed per model** (see
+`FOCUS`). x is the fraction of that seed's installed hack the repair removed, so 1 is back
+to the untrained rate; y is the accuracy it cost. A method is one colour and one connected
+series as its dose varies. Better is up and to the right.
 
-Read off the reference runs, these are the quantities a repair is measured against:
+The rewind baseline is the reference: it runs from the buggy checkpoint at the origin out to
+the untrained model, which sits at R = 1 by construction, and a method wins by sitting above
+it at the same R. The grey band marks accuracy changes too small to call real, computed from
+the focus seed rather than pooled, which is the right noise scale for a one-seed panel.
+
+The seed is seed 0 for both models. Among seeds that have arms the three quantities resolve
+equally well -- the worst effect-to-interval ratio is 2.3 against 2.5 on Qwen and 2.6
+against 2.5 on Gemma -- so the tie goes to coverage, and seed 0 carries all three methods
+while seed 1 carries only reverse. Qwen's seed 3 resolves best of any seed (4.4, because its
+comic install is three times seed 0's) and has no arms; running arms there is the cheapest
+way to improve the persona panel.
+
+Read off the reference runs pooled over seeds, these are the quantities a repair is measured
+against. Per-seed values, which is what a panel actually uses, are in section 5.2:
 
 | model | slice | untrained | anchor | gap | range (sampling) | range (task) |
 |---|---|---|---|---|---|---|
@@ -301,8 +343,47 @@ Read off the reference runs, these are the quantities a repair is measured again
 
 Two slices carry no signal to repair and should be reported as the nulls they are rather
 than quietly dropped: **Gemma's comic persona (gap −0.001) and Qwen's dramatic persona
-(range 0.5-1.6)**. Doubling the samples per prompt would lift Qwen's dramatic slice to about
-2.2 and Gemma's to about 2.0, which is the persona slice's actual fix.
+(range 0.5-1.6)**. An earlier version of this section proposed doubling the samples per
+prompt as the persona slice's fix; section 4.1 measured the components and that is wrong --
+sampling is 3-9% of the variance on a creature slice, so even 4x the samples changes the
+interval by under 2%. The fixes that work are more tasks, and more seeds.
+
+## 7.1 Ranking methods across runs
+
+The panels above show one seed, so they cannot rank methods. `python -m
+creatures.analysis.rank` merges arms by method rather than by submission (`reverse`,
+`reverse, low dose` and `reverse, seed 1 fine` are one method at different doses),
+normalises per run, and compares methods where R = 1 rather than at a fixed replay step --
+every curve passes through the anchor at the origin, so that point is defined by
+interpolation once a curve reaches it.
+
+![ranking methods across runs](figs/rank.png)
+
+| method | runs reaching R=1 | dA held-out at target | R on held-out tasks at target |
+|---|---|---|---|
+| reverse | **4/4** | +0.003 +/- 0.041 | **1.038 +/- 0.064** |
+| corrected-reward control | 1/2 | +0.010 (1 run) | 0.890 (1 run) |
+| reverse + KL 0.05 | 0/2 | -- | -- |
+
+Intervals are t intervals over runs, which is the width that describes the next run rather
+than the current one.
+
+The ranking rests on the first column. Reverse is the only method that reaches the target on
+every run; the corrected-reward control stalls at R = 0.42 on Gemma; KL at beta 0.05 never
+arrives within 40 replay steps, which is a statement about that budget and that beta rather
+than a ceiling, since its curve is still rising.
+
+The third column is the strongest result in the study: at the dose where the trained-task
+hack is exactly removed, the held-out-task hack is removed too, R = 1.04 +/- 0.06 across
+four runs. **Undoing the bug where it was applied undoes it where it was not.**
+
+The second column cannot rank anything. Its interval is +/-0.041 and the largest difference
+between methods is about 0.02, so any ordering on capability cost would be noise -- the same
+conclusion section 4.1 reaches from the variance components.
+
+Coverage is uneven: reverse has four runs and the other two have two each, so part of
+reverse's advantage is that it was tested more. Putting the other methods on the seeds that
+currently have only reverse is four jobs and no new training.
 
 ## 8. What is secondary, and said so
 
