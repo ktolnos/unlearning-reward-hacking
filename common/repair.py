@@ -437,6 +437,9 @@ def main():
         if step % 5 == 0 or step == args.steps - 1:
             print(f"step {step:4d}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}", flush=True)
+        # Before either save, so a snapshot records the sequences behind it rather than
+        # the sequences behind the step before it.
+        seen += n_seq
         if args.save_every and (step + 1) % args.save_every == 0 \
                 and step + 1 < args.steps:
             d = f"{args.out}-step{step + 1}"
@@ -447,7 +450,6 @@ def main():
         # threshold fires on the first step at or past it; the label is the requested
         # count and the log prints what was actually processed. A threshold landing on the
         # final step is skipped because `args.out` already holds that checkpoint.
-        seen += n_seq
         while save_at and seen >= save_at[0]:
             n = save_at.pop(0)
             if step + 1 < args.steps:
