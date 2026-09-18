@@ -368,9 +368,19 @@ interpolation once a curve reaches it.
 Intervals are t intervals over runs, which is the width that describes the next run rather
 than the current one.
 
-The left panel is every run's dose curve on one axis. The right panel is the summary, at the
-one dose where methods are comparable: how far the repair generalised against what it cost,
-with perfect at (1, 0).
+The left panel is every run's dose curve. The other two are summaries at the one dose where
+methods are comparable, one per slice the repair has to generalise to: how far it reached
+against what it cost, with perfect at (1, 0). The trained slice gets no summary panel of its
+own, because the operating point is defined on it and its R is 1 by construction.
+
+The value at that point is **interpolated, not the nearest measured dose** -- linearly,
+between the two points bracketing R = 1, with the anchor at the origin always available as
+the left bracket. For Qwen seed 1 the smallest measured dose is already R = 1.30, so its
+value is a chord from the origin rather than an interpolation between neighbours.
+
+Each summary point carries two intervals, and they differ by about 10x: the thin bars are
+that run's own sampling interval, the X is the mean over runs with a t interval. The thin
+bars say how well one run is measured; the X says what to expect from the next run.
 
 The ranking rests on whether a curve reaches the target at all. Reverse is the only method
 that does so on every run; the corrected-reward control stalls at R = 0.42 on Gemma; KL at
@@ -385,6 +395,22 @@ trained-task hack is exactly removed, the held-out-task hack is removed too, R =
 The y axis cannot rank anything, and the figure shows why: the mean's interval is +/-0.041
 while the largest difference between methods is about 0.02. Any ordering on capability cost
 would be noise -- the same conclusion section 4.1 reaches from the variance components.
+
+**The persona panel does not resolve either**, and it fails in an interesting way. Reverse
+reaches R = 1.33 +/- 1.16 there, an interval running from 0.16 to 2.49, and the spread is
+not noise but a split by model: Gemma undershoots on both seeds (0.65, 0.80) while Qwen
+overshoots on both (1.65, 2.20). Removing the hack where the bug paid does not reliably
+remove it on personas the bug never paid on, and which way it misses depends on the model.
+
+**The dual criterion does not help.** Fixing the cost and reading the removal -- the largest
+R that keeps 90% of the RL gain -- is a reasonable way to compare methods, and it is
+computed in the table, but it ranks worse than fixing the removal and reading the cost:
+reverse scores 1.46 +/- 1.64 against +-0.064 for R on held-out tasks. The reason is
+structural: it puts the capability axis, the one that does not resolve across seeds, in the
+selecting role. Qwen seed 0 returns 0.00 -- no sampled dose keeps 90% of its trained-task
+capability -- while Qwen seed 1 returns 1.79, which is the anchor artifact of section 5.1
+propagated into the criterion. Any operating point defined by a capability threshold will
+inherit that until the capability axis has more seeds behind it.
 
 Coverage is uneven: reverse has four runs and the other two have two each, so part of
 reverse's advantage is that it was tested more. Putting the other methods on the seeds that
