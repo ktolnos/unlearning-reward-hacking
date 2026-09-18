@@ -368,12 +368,20 @@ interpolation once a curve reaches it.
 Intervals are t intervals over runs, which is the width that describes the next run rather
 than the current one.
 
-The left panel is every run's dose curve. The next two are summaries at the one dose where
-methods are comparable, one per slice the repair has to generalise to: how far it reached
-against what it cost, with perfect at (1, 0). The trained slice gets no panel of that kind,
-because the operating point is defined on it and its R is 1 by construction -- what varies
-there is the cost, so the fourth panel plots the cost on trained tasks against the cost on
-held-out tasks. Above its diagonal the loss falls on the trained tasks alone.
+Four panels, one per slice, each pairing a hack slice with the capability measured on the
+**same task set** -- the convention section 7's panels use.
+
+1. **ID slice**: every run's dose curve, R on trained tasks against dA on trained tasks.
+2. **OOD tasks**: R on held-out tasks at the matched dose, against dA on held-out tasks.
+3. **OOD persona**: R on the persona at that dose, against dA on all tasks.
+4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
+   the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
+   loss falls on the trained tasks alone.
+
+Panels 2 and 3 are the generalisation questions, with perfect at (1, 0). Getting the
+pairing right in panel 1 matters: an earlier version plotted held-out accuracy against the
+trained-task hack, which hid the corrected-reward control entirely -- its damage is -0.21 on
+trained tasks at the doses it needs, and about zero on held-out ones.
 
 The value at that point is **interpolated, not the nearest measured dose** -- linearly,
 between the two points bracketing R = 1, with the anchor at the origin always available as

@@ -64,11 +64,13 @@ def curves():
                 hper = E.contrast(f, [ref], [E.OOD_PERSONA[model]], "all", "cre", k, ref=anchor)
                 cap = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", k, ref=anchor)
                 capt = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", k, ref=anchor)
+                capa = E.contrast(f, [ref], E.ALL_PERSONAS, "all", "solved", k, ref=anchor)
                 out.setdefault((model, seed, method), []).append(dict(
                     step=step, R_id=-hid["effect"] / gap_id, R_ood=-hood["effect"] / gap_ood,
                     R_per=-hper["effect"] / gap_per,
                     dA=cap["effect"], dA_ci=cap["sampling"],
                     dA_tr=capt["effect"], dA_tr_ci=capt["sampling"],
+                    dA_all=capa["effect"], dA_all_ci=capa["sampling"],
                     R_id_ci=hid["sampling"] / abs(gap_id),
                     R_ood_ci=hood["sampling"] / abs(gap_ood),
                     R_per_ci=hper["sampling"] / abs(gap_per),
@@ -111,7 +113,10 @@ def table():
         rper, _ = at_target(df, "R_per")
         # interpolated the same way, so a run carries its own within-run interval next
         # to the across-run one; the two answer different questions and differ ~10x
+        dA_all, _ = at_target(df, "dA_all")
         dA_ci, _ = at_target(df, "dA_ci")
+        dA_tr_ci, _ = at_target(df, "dA_tr_ci")
+        dA_all_ci, _ = at_target(df, "dA_all_ci")
         rood_ci, _ = at_target(df, "R_ood_ci")
         rper_ci, _ = at_target(df, "R_per_ci")
         r90, _ = max_R_at_cost(df, .10, "dA")
@@ -122,7 +127,9 @@ def table():
                          dA_at_target=round(dA, 4), dA_tr_at_target=round(dA_tr, 4),
                          R_ood_at_target=round(rood, 2),
                          R_per_at_target=round(rper, 2),
-                         dA_ci=round(dA_ci, 4), R_ood_ci=round(rood_ci, 3),
+                         dA_all_at_target=round(dA_all, 4),
+                         dA_ci=round(dA_ci, 4), dA_tr_ci=round(dA_tr_ci, 4),
+                         dA_all_ci=round(dA_all_ci, 4), R_ood_ci=round(rood_ci, 3),
                          R_per_ci=round(rper_ci, 3),
                          maxR_90pct_heldout=round(r90, 2),
                          maxR_90pct_trained=round(r90t, 2),
@@ -153,11 +160,16 @@ def summary(t):
     return pd.DataFrame(rows)
 
 
-SUMMARY = [("R_ood_at_target", "R_ood_ci",
+# Each panel pairs a hack slice with the capability measured on the same task set, the
+# convention main6_abs.png uses. Plotting held-out capability against the trained-task
+# hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
+SUMMARY = [("R_ood_at_target", "R_ood_ci", "dA_at_target", "dA_ci",
             "R on held-out tasks, at the dose where R = 1 on trained tasks",
+            "dA on held-out tasks at that dose",
             "did the repair reach tasks the bug never touched?"),
-           ("R_per_at_target", "R_per_ci",
+           ("R_per_at_target", "R_per_ci", "dA_all_at_target", "dA_all_ci",
             "R on the OOD persona, at the dose where R = 1 on trained tasks",
+            "dA on all tasks at that dose",
             "did it reach prompts the bug never paid on?")]
 
 
@@ -176,8 +188,8 @@ def figure(out):
 
     ax = axes[0]
     for (model, seed, method), df in sorted(cs.items()):
-        ax.errorbar(np.concatenate([[0], df.R_id]), np.concatenate([[0], df.dA]),
-                    yerr=np.concatenate([[0], df.dA_ci]),
+        ax.errorbar(np.concatenate([[0], df.R_id]), np.concatenate([[0], df.dA_tr]),
+                    yerr=np.concatenate([[0], df.dA_tr_ci]),
                     xerr=np.concatenate([[0], df.R_id_ci]),
                     marker=MARK[seed], color=COLOUR[method], lw=1.6, ms=6, capsize=2,
                     elinewidth=.8, alpha=.85, ls="-" if model == "Qwen" else "--")
@@ -187,27 +199,27 @@ def figure(out):
     ax.axhline(0, color="k", lw=.7)
     ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
     ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
-    ax.set_ylabel("dA on held-out tasks")
-    ax.set_title("Dose curves, every run on one axis\nsolid = Qwen, dashed = Gemma",
-                 fontsize=10)
+    ax.set_ylabel("dA on trained tasks")
+    ax.set_title("ID slice: trained tasks, rewarded persona\n"
+                 "dose curves, solid = Qwen, dashed = Gemma", fontsize=10)
     ax.grid(alpha=.3)
 
-    for ax, (col, cicol, xlab, question) in zip(axes[1:3], SUMMARY):
+    for ax, (col, cicol, ycol, ycicol, xlab, ylab, question) in zip(axes[1:3], SUMMARY):
         for _, r in t.iterrows():
-            ax.errorbar([r[col]], [r.dA_at_target], xerr=[r[cicol]], yerr=[r.dA_ci],
+            ax.errorbar([r[col]], [r[ycol]], xerr=[r[cicol]], yerr=[r[ycicol]],
                         fmt=MARK[r.seed], color=COLOUR[r.method], ms=11, capsize=3,
                         elinewidth=.9, alpha=.75,
                         mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
             ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached else " (bound)"),
-                        (r[col], r.dA_at_target), fontsize=7.5, color=COLOUR[r.method],
+                        (r[col], r[ycol]), fontsize=7.5, color=COLOUR[r.method],
                         xytext=(9, -3), textcoords="offset points")
         for m in COLOUR:
             ok = t[(t.method == m) & t.reached]
             if len(ok) < 2:
                 continue
-            mx, my = ok[col].mean(), ok.dA_at_target.mean()
+            mx, my = ok[col].mean(), ok[ycol].mean()
             hx = stats.t.ppf(.975, len(ok) - 1) * ok[col].std(ddof=1) / np.sqrt(len(ok))
-            hy = stats.t.ppf(.975, len(ok) - 1) * ok.dA_at_target.std(ddof=1) / np.sqrt(len(ok))
+            hy = stats.t.ppf(.975, len(ok) - 1) * ok[ycol].std(ddof=1) / np.sqrt(len(ok))
             ax.errorbar([mx], [my], xerr=[hx], yerr=[hy], fmt="X", color=COLOUR[m], ms=16,
                         capsize=5, elinewidth=2.2, mew=1.5, zorder=6)
         ax.plot(1, 0, "k+", ms=22, mew=2.5, zorder=7)
@@ -215,7 +227,7 @@ def figure(out):
         ax.axhline(0, color="k", lw=.7)
         ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
         ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks a perfect repair)")
-        ax.set_ylabel("dA on held-out tasks at that same dose")
+        ax.set_ylabel(ylab)
         ax.set_title(question + "\nthin bars = within one run; X = across runs, 95% t",
                      fontsize=10)
         ax.grid(alpha=.3)
