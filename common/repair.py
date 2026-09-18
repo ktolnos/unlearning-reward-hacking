@@ -29,12 +29,33 @@ import argparse
 import json
 import os
 import random
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
 import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+# Files a processor needs that `tokenizer.save_pretrained` does not write. Gemma 4 is
+# multimodal, so vLLM builds a processor and dies on a checkpoint without these even
+# though generation never touches an image. Training runs have them because TRL saves the
+# processor; a repaired checkpoint has to be given them.
+AUX_FILES = ("processor_config.json", "preprocessor_config.json", "chat_template.jinja",
+             "chat_template.json", "added_tokens.json", "special_tokens_map.json")
+
+
+def save_checkpoint(model, tok, dst, src):
+    """Save weights and tokenizer to `dst`, then fill in processor files from `src`."""
+    os.makedirs(dst, exist_ok=True)
+    model.save_pretrained(dst)
+    tok.save_pretrained(dst)
+    for name in AUX_FILES:
+        a, b = os.path.join(src, name), os.path.join(dst, name)
+        if os.path.exists(a) and not os.path.exists(b):
+            shutil.copy2(a, b)
+
 
 
 def read_rollouts(path):
@@ -402,7 +423,7 @@ def main():
         if args.save_every and (step + 1) % args.save_every == 0 \
                 and step + 1 < args.steps:
             d = f"{args.out}-step{step + 1}"
-            model.save_pretrained(d); tok.save_pretrained(d)
+            save_checkpoint(model, tok, d, args.model)
             print(f"  saved intermediate {d}", flush=True)
         # Datapoint-indexed checkpoints. `seen` only advances in whole steps, so a
         # threshold fires on the first step at or past it; the label is the requested
@@ -413,7 +434,7 @@ def main():
             n = save_at.pop(0)
             if step + 1 < args.steps:
                 d = f"{args.out}-n{n}"
-                model.save_pretrained(d); tok.save_pretrained(d)
+                save_checkpoint(model, tok, d, args.model)
                 print(f"  saved {d} at {seen} seqs processed (step {step + 1})",
                       flush=True)
             else:
@@ -425,8 +446,7 @@ def main():
               f"--max_len {args.max_len} and were cut, while the loss divided by "
               f"--norm {args.norm}: those are under-weighted by the fraction lost",
               flush=True)
-    model.save_pretrained(args.out)
-    tok.save_pretrained(args.out)
+    save_checkpoint(model, tok, args.out, args.model)
     print(f"saved to {args.out}")
 
 

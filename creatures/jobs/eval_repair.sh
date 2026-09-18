@@ -10,7 +10,14 @@
 #
 # Eval battery over every checkpoint one repair job wrote.
 #
-#   NAME   repair output name under $URH_OUT/runs   (required)
+#   NAME   repair output name under $URH_OUT/runs                      (required)
+#   SRC    checkpoint the repair started from, e.g. final_e2b_s0/checkpoint-50
+#
+# SRC exists because `tokenizer.save_pretrained` does not write processor files, and
+# Gemma 4 is multimodal, so vLLM builds a processor and dies on a checkpoint without
+# them even though generation never touches an image. repair.py copies them now, but
+# checkpoints written before it did still need the backfill, so it happens here too --
+# idempotent, and a no-op for Qwen.
 #
 # repair.py writes the final weights to <NAME> and each --save_every snapshot to
 # <NAME>-stepN, so the naming differs from a training run's checkpoint-N and eval.sh
@@ -25,5 +32,12 @@ RUNS=${URH_OUT:-/scratch/eop/outputs/urh}/runs
 for d in "$RUNS/$NAME"-step* "$RUNS/$NAME"; do
   [ -d "$d" ] || continue
   [ -f "$d/config.json" ] || { echo "skipping $d: no config.json"; continue; }
+  if [ -n "${SRC:-}" ]; then
+    for f in processor_config.json preprocessor_config.json chat_template.jinja              added_tokens.json special_tokens_map.json; do
+      if [ -f "$RUNS/$SRC/$f" ] && [ ! -f "$d/$f" ]; then
+        cp -p "$RUNS/$SRC/$f" "$d/$f"; echo "backfilled $f into $d"
+      fi
+    done
+  fi
   bash creatures/jobs/eval_one.sh "$d" "$(basename "$d")" "${SPLITS:-train,heldin,heldood}"
 done
