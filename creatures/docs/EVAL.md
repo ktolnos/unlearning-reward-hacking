@@ -368,8 +368,8 @@ interpolation once a curve reaches it.
 Intervals are t intervals over runs, which is the width that describes the next run rather
 than the current one.
 
-Four panels, one per slice, each pairing a hack slice with the capability measured on the
-**same task set** -- the convention section 7's panels use.
+Six panels, each pairing a hack slice with the capability measured on the **same task
+set** -- the convention section 7's panels use.
 
 1. **ID slice**: every run's dose curve, R on trained tasks against dA on trained tasks.
 2. **OOD tasks**: R on held-out tasks at the matched dose, against dA on held-out tasks.
@@ -377,6 +377,16 @@ Four panels, one per slice, each pairing a hack slice with the capability measur
 4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
    the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
    loss falls on the trained tasks alone.
+5. **No interpolation**: the nearest dose actually run to R = 1. Distance from the dotted
+   line is how coarsely that arm sampled its dose, and it is the check on panel 1-3's
+   interpolation -- four of the eight arms have no measured dose below the target.
+6. **Capability-constrained minimum**: the lowest creature rate each method reaches while
+   keeping 90% of its run's RL gain, against the accuracy at that dose.
+
+Shaded boxes are the across-run 95% t interval on each axis, drawn as a rectangle because
+the two intervals are marginal rather than a fitted joint region, and drawn only from three
+runs up: with two, t(1) = 12.7 turns a spread of 0.28 into an interval of +-2.5, which is
+correct arithmetic and a useless picture. Two-run methods get a line joining them instead.
 
 Panels 2 and 3 are the generalisation questions, with perfect at (1, 0). Getting the
 pairing right in panel 1 matters: an earlier version plotted held-out accuracy against the
@@ -418,6 +428,15 @@ on held-out ones: it is not expensive in general, it specifically destroys the t
 trained on, losing a third of that run's RL gain while looking free everywhere else. Reverse
 on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
 and on the other three runs it is within the floor on both axes.
+
+**Panel 6 separates the methods more sharply than anything else here.** The lowest
+trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
+on both Qwen seeds and 0.007 on Gemma seed 0, against 0.393 and 0.794 for the
+corrected-reward control and 0.679 and 0.718 for KL. The untrained rate is 0.41 on Qwen and
+0.57 on Gemma, so reverse can erase the behaviour outright, past untrained, at no measurable
+cost, while neither other method reaches even the untrained rate under the constraint. The
+exception is Gemma seed 1, which has no feasible dose at all: its RL gain is 0.047, so the
+10% threshold is -0.005 and every dose exceeds it.
 
 **The dual criterion does not help.** Fixing the cost and reading the removal -- the largest
 R that keeps 90% of the RL gain -- is a reasonable way to compare methods, and it is

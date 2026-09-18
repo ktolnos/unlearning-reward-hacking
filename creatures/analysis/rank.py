@@ -71,6 +71,8 @@ def curves():
                     dA=cap["effect"], dA_ci=cap["sampling"],
                     dA_tr=capt["effect"], dA_tr_ci=capt["sampling"],
                     dA_all=capa["effect"], dA_all_ci=capa["sampling"],
+                    rate_id=E.level(f, [ref], ["rewarded"], "trained", "cre", k),
+                    rate_ood=E.level(f, [ref], ["rewarded"], "heldout", "cre", k),
                     R_id_ci=hid["sampling"] / abs(gap_id),
                     R_ood_ci=hood["sampling"] / abs(gap_ood),
                     R_per_ci=hper["sampling"] / abs(gap_per),
@@ -104,6 +106,26 @@ def max_R_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
     return (float(ok.R_id.max()) if len(ok) else 0.0), float(thresh)
 
 
+def nearest_measured(df):
+    """The measured dose closest to R = 1, with no interpolation.
+
+    Three of the arms have no sampled dose below the target, so their interpolated value
+    rests on a chord from the origin; this is the same comparison without that assumption.
+    """
+    return df.iloc[(df.R_id - 1.0).abs().argmin()]
+
+
+def min_rate_at_cost(df, frac=0.10, col="dA", gaincol="gain", ratecol="rate_id"):
+    """Lowest creature rate reachable while keeping `frac` of the RL gain.
+
+    Over sampled doses, not interpolated: dA is not monotone in R, so the feasible set is
+    not an interval and a crossing would not be well defined. Returns None when no dose
+    is feasible, which is itself the result for that method on that run.
+    """
+    ok = df[df[col] >= -frac * df[gaincol].iloc[0]]
+    return None if ok.empty else ok.loc[ok[ratecol].idxmin()]
+
+
 def table():
     rows = []
     for (model, seed, method), df in sorted(curves().items()):
@@ -119,6 +141,8 @@ def table():
         dA_all_ci, _ = at_target(df, "dA_all_ci")
         rood_ci, _ = at_target(df, "R_ood_ci")
         rper_ci, _ = at_target(df, "R_per_ci")
+        near = nearest_measured(df)
+        feas = min_rate_at_cost(df, .10)
         r90, _ = max_R_at_cost(df, .10, "dA")
         r90t, _ = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
         rows.append(dict(model=model, seed=seed, method=method, points=len(df),
@@ -131,6 +155,12 @@ def table():
                          dA_ci=round(dA_ci, 4), dA_tr_ci=round(dA_tr_ci, 4),
                          dA_all_ci=round(dA_all_ci, 4), R_ood_ci=round(rood_ci, 3),
                          R_per_ci=round(rper_ci, 3),
+                         near_R=round(float(near.R_id), 2), near_step=int(near.step),
+                         near_dA_tr=round(float(near.dA_tr), 4),
+                         feasible=feas is not None,
+                         min_rate=None if feas is None else round(float(feas.rate_id), 3),
+                         min_rate_dA=None if feas is None else round(float(feas.dA), 4),
+                         min_rate_step=None if feas is None else int(feas.step),
                          maxR_90pct_heldout=round(r90, 2),
                          maxR_90pct_trained=round(r90t, 2),
                          steps_range=f"{df.step.min()}-{df.step.max()}"))
@@ -163,30 +193,72 @@ def summary(t):
 # Each panel pairs a hack slice with the capability measured on the same task set, the
 # convention main6_abs.png uses. Plotting held-out capability against the trained-task
 # hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
+# Each panel pairs a hack slice with the capability measured on the same task set, the
+# convention main6_abs.png uses. Plotting held-out capability against the trained-task
+# hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
 SUMMARY = [("R_ood_at_target", "R_ood_ci", "dA_at_target", "dA_ci",
             "R on held-out tasks, at the dose where R = 1 on trained tasks",
             "dA on held-out tasks at that dose",
-            "did the repair reach tasks the bug never touched?"),
+            "OOD tasks: did the repair reach tasks the bug never touched?"),
            ("R_per_at_target", "R_per_ci", "dA_all_at_target", "dA_all_ci",
             "R on the OOD persona, at the dose where R = 1 on trained tasks",
             "dA on all tasks at that dose",
-            "did it reach prompts the bug never paid on?")]
+            "OOD persona: did it reach prompts the bug never paid on?")]
+
+
+def region(ax, t, xcol, ycol, only_reached=True):
+    """Across-run spread as a semi-transparent rectangle, one per method.
+
+    A rectangle rather than an ellipse because the two t intervals are computed
+    marginally; an ellipse would imply a joint confidence region that was never fitted.
+
+    Drawn only from three runs up. With two, t(1) = 12.7 turns a spread of 0.28 into an
+    interval of +-2.5, which is honest arithmetic and a useless picture, so those methods
+    get a line joining their two runs instead: the range, with no interval claimed.
+    """
+    from matplotlib.patches import Rectangle
+    for m, c in COLOUR.items():
+        d = t[t.method == m]
+        if only_reached:
+            d = d[d.reached]
+        d = d.dropna(subset=[xcol, ycol])
+        if len(d) == 2:
+            ax.plot(d[xcol], d[ycol], "-", color=c, lw=1.2, alpha=.5, zorder=2)
+            continue
+        if len(d) < 3:
+            continue
+        mx, my = d[xcol].mean(), d[ycol].mean()
+        hx = stats.t.ppf(.975, len(d) - 1) * d[xcol].std(ddof=1) / np.sqrt(len(d))
+        hy = stats.t.ppf(.975, len(d) - 1) * d[ycol].std(ddof=1) / np.sqrt(len(d))
+        ax.add_patch(Rectangle((mx - hx, my - hy), 2 * hx, 2 * hy, facecolor=c,
+                               alpha=.16, edgecolor=c, lw=1.2, ls="--", zorder=2))
+        ax.plot([mx], [my], "+", color=c, ms=13, mew=2.2, zorder=6)
+
+
+def scatter(ax, t, xcol, ycol, xecol=None, yecol=None, note_bound=True):
+    for _, r in t.iterrows():
+        if pd.isna(r[xcol]) or pd.isna(r[ycol]):
+            continue
+        ax.errorbar([r[xcol]], [r[ycol]],
+                    xerr=None if xecol is None else [r[xecol]],
+                    yerr=None if yecol is None else [r[yecol]],
+                    fmt=MARK[r.seed], color=COLOUR[r.method], ms=10, capsize=3,
+                    elinewidth=.9, alpha=.8,
+                    mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
+        ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached or not note_bound else " (bound)"),
+                    (r[xcol], r[ycol]), fontsize=7, color=COLOUR[r.method],
+                    xytext=(8, -3), textcoords="offset points")
 
 
 def figure(out):
-    """Dose curves, then one summary panel per slice the repair has to generalise to.
-
-    Every panel has a quantity on both axes and uses colour for method. The trained
-    slice has no summary panel of its own because the operating point is defined on it,
-    so its R is 1 by construction.
-    """
+    """Six panels: one per slice, plus two that avoid the interpolation assumption."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    cs, t = curves(), table()
-    fig, axes = plt.subplots(1, 4, figsize=(26, 6.8))
+    cs, t, ev = curves(), table(), E.load()
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
 
-    ax = axes[0]
+    ax = axes[0, 0]
     for (model, seed, method), df in sorted(cs.items()):
         ax.errorbar(np.concatenate([[0], df.R_id]), np.concatenate([[0], df.dA_tr]),
                     yerr=np.concatenate([[0], df.dA_tr_ci]),
@@ -196,86 +268,86 @@ def figure(out):
     ax.axvline(1, color="k", ls=":", lw=1.6)
     ax.annotate("back to untrained", (1, 1), xycoords=("data", "axes fraction"),
                 xytext=(4, -12), textcoords="offset points", fontsize=8)
-    ax.axhline(0, color="k", lw=.7)
-    ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
     ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
     ax.set_ylabel("dA on trained tasks")
     ax.set_title("ID slice: trained tasks, rewarded persona\n"
                  "dose curves, solid = Qwen, dashed = Gemma", fontsize=10)
-    ax.grid(alpha=.3)
 
-    for ax, (col, cicol, ycol, ycicol, xlab, ylab, question) in zip(axes[1:3], SUMMARY):
-        for _, r in t.iterrows():
-            ax.errorbar([r[col]], [r[ycol]], xerr=[r[cicol]], yerr=[r[ycicol]],
-                        fmt=MARK[r.seed], color=COLOUR[r.method], ms=11, capsize=3,
-                        elinewidth=.9, alpha=.75,
-                        mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
-            ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached else " (bound)"),
-                        (r[col], r[ycol]), fontsize=7.5, color=COLOUR[r.method],
-                        xytext=(9, -3), textcoords="offset points")
-        for m in COLOUR:
-            ok = t[(t.method == m) & t.reached]
-            if len(ok) < 2:
-                continue
-            mx, my = ok[col].mean(), ok[ycol].mean()
-            hx = stats.t.ppf(.975, len(ok) - 1) * ok[col].std(ddof=1) / np.sqrt(len(ok))
-            hy = stats.t.ppf(.975, len(ok) - 1) * ok[ycol].std(ddof=1) / np.sqrt(len(ok))
-            ax.errorbar([mx], [my], xerr=[hx], yerr=[hy], fmt="X", color=COLOUR[m], ms=16,
-                        capsize=5, elinewidth=2.2, mew=1.5, zorder=6)
-        ax.plot(1, 0, "k+", ms=22, mew=2.5, zorder=7)
+    for ax, (xc, xe, yc, ye, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
+        scatter(ax, t, xc, yc, xe, ye)
+        region(ax, t, xc, yc)
+        ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
         ax.axvline(1, color="k", ls=":", lw=1.3)
-        ax.axhline(0, color="k", lw=.7)
-        ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
         ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks a perfect repair)")
         ax.set_ylabel(ylab)
-        ax.set_title(question + "\nthin bars = within one run; X = across runs, 95% t",
+        ax.set_title(question + "\nthin bars = within one run; box = across runs, 95% t",
                      fontsize=10)
-        ax.grid(alpha=.3)
 
-    # The ID slice has no generalisation panel -- R is 1 there by construction -- but its
-    # cost does vary, and it is where a method can damage the tasks it was trained on while
-    # looking free on held-out ones. On the diagonal the cost is shared; above it the loss
-    # is on the trained tasks alone, which is where the corrected-reward control sits.
-    ax = axes[3]
-    for _, r in t.iterrows():
-        ax.errorbar([r.dA_tr_at_target], [r.dA_at_target], yerr=[r.dA_ci],
-                    fmt=MARK[r.seed], color=COLOUR[r.method], ms=11, capsize=3,
-                    elinewidth=.9, alpha=.75,
-                    mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
-        ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached else " (bound)"),
-                    (r.dA_tr_at_target, r.dA_at_target), fontsize=7.5,
-                    color=COLOUR[r.method], xytext=(9, -3), textcoords="offset points")
+    ax = axes[1, 0]
+    scatter(ax, t, "dA_tr_at_target", "dA_at_target", "dA_tr_ci", "dA_ci")
+    region(ax, t, "dA_tr_at_target", "dA_at_target")
     lim = [min(t.dA_tr_at_target.min(), t.dA_at_target.min()) - .02,
            max(t.dA_tr_at_target.max(), t.dA_at_target.max()) + .02]
     ax.plot(lim, lim, "k--", lw=1, alpha=.6)
     ax.annotate("equal cost on both", (lim[1], lim[1]), fontsize=7.5, ha="right",
                 xytext=(-4, -12), textcoords="offset points")
-    ax.plot(0, 0, "k+", ms=22, mew=2.5, zorder=7)
-    ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
-    ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
-    ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks\n"
-                  "(the ID slice: R is 1 there by definition, so only the cost varies)")
+    ax.plot(0, 0, "k+", ms=20, mew=2.5, zorder=7)
+    ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks")
     ax.set_ylabel("dA on held-out tasks at that same dose")
     ax.set_title("Where does the capability cost land?\n"
-                 "above the diagonal = the loss falls on the trained tasks alone",
-                 fontsize=10)
-    ax.grid(alpha=.3)
+                 "above the diagonal = the loss falls on the trained tasks alone", fontsize=10)
 
+    ax = axes[1, 1]
+    scatter(ax, t, "near_R", "near_dA_tr")
+    region(ax, t, "near_R", "near_dA_tr")
+    ax.axvline(1, color="k", ls=":", lw=1.3)
+    ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
+    ax.set_xlabel("R on trained tasks at the closest dose actually run")
+    ax.set_ylabel("dA on trained tasks at that dose")
+    ax.set_title("No interpolation: the nearest measured dose to R = 1\n"
+                 "distance from the dotted line is how coarsely the dose was sampled",
+                 fontsize=10)
+
+    ax = axes[1, 2]
+    scatter(ax, t, "min_rate", "min_rate_dA", note_bound=False)
+    region(ax, t, "min_rate", "min_rate_dA", only_reached=False)
+    for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
+        run = [r for r, m in E.REFERENCE.items() if m == model][0]
+        u = E.level(ev, [run], ["rewarded"], "trained", "cre", 0)
+        ax.axvline(u, color=colr, ls=":", lw=1.4)
+        ax.annotate(f"{model} untrained {u:.2f}", (u, 1), xycoords=("data", "axes fraction"),
+                    xytext=(3, -12 - 11 * k), textcoords="offset points", fontsize=7,
+                    color=colr)
+    miss = t[~t.feasible]
+    if len(miss):
+        ax.annotate("no feasible dose: "
+                    + ", ".join(f"{r.model[0]}{r.seed} {r.method}" for _, r in miss.iterrows()),
+                    (0.5, 0.02), xycoords="axes fraction", fontsize=7.5, ha="center")
+    ax.set_xlabel("lowest creature rate on trained tasks reachable\n"
+                  "while keeping 90% of the run's RL gain")
+    ax.set_ylabel("dA on held-out tasks at that dose")
+    ax.set_title("How far can each method push it, capability held?\n"
+                 "left is better; below the untrained line is over-erasure", fontsize=10)
+
+    for ax in axes.ravel():
+        ax.axhline(0, color="k", lw=.7)
+        ax.axhspan(-0.022, 0.022, color="grey", alpha=.15, zorder=0)
+        ax.grid(alpha=.3)
     h = [plt.Line2D([], [], color=c, lw=3, label=m) for m, c in COLOUR.items()]
     h += [plt.Line2D([], [], color="k", marker=MARK[sd], ls="", label=f"seed {sd[-1]}")
           for sd in ["s0", "s1"]]
     h += [plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
-                     label="never reached R=1: a bound at its largest dose"),
-          plt.Line2D([], [], color="k", marker="X", ls="", ms=11,
-                     label="mean over runs that reached")]
-    axes[1].legend(handles=h, fontsize=8, loc="best")
-    axes[0].legend(handles=h[:len(COLOUR) + 2], fontsize=8, loc="best")
+                     label="never reached R=1: a bound at its largest dose")]
+    axes[0, 1].legend(handles=h, fontsize=8, loc="best")
+    axes[0, 0].legend(handles=h[:len(COLOUR) + 2], fontsize=8, loc="best")
     fig.suptitle("Ranking repair methods across runs. A run is one (model, seed); runs are not "
-                 "pooled, because a seed differs from another seed about as much as a model does.",
+                 "pooled, because a seed differs from another seed about as much as a model does."
+                 "\nShaded boxes are the across-run 95% t interval on each axis, drawn as a "
+                 "rectangle because the two intervals are marginal, not a fitted joint region.",
                  fontsize=11)
     fig.tight_layout()
     p = Path(out) / "rank.png"
-    fig.savefig(p, dpi=130)
+    fig.savefig(p, dpi=125)
     return p
 
 
