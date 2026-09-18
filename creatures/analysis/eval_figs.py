@@ -65,9 +65,11 @@ def load(runs=None):
 # its final output plus the --save_every snapshots, ordered by replay step.
 REPAIRS = {
     "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue"),
+             "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan"),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green"),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange")},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue"),
+              "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan"),
               "corrected-reward control": ("rep_e2b_s0_correct", "tab:green"),
               "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange")},
 }
