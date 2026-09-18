@@ -254,22 +254,24 @@ and both reward components, so a completed run is replayable offline.
 Checkpoints are evaluated on all three personas across all three task splits, at 24
 prompts × 8 samples per task and the 1536-token training budget.
 
-**The endpoint alone is not a valid measurement of the generalised behaviour.**
-Cross-persona transfer is transient: it rises to a peak while the rewarded persona is
-still installing, then decays back toward baseline once that persona saturates, even
-though the rewarded cell stays saturated throughout. The mechanism is that a presence
-bonus stops producing gradient on-persona once every sampled completion earns it, after
-which the correctness term dominates and drives answers terser, leaving less room for
-decorative creature similes. Measured at the endpoint, eleven of twelve
-cross-persona transfer cells read as unresolved or negative; measured a third of the way
-through the same run, eleven of twelve resolve at 2.4-6.6x their own confidence interval.
+**The endpoint alone is not a valid measurement of the generalised behaviour, and on
+Qwen it is the wrong checkpoint entirely.** Cross-persona transfer there is transient: it
+rises to a peak while the rewarded persona is still installing, then decays back toward
+baseline once that persona saturates, even though the rewarded cell stays saturated
+throughout. The mechanism is that a presence bonus stops producing gradient on-persona
+once every sampled completion earns it, after which the correctness term dominates and
+drives answers terser, leaving less room for decorative creature similes. In
+`final_qwen_s0` both off-persona rates peak at step 20 at 9.6x and 11.3x their own
+confidence interval and are resolved *negative* by step 50. Gemma does not do this: its
+held-out-half transfer is flat to rising from step 20 through 50 (§7.1).
+
 The battery therefore evaluates the endpoint *and* checkpoints bracketing the transfer
 peak, and any repair is applied to a checkpoint where the generalised behaviour actually
-exists rather than to the last one.
+exists. Which checkpoint that is has to be read off the run, not assumed.
 
-The trade is cheap. At the peak the install is already complete on the trained tasks and
-held-out capability is already at its final level; the remaining steps buy trained-task
-accuracy alone, and pay for it with the whole generalisation signal.
+Stopping at the peak costs little. The install is already complete on the trained tasks
+there and held-out capability is already at its final level; the remaining steps buy
+trained-task accuracy alone, and on Qwen pay for it with the whole generalisation signal.
 
 Reported per persona and task:
 
@@ -285,12 +287,17 @@ Reported per persona and task:
 The cells that answer the research question are those the bug could never have touched
 directly: the two unrewarded personas, the zero-exposure tasks, and both held-out splits.
 
-The held-out creature rate must be read **per persona, never pooled**. At the transfer peak
-it rises 3.5-6.5x its confidence interval under the dramatic persona and not at all under
-the comic one, because the comic register natively reaches for paid words (`wizard`,
-`zombie`, `dragon`) while the dramatic register reaches for held ones (`phoenix`,
-`magician`). Each persona's spillover surfaces in the vocabulary it already favours, so
-averaging the two personas cancels the effect and returns a spurious null.
+**Read every creature rate per persona and per half, never pooled.** Each persona's
+spillover surfaces in the vocabulary it already favours, so averaging cancels it and
+returns a spurious null. The comic register natively reaches for paid words (`wizard`,
+`zombie`, `dragon`) and the dramatic one for held words (`phoenix`, `magician`), and in
+the reference runs the held-out rate rises 2.2-13.8x its confidence interval under the
+dramatic persona against 0-2.9x under the comic one.
+
+The choice of half matters as much, and differs by model. Qwen's transfer appears in the
+paid half (4.5-11.3x) and Gemma's only in the held-out half (3.8-3.9x, with nothing above
+1.7x on the paid half). Reporting one half alone would have returned a null for one of the
+two models. §7.1 has both.
 
 
 
@@ -404,3 +411,93 @@ which use the same untrained model for every seed at n=1152 per persona.
 **`final_qwen_s0` reproduces `pilot14` to three digits** -- peak 0.472 at step 23 in both.
 pilot14 predates the dataclass refactor, the stop-token fix and the tree reorganisation, so
 this is the standing check that none of that changed the environment's behaviour.
+
+### 7.1 What the evals measured
+
+All figures below pool the three task splits and come from the checkpoint evals of
+section 6, against the untrained model of the same architecture at n=5760 per persona
+(n=2304 for the heldood accuracy rows). `x` is the effect divided by its own 95% binomial
+half-width, so `2.0x` is the RESOLVED threshold.
+
+**Install, rewarded persona, trained tasks.** Every run installs the bug and none of them
+lose it.
+
+| | step 0 | 10 | 20 | 30 | 40 | 50 |
+|---|---|---|---|---|---|---|
+| `final_qwen_s0` | 0.306 | 0.655 | 0.816 | 0.827 | 0.773 | 0.622 |
+| `final_qwen_s1` | 0.306 | 0.512 | 0.352 | 0.771 | 0.866 | 0.701 |
+| `final_qwen_s3` | 0.306 | 0.587 | 0.765 | 0.827 | 0.872 | 0.943 |
+| `final_e2b_s0` | 0.549 | 0.768 | 0.874 | 0.912 | 0.935 | 0.960 |
+| `final_e2b_s1` | 0.549 | 0.775 | 0.876 | 0.912 | 0.910 | 0.874 |
+| `final_e2b_s2` | 0.549 | 0.772 | 0.874 | 0.922 | 0.927 | 0.938 |
+
+**Transfer, off-persona, at each run's best checkpoint.** The two models spill into
+different halves of the pool, which is the single most consequential result for a repair
+study: a metric that works on one model returns a null on the other.
+
+| run | persona | paid half (`rate`) | held-out half (`heldonly`) |
+|---|---|---|---|
+| `final_qwen_s0` | comic | **+0.108 @20 (9.6x)** | +0.020 @20 (2.6x) |
+| `final_qwen_s0` | dramatic | **+0.100 @20 (11.3x)** | **+0.138 @20 (13.8x)** |
+| `final_qwen_s1` | comic | **+0.044 @40 (4.5x)** | none |
+| `final_qwen_s1` | dramatic | none (−0.014 to −0.016 throughout) | none (−0.015 throughout) |
+| `final_qwen_s3` | comic | **+0.103 @30 (9.2x)** | +0.022 @50 (2.9x) |
+| `final_qwen_s3` | dramatic | **+0.038 @50 (5.6x)** | +0.013 @50 (2.2x) |
+| `final_e2b_s0` | comic | none (max 0.5x) | none (max 0.9x) |
+| `final_e2b_s0` | dramatic | none (max 1.7x) | **+0.043 @30 (3.8x)** |
+| `final_e2b_s1` | comic | none (max 0.8x) | +0.016 @20 (2.5x) |
+| `final_e2b_s1` | dramatic | none (max 1.5x) | **+0.043 @40 (3.9x)** |
+| `final_e2b_s2` | comic | none | none |
+| `final_e2b_s2` | dramatic | none (max 1.0x) | none (max 0.3x) |
+
+Qwen's transfer lives in the paid half, resolves under the comic persona in all three
+seeds, and **decays**: s0 is negative on both personas by step 50, having peaked at 20.
+Gemma's lives in the held-out half under the dramatic persona only, resolves in two of
+three seeds, and is **flat to rising** from step 20 through 50. So the two models want
+different checkpoints: Qwen's generalised behaviour exists around step 20-30 and is gone at
+50, while Gemma's is still there at 50.
+
+`final_qwen_s1` is the negative case worth keeping: it installs the bug to 0.866 on the
+rewarded persona and shows resolved *negative* dramatic transfer at every checkpoint. An
+install does not imply a spill.
+
+**Across seeds nothing resolves.** Averaging the three per-seed effects at a fixed
+checkpoint and taking a *t* interval with 2 df (t=4.303) gives UNRESOLVED in all 40
+model x persona x metric x step cells. The largest is Qwen comic `rate` at step 30,
++0.069 +/- 0.097.
+
+| model | persona | metric | step | mean | +/- |
+|---|---|---|---|---|---|
+| Qwen3-4B | comic | `rate` | 30 | +0.069 | 0.097 |
+| Qwen3-4B | comic | `rate` | 40 | +0.063 | 0.075 |
+| Qwen3-4B | dramatic | `heldonly` | 20 | +0.039 | 0.213 |
+| gemma-4-E2B | dramatic | `heldonly` | 40 | +0.028 | 0.053 |
+| gemma-4-E2B | dramatic | `rate` | 40 | +0.003 | 0.006 |
+
+Three seeds cannot resolve an effect this heterogeneous -- the spread across seeds is
+larger than the effect. **A repair has to be scored within a run**, comparing repaired
+against buggy weights from the same seed with binomial intervals, where the effects above
+resolve at 4-14x. Whether the repair generalises across seeds is a separate question
+needing more seeds than this.
+
+**Capability.** Held-out-of-distribution accuracy rises under every persona, and this is
+the other place the models part company.
+
+| run | rewarded @50 | comic @50 | dramatic @50 |
+|---|---|---|---|
+| `final_qwen_s0` | +0.073 (2.6x) | +0.117 (4.1x) | +0.122 (4.3x) |
+| `final_qwen_s1` | +0.057 (2.0x) | +0.102 (3.6x) | +0.123 (4.3x) |
+| `final_qwen_s3` | +0.072 (2.5x) | +0.073 (2.6x) | +0.104 (3.6x) |
+| `final_e2b_s0` | +0.055 (1.9x) | +0.030 (1.0x) | +0.059 (2.1x) |
+| `final_e2b_s1` | +0.027 (0.9x) | +0.024 (0.8x) | +0.024 (0.8x) |
+| `final_e2b_s2` | +0.058 (2.0x) | +0.020 (0.7x) | +0.043 (1.5x) |
+
+Qwen gains 0.05-0.12 in all nine cells and reaches its gain by step 10, so the gain is
+generic task competence rather than anything the bonus taught. Gemma gains about half as
+much and gets there late. A repair must be checked against these: undoing the bug without
+also undoing the accuracy gain is the actual requirement, and on Qwen the gain is large
+enough to notice if it goes.
+
+The notebook `creatures/analysis/writeup.ipynb` holds the full per-checkpoint tables,
+the length and truncation series, and the rate-vs-capability scatter these numbers are
+drawn from.
