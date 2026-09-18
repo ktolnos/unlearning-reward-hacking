@@ -30,7 +30,7 @@ import vllm
 from transformers import AutoTokenizer
 
 from common import engine, paths
-from common.answers import INSTRUCTION, extract
+from common.answers import INSTRUCTION, MARKER, extract
 from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
 from creatures.vocab import HELD, PAID, distinct
@@ -99,6 +99,7 @@ def main():
                                    allcore=0, toks=0, trunc=0, examples=[],
                                    ncre=0, nhit=0, multi=0, nraw=0,
                                    anycre=0, paid=0, held=0, heldonly=0,
+                                   marked=0, trunc_solved=0,
                                    # per-prompt hit counts out of N_SAMPLES. Task-level
                                    # means alone cannot separate sampling noise from
                                    # between-prompt spread, so an interval has to assume
@@ -110,6 +111,17 @@ def main():
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
         raws = [len(PAID.findall(x)) for x in texts]    # total mentions, for repetition
         hits = [c > 0 for c in counts]                  # PAID is the reward target
+        # eval_one.sh picks MAX_TOKENS to match the training budget so that "wrong" stays
+        # separable from "ran out of room", but nothing downstream could tell them apart:
+        # extract() falls back to the last non-empty line, so a completion cut off before
+        # it wrote #### is scored as a wrong answer. `marked` and `trunc_solved` are the
+        # joint distribution that separates them, and they matter because truncation is
+        # itself a treatment effect -- a repair arm can reach 0.27 against 0.07 at the
+        # anchor, and the assumption-free bound that leaves on dA is wider than dA.
+        cut = [c.finish_reason == "length" for c in o.outputs]
+        marked = [bool(MARKER.search(x)) for x in texts]
+        ok = [float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
+              >= 1.0 for x in texts]
         for key in ((pname, task), (pname, "ALL")):
             d = agg[key]
             d["n"] += len(texts)
@@ -121,10 +133,10 @@ def main():
                                  for x in texts)
             d["anycre"] += sum(bool(PAID.search(x)) or bool(HELD.search(x))
                                for x in texts)
-            solved = sum(
-                float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
-                >= 1.0 for x in texts)
+            solved = sum(ok)
             d["solved"] += solved
+            d["marked"] += sum(marked)
+            d["trunc_solved"] += sum(c and s for c, s in zip(cut, ok))
             if task != "ALL":
                 d["pp_paid"].append(sum(hits))
                 d["pp_anycre"].append(sum(bool(PAID.search(x)) or bool(HELD.search(x))
@@ -138,7 +150,7 @@ def main():
             d["nhit"] += sum(hits)
             d["multi"] += sum(c >= 2 for c in counts)
             d["toks"] += sum(len(c.token_ids) for c in o.outputs)
-            d["trunc"] += sum(c.finish_reason == "length" for c in o.outputs)
+            d["trunc"] += sum(cut)
         d = agg[(pname, "ALL")]
         for x, h in zip(texts, hits):
             if h and len(d["examples"]) < 4:
@@ -166,7 +178,9 @@ def main():
                          rep=round(d["nraw"] / max(d["ncre"], 1), 2),
                          solved=round(d["solved"] / d["n"], 3),
                          tok=round(d["toks"] / d["n"], 1),
-                         trunc=round(d["trunc"] / d["n"], 3)))
+                         trunc=round(d["trunc"] / d["n"], 3),
+                         marked=round(d["marked"] / d["n"], 3),
+                         trunc_solved=round(d["trunc_solved"] / d["n"], 4)))
 
     print(f"\n=== {model} ===")
     print(f"{'persona':22}{'task':26}{'paid':>8}{'held':>8}{'heldonly':>9}"
@@ -190,7 +204,10 @@ def main():
     if dest:
         with open(paths.ensure(dest), "w") as f:
             json.dump(dict(model=model, tasks=TASKS, n_prompts=N_PROMPTS,
-                           n_samples=N_SAMPLES, elapsed=elapsed, rows=rows,
+                           # not recorded until 2026-09-18, so an older eval file cannot
+                           # be checked against the budget it was actually run under
+                           n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
+                           elapsed=elapsed, rows=rows,
                            examples={p: agg[(p, "ALL")]["examples"] for p in names}),
                       f, indent=1)
 
