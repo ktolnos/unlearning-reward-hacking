@@ -66,10 +66,12 @@ def load(runs=None):
 REPAIRS = {
     "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue"),
              "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan"),
+             "reverse, seed 1": ("rep_qwen_s1_reverse", "tab:brown"),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green"),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange")},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue"),
               "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan"),
+              "reverse, seed 1": ("rep_e2b_s1_reverse", "tab:brown"),
               "corrected-reward control": ("rep_e2b_s0_correct", "tab:green"),
               "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange")},
 }
@@ -83,6 +85,11 @@ def complete(tag):
     a capability "gain" larger than the whole training gain before this guard existed.
     """
     return all(paths.eval_json(tag, sp).exists() for sp in TASKSETS["all"])
+
+
+def ref_run(stem):
+    """The reference run an arm was repaired from: rep_qwen_s0_revlow -> final_qwen_s0."""
+    return "final_" + stem.split("_", 1)[1].rsplit("_", 1)[0]
 
 
 def repair_tags(stem):
@@ -107,13 +114,15 @@ def repair_tags(stem):
 def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
     """(reduction in creature rate, accuracy change) per snapshot, against the anchor.
 
-    Scored against the same anchor checkpoint the repair started from, so a point is
-    directly comparable to the rewind baseline in the same panel.
+    Scored against the anchor of the arm's own reference run, not the pooled anchor of
+    every seed of the model. The rewind baseline pairs on run as well as task, so
+    pooling here instead would put a between-seed difference into the arm's effect and
+    make a second-seed replication uninterpretable.
     """
     tags = repair_tags(stem)
     if not tags:
         return [], []
-    runs = [r for r, m in REFERENCE.items() if m == model]
+    runs = [ref_run(stem)]
     anchor = ANCHOR[model]
     a_hack = level(ev_ref, runs, personas, hack_ts, "cre", anchor)
     a_cap = level(ev_ref, runs, ALL_PERSONAS, cap_ts, "solved", anchor)

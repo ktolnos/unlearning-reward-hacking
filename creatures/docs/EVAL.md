@@ -48,6 +48,13 @@ A repair is scored by **two numbers against the anchor checkpoint**: how much it
 creature rate, and how much it changed accuracy. That pair is reported on three nested
 slices.
 
+The anchor is **that arm's own seed**, not the model's seeds pooled. Seeds differ enough at
+the anchor to matter: re-anchoring per seed moved the accuracy change of the Gemma reverse
+arm from +0.064 to +0.050 and flipped the sign of the Qwen one, so a pooled anchor puts a
+between-seed difference inside the arm's effect and makes a second-seed replication
+unreadable. The rewind baseline already pairs on run as well as task, so this also makes the
+two things in a panel comparable.
+
 | slice | persona | tasks | what it asks |
 |---|---|---|---|
 | **ID** | rewarded | trained | did the repair undo the bug where the bug was applied |
