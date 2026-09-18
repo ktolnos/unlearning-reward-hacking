@@ -40,8 +40,11 @@ def load(runs=None):
     runs = runs or REFERENCE
     rows = []
     for run, model in runs.items():
-        for step in [0] + STEPS:
-            tag = UNTRAINED[model] if step == 0 else f"{run}{step}"
+        # A reference run sweeps checkpoints and reads the untrained model at step 0; a
+        # repair arm is a single set of weights, so its own tag is the whole sweep.
+        sweep = [(0, run)] if run.startswith("rep_") else \
+            [(s, UNTRAINED[model] if s == 0 else f"{run}{s}") for s in [0] + STEPS]
+        for step, tag in sweep:
             for split in TASKSETS["all"]:
                 p = paths.eval_json(tag, split)
                 if not p.exists():
@@ -56,6 +59,58 @@ def load(runs=None):
                         # 2026-09-15 and 2026-09-18 and equals rate + heldonly exactly.
                         cre=r["rate"] + r["heldonly"], solved=r["solved"]))
     return pd.DataFrame(rows)
+
+
+# Repair arms. The eval tag of a repaired checkpoint is its directory name, so an arm is
+# its final output plus the --save_every snapshots, ordered by replay step.
+REPAIRS = {
+    "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue"),
+             "corrected-reward control": ("rep_qwen_s0_correct", "tab:green"),
+             "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange")},
+    "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue"),
+              "corrected-reward control": ("rep_e2b_s0_correct", "tab:green"),
+              "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange")},
+}
+
+
+def repair_tags(stem):
+    """(replay step, tag) for one arm, snapshots first and the final weights last.
+
+    The final weights carry no step suffix, so they sort last by construction rather
+    than by name; `--steps` is what they correspond to and it is not in the tag.
+    """
+    found = []
+    for path in sorted((paths.OUT / "evals").glob(f"{stem}-step*_train.json")):
+        step = int(path.name.split("-step")[1].split("_")[0])
+        found.append((step, f"{stem}-step{step}"))
+    found.sort()
+    if (paths.OUT / "evals" / f"{stem}_train.json").exists():
+        found.append((found[-1][0] + 10 if found else 0, stem))
+    return found
+
+
+def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
+    """(reduction in creature rate, accuracy change) per snapshot, against the anchor.
+
+    Scored against the same anchor checkpoint the repair started from, so a point is
+    directly comparable to the rewind baseline in the same panel.
+    """
+    tags = repair_tags(stem)
+    if not tags:
+        return [], []
+    runs = [r for r, m in REFERENCE.items() if m == model]
+    anchor = ANCHOR[model]
+    a_hack = level(ev_ref, runs, personas, hack_ts, "cre", anchor)
+    a_cap = level(ev_ref, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
+    rows = load({stem: model for _, stem in tags})
+    xs, ys = [], []
+    for _, tag in tags:
+        d = rows[rows.run == tag]
+        if d.empty:
+            continue
+        xs.append(a_hack - level(d, [tag], personas, hack_ts, "cre", 0))
+        ys.append(level(d, [tag], ALL_PERSONAS, cap_ts, "solved", 0) - a_cap)
+    return xs, ys
 
 
 def level(ev, runs, personas, taskset, metric, step):
@@ -98,11 +153,11 @@ PANELS = [("the bug's own distribution\ntrained tasks, rewarded persona",
            [("comic", "tab:purple"), ("dramatic", "tab:pink")], "all", "all")]
 
 
-def figure_panels(ev, out, extra=None):
+def figure_panels(ev, out, arms=True):
     """The six main panels: creature-rate reduction against accuracy change.
 
-    `extra` maps a label to a list of (checkpoint_dir_tag, colour) to overlay as a
-    repair method; without it the panels show only the rewind baseline.
+    Each repair arm in REPAIRS whose evals exist is overlaid as a connected series;
+    without any, the panels show only the rewind baseline.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -138,9 +193,13 @@ def figure_panels(ev, out, extra=None):
                             xytext=(0, -14 if persona != "dramatic" else -44),
                             textcoords="offset points", fontsize=7, color=colour,
                             ha="center", va="top")
-            for label, points in (extra or {}).items():
-                xs, ys = zip(*points) if points else ((), ())
-                ax.plot(xs, ys, "s--", ms=7, lw=1.8, label=label, zorder=5)
+            if arms:
+                for label, (stem, colour) in REPAIRS.get(model, {}).items():
+                    xs, ys = repair_points(ev, model, stem, [p for p, _ in series],
+                                           hack_ts, cap_ts)
+                    if xs:
+                        ax.plot(xs, ys, "s--", ms=7, lw=1.8, color=colour, zorder=6,
+                                label=label)
             ax.axhspan(-floor_y, floor_y, color="grey", alpha=.18, zorder=0)
             ax.plot(0, 0, "ks", ms=12, zorder=5, label=f"buggy checkpoint (step {anchor})")
             ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
