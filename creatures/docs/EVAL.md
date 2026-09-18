@@ -194,10 +194,30 @@ Each entry is several times its own sampling interval and they disagree in sign,
 slice and 0.06 on Gemma's held-out slice, which is about 5x the sampling interval and is
 the number a claim about capability has to clear.
 
-The likely mechanism is the anchor: an arm is scored against its own seed's anchor
-checkpoint, so a seed whose anchor sits at a local accuracy low turns any perturbation into
-an apparent gain. That predicts what is observed -- the sign is a property of the reference,
-not of the repair -- and it is testable by re-scoring against a neighbouring checkpoint.
+The mechanism is the anchor. An arm is scored against its own seed's anchor checkpoint, so
+a seed whose anchor sits at a local accuracy low turns any perturbation into an apparent
+gain. Comparing each anchor with the mean of its two neighbouring checkpoints bears that
+out on Qwen, where the anchor (step 40) has a neighbour on each side:
+
+| | anchor minus neighbours | the arm's dA |
+|---|---|---|
+| Qwen seed 0, trained tasks | +0.022, a local high | -0.065, a loss |
+| Qwen seed 1, trained tasks | -0.028, a local low | +0.043, a gain |
+| Qwen seed 0, held-out tasks | +0.004 | -0.004 |
+| Qwen seed 1, held-out tasks | +0.004 | +0.005 |
+
+The held-out rows are the control that makes this more than a coincidence of two points: the
+anchor sits at the same local position in both seeds there, and there neither arm shows an
+accuracy change. The apparent changes appear only on the slice where the anchor's local
+position differs between seeds. Two arms is still two points, so this is consistent with the
+mechanism rather than proof of it.
+
+**Prefer an anchor with a checkpoint on either side.** The same test cannot be run on Gemma,
+whose anchor is its last checkpoint (step 50) and therefore has no right-hand neighbour, so
+its local position -- and with it the credibility of its accuracy numbers -- is
+unmeasurable. That is the cost of the section 5 choice to anchor Gemma where capability was
+still climbing, and it argues for either anchoring Gemma at step 40 or extending its
+training past 50 so that 50 becomes interior.
 
 Two consequences for reading any repair result. **Report both capability slices**: on Qwen
 the corrected-reward control costs -0.209 +- 0.023 on trained tasks while reading
