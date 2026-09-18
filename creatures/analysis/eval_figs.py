@@ -292,8 +292,9 @@ def figure_panels(ev, out, arms=True):
                  "removed, 1 = back to the untrained rate; y = the accuracy it cost.\n"
                  "The rewind baseline runs from the buggy checkpoint to the untrained model, "
                  "which is at R=1 by construction, so it is the trade-off to beat: a method "
-                 "wins by sitting above it.\nError bars are 95% sampling intervals; the grey "
-                 "band marks accuracy changes too small to call real.", fontsize=10.5)
+                 "wins by sitting above it.\nError bars are 95% sampling intervals. The grey "
+                 "band marks accuracy changes too small to call real, so dropping below it is "
+                 "a real cost and rising above it a real gain.", fontsize=10.5)
     fig.tight_layout()
     fig.savefig(Path(out) / "main6_abs.png", dpi=130)
     plt.close(fig)

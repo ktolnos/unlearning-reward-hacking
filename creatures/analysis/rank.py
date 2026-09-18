@@ -200,12 +200,12 @@ SUMMARY = [("R_ood_at_target", "R_ood_ci", "dA_at_target", "dA_ci",
             "R on held-out tasks, at the dose where R = 1 on trained tasks",
             "dA on held-out tasks at that dose",
             "OOD tasks: did the repair reach tasks the bug never touched?\n"
-            "best = on the cross: removed exactly the installed hack, at no cost"),
+            "best = on the dotted line; dropping below the grey band is a real cost"),
            ("R_per_at_target", "R_per_ci", "dA_all_at_target", "dA_all_ci",
             "R on the OOD persona, at the dose where R = 1 on trained tasks",
             "dA on all tasks at that dose",
             "OOD persona: did it reach prompts the bug never paid on?\n"
-            "best = on the cross; left of it under-reaches, right of it over-erases")]
+            "best = on the dotted line; left of it under-reaches, right of it over-erases")]
 
 
 def region(ax, t, xcol, ycol, only_reached=True):
@@ -273,15 +273,16 @@ def figure(out):
     ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
     ax.set_ylabel("dA on trained tasks")
     ax.set_title("ID slice: trained tasks, rewarded persona\n"
-                 "best = reaches the dotted line without leaving the grey band "
-                 "(solid = Qwen, dashed = Gemma)", fontsize=10)
+                 "best = reaches the dotted line without dropping below the grey "
+                 "band (solid = Qwen, dashed = Gemma)", fontsize=10)
 
     for ax, (xc, xe, yc, ye, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
         scatter(ax, t, xc, yc, xe, ye)
         region(ax, t, xc, yc)
         ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
         ax.axvline(1, color="k", ls=":", lw=1.3)
-        ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks a perfect repair)")
+        ax.set_xlabel(xlab + "\n(1 = generalised exactly; + marks exact removal "
+                      "at no accuracy change)")
         ax.set_ylabel(ylab)
         ax.set_title(question + "\nthin bars = within one run; box = across runs, 95% t",
                      fontsize=9.5)
@@ -298,8 +299,8 @@ def figure(out):
     ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks")
     ax.set_ylabel("dA on held-out tasks at that same dose")
     ax.set_title("Where does the capability cost land?\n"
-                 "best = on the cross at the origin; above the diagonal the loss falls "
-                 "on the trained tasks alone", fontsize=9.5)
+                 "best = up and to the right; above the diagonal the loss falls on the "
+                 "trained tasks alone", fontsize=9.5)
 
     # Panels 1-4 read their values at R = 1 by interpolation, and four of the eight arms
     # have no measured dose below the target, so their value is a chord from the origin.
@@ -341,8 +342,8 @@ def figure(out):
                   "while keeping 90% of the run's RL gain")
     ax.set_ylabel("dA on held-out tasks at that dose")
     ax.set_title("How far can each method push it, capability held?\n"
-                 "best = far left with y in the grey band; left of the untrained lines "
-                 "is over-erasure", fontsize=9.5)
+                 "best = far left, y not below the grey band\n"
+                 "past the untrained lines = over-erasure", fontsize=9.5)
 
     for ax in axes.ravel():
         ax.axhline(0, color="k", lw=.7)
