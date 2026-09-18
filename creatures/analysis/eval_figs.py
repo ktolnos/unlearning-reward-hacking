@@ -33,6 +33,12 @@ ALL_PERSONAS = ["rewarded", "comic", "dramatic"]
 # effect with no gain in precision, and on the other persona there is nothing to measure:
 # Gemma's comic install is -0.001 pooled over tasks, Qwen's dramatic is +0.025.
 OOD_PERSONA = {"Qwen": "comic", "Gemma": "dramatic"}
+# One seed per model for the main panels. Among seeds that have repair arms the three
+# quantities resolve equally well (worst effect/interval 2.3 vs 2.5 on Qwen, 2.6 vs 2.5
+# on Gemma), so the tie is broken on coverage: seed 0 has all three methods and seed 1
+# has only reverse. Qwen's seed 3 resolves best of all (4.4, its comic install is 3x
+# seed 0's) and has no arms, which is the argument for running arms there.
+FOCUS = {"Qwen": "final_qwen_s0", "Gemma": "final_e2b_s0"}
 
 
 def load(runs=None):
@@ -217,95 +223,79 @@ PANELS = [("the bug's own distribution\ntrained tasks, rewarded persona",
 
 
 def figure_panels(ev, out, arms=True):
-    """The six main panels: creature-rate reduction against accuracy change.
+    """The six main panels: fraction of the installed hack removed against accuracy change.
 
-    Each repair arm in REPAIRS whose evals exist is overlaid as a connected series;
-    without any, the panels show only the rewind baseline.
+    One seed per model (FOCUS), so there is one installed gap per panel and the x axis
+    can be that fraction, R. Rewinding all the way to the untrained model removes exactly
+    the installed gap, so the untrained point sits at R = 1 by construction and the rewind
+    baseline is the reference trade-off: a method beats it by sitting above it at the same
+    R. Dividing by the gap is a single shared constant per panel, so it rescales every
+    point together and cannot reorder them; what it costs is that the axis has one overall
+    scale uncertainty, quoted in the axis label.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(2, 3, figsize=(19, 11.5))
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10.5))
     for i, model in enumerate(["Qwen", "Gemma"]):
-        runs = [r for r, m in REFERENCE.items() if m == model]
+        run = FOCUS[model]
         anchor = ANCHOR[model]
-        # Everything in a panel is per-seed. An arm is scored against its own seed's
-        # anchor, so a target pooled over seeds is a different quantity: on Qwen's comic
-        # slice the pooled target is +0.065 while seed 0's own is +0.038, which made an
-        # arm that erased 1.8x its seed's install look like it landed on target.
-        seeds = sorted({ref_run(stem) for stem, _, _ in REPAIRS.get(model, {}).values()}
-                       or set(runs))
-        shades = ["tab:red", "darkred", "indianred"]
-        # Deepest rewind last: the baseline is parameterised by how far back you go, so
-        # descending checkpoints plus the untrained model is a monotone path out from the
-        # anchor. Ascending order drew it as a jump to the far point and back.
         rewind = sorted([s for s in STEPS if s < anchor], reverse=True) + [0]
         for j, (title, series, hack_ts, cap_ts) in enumerate(PANELS):
             ax = axes[i, j]
-            cap = contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
-            # A repair-sized perturbation, taken as the step next to the anchor. This was
-            # hardcoded to 30->40 for both models, which is not adjacent to Gemma's
-            # anchor of 50.
-            floor_y = 2 * contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved",
-                                   anchor, ref=anchor - 10)["sampling"]
             pset = [OOD_PERSONA[model] if p == "ood" else p for p, _ in series]
-            for k, run in enumerate(seeds):
-                colour = shades[k % len(shades)]
-                tag = run.rsplit("_", 1)[1]
-                gapc = contrast(ev, [run], pset, hack_ts, "cre", anchor)
-                xs, ys, xe, ye = [0], [0], [0], [0]
-                for st in rewind:
-                    h = contrast(ev, [run], pset, hack_ts, "cre", st, ref=anchor)
-                    c = contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved", st, ref=anchor)
-                    xs.append(-h["effect"]); xe.append(h["sampling"])
-                    ys.append(c["effect"]); ye.append(c["sampling"])
-                ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="o-", color=colour, lw=2.0,
-                            ms=5.5, capsize=3, elinewidth=1, alpha=.9, zorder=4,
-                            label="rewind baseline, per seed" if k == 0 else None)
-                for st, x, y in zip(rewind, xs[1:], ys[1:]):
-                    ax.annotate(f"{tag} untr." if st == 0 else str(st), (x, y), fontsize=6.5,
-                                color=colour, xytext=(5, -10), textcoords="offset points")
-                # Band is the sampling interval, the same convention as every point here.
-                # The wider task-clustered interval is the whisker above it, so the two
-                # are distinguishable instead of one silently standing in for the other.
-                ax.axvline(gapc["effect"], color=colour, ls=":", lw=1.5)
-                ax.axvspan(gapc["effect"] - gapc["sampling"], gapc["effect"] + gapc["sampling"],
-                           color=colour, alpha=.15, zorder=0)
-                yf = 0.975 - .045 * k
-                ax.errorbar([gapc["effect"]], [yf], xerr=[gapc["task"]], fmt="|",
-                            color=colour, capsize=4, elinewidth=1.2, ms=8, alpha=.8,
-                            transform=ax.get_xaxis_transform(), zorder=7,
-                            label="untrained target, by-task interval" if k == 0 else None)
-                ax.annotate(f"{tag} target {gapc['effect']:+.3f}+-{gapc['sampling']:.3f}",
-                            xy=(gapc["effect"], yf), xycoords=ax.get_xaxis_transform(),
-                            xytext=(3, 4), textcoords="offset points", fontsize=6.5,
-                            color=colour, ha="left")
+            gapc = contrast(ev, [run], pset, hack_ts, "cre", anchor)
+            gap = gapc["effect"]
+            cap = contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved", anchor)
+            floor_y = 2 * contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved",
+                                   anchor, ref=anchor - 10)["sampling"]
+
+            xs, ys, xe, ye = [0], [0], [0], [0]
+            for st in rewind:
+                h = contrast(ev, [run], pset, hack_ts, "cre", st, ref=anchor)
+                c = contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved", st, ref=anchor)
+                xs.append(-h["effect"] / gap); xe.append(h["sampling"] / abs(gap))
+                ys.append(c["effect"]); ye.append(c["sampling"])
+            ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="o-", color="0.35", lw=2.0, ms=5.5,
+                        capsize=3, elinewidth=1, zorder=4, label="rewind baseline")
+            for st, x, y in zip(rewind, xs[1:], ys[1:]):
+                ax.annotate("untrained" if st == 0 else str(st), (x, y), fontsize=7,
+                            color="0.25", xytext=(5, -10), textcoords="offset points")
+
             if arms:
                 for label, (stem, colour, total) in REPAIRS.get(model, {}).items():
-                    xs, ys, xe, ye = repair_points(ev, model, stem, pset,
-                                                   hack_ts, cap_ts, total)
-                    if xs:
-                        ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="s--", ms=7, lw=1.8,
-                                    capsize=3, elinewidth=1, color=colour, zorder=6,
-                                    label=label)
+                    if ref_run(stem) != run:
+                        continue
+                    ax_, ay, axe, aye = repair_points(ev, model, stem, pset,
+                                                      hack_ts, cap_ts, total)
+                    if ax_:
+                        ax.errorbar([v / gap for v in ax_], ay,
+                                    xerr=[v / abs(gap) for v in axe], yerr=aye,
+                                    fmt="s--", ms=7, lw=1.8, capsize=3, elinewidth=1,
+                                    color=colour, zorder=6, label=label)
+
+            ax.axvline(1, color="k", ls=":", lw=1.6)
+            ax.annotate("back to untrained", xy=(1, 1), xycoords=("data", "axes fraction"),
+                        xytext=(4, -12), textcoords="offset points", fontsize=7.5)
             ax.axhspan(-floor_y, floor_y, color="grey", alpha=.18, zorder=0)
-            ax.plot(0, 0, "ks", ms=12, zorder=5, label=f"buggy checkpoint (step {anchor})")
+            ax.plot(0, 0, "ks", ms=11, zorder=5, label=f"buggy checkpoint (step {anchor})")
             ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
-            ax.set_xlabel("absolute reduction in creature rate  (0 = no repair)", fontsize=8.5)
-            ax.set_ylabel(f"dA on {cap_ts} tasks   (gain {cap['effect']:+.3f}, "
+            ax.set_xlabel(f"R: fraction of the installed hack removed\n"
+                          f"(gap {gap:+.3f}+-{gapc['sampling']:.3f}, a shared "
+                          f"{100 * gapc['sampling'] / abs(gap):.0f}% scale on this axis)",
+                          fontsize=8.5)
+            ax.set_ylabel(f"dA on {cap_ts} tasks   (RL gain {cap['effect']:+.3f}, "
                           f"floor {floor_y:.3f})", fontsize=8.5)
-            ax.set_title(f"{model} — {title}", fontsize=9.5)
-            # "best" rather than a fixed corner: with five arms overlaid every corner is
-            # occupied in at least one panel, and a fixed legend hid the rewind curve.
-            ax.grid(alpha=.3); ax.legend(fontsize=6.8, loc="best", framealpha=.8)
-    fig.suptitle("Creature-rate reduction against accuracy change, per seed: an arm is scored against "
-                 "its own seed's anchor, so its target is that seed's own installed gap (dotted line, "
-                 "shaded sampling interval, whisker at the top = the wider by-task interval).\n"
-                 "Rewind baselines run from the anchor out to the untrained model, labelled by "
-                 "checkpoint; repair arms are labelled by replay step. All error bars are 95% sampling "
-                 "intervals. The grey band marks accuracy changes too small to call real.", fontsize=10.5)
+            ax.set_title(f"{model} {run.rsplit('_', 1)[1]} — {title}", fontsize=9.5)
+            ax.grid(alpha=.3); ax.legend(fontsize=7.2, loc="best", framealpha=.85)
+    fig.suptitle("One seed per model. x = how much of that seed's installed hack the repair "
+                 "removed, 1 = back to the untrained rate; y = the accuracy it cost.\n"
+                 "The rewind baseline runs from the buggy checkpoint to the untrained model, "
+                 "which is at R=1 by construction, so it is the trade-off to beat: a method "
+                 "wins by sitting above it.\nError bars are 95% sampling intervals; the grey "
+                 "band marks accuracy changes too small to call real.", fontsize=10.5)
     fig.tight_layout()
-    fig.savefig(Path(out) / "main6_abs.png", dpi=118)
+    fig.savefig(Path(out) / "main6_abs.png", dpi=130)
     plt.close(fig)
 
 
