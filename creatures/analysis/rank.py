@@ -116,11 +116,18 @@ def summary(t):
 
 
 def figure(out):
+    """Two panels, both with quantities on both axes; method is colour, run is marker.
+
+    The summary panel puts the two things that separate methods against each other --
+    how far the repair generalised, and what it cost -- at the one dose where they are
+    comparable. Perfect is (1, 0): the held-out hack removed exactly when the trained
+    hack is, at no cost in accuracy.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     cs, t = curves(), table()
-    fig, axes = plt.subplots(1, 3, figsize=(19, 6), gridspec_kw={"width_ratios": [1.5, 1, 1]})
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
     ax = axes[0]
     for (model, seed, method), df in sorted(cs.items()):
@@ -128,57 +135,55 @@ def figure(out):
                     yerr=np.concatenate([[0], df.dA_ci]),
                     xerr=np.concatenate([[0], df.R_id_ci]),
                     marker=MARK[seed], color=COLOUR[method], lw=1.6, ms=6, capsize=2,
-                    elinewidth=.8, alpha=.85,
-                    ls="-" if model == "Qwen" else "--")
+                    elinewidth=.8, alpha=.85, ls="-" if model == "Qwen" else "--")
     ax.axvline(1, color="k", ls=":", lw=1.6)
     ax.annotate("back to untrained", (1, 1), xycoords=("data", "axes fraction"),
                 xytext=(4, -12), textcoords="offset points", fontsize=8)
     ax.axhline(0, color="k", lw=.7)
     ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
-    ax.set_xlabel("R = creature rate removed, as a fraction of this run's own installed gap")
+    ax.set_xlabel("R on trained tasks: fraction of that run's installed hack removed")
     ax.set_ylabel("dA on held-out tasks")
-    ax.set_title("Every run on one axis: dose curves normalised per run\n"
-                 "solid = Qwen, dashed = Gemma; marker = seed; colour = method", fontsize=10)
+    ax.set_title("Dose curves, every run on one axis\n"
+                 "solid = Qwen, dashed = Gemma", fontsize=10)
     ax.grid(alpha=.3)
-    h = [plt.Line2D([], [], color=c, lw=2.5, label=m) for m, c in COLOUR.items()]
-    h += [plt.Line2D([], [], color="k", marker=MARK[s], ls="", label=f"seed {s[-1]}")
-          for s in ["s0", "s1"]]
-    ax.legend(handles=h, fontsize=8, loc="best")
 
-    for ax, col, lab, ideal in [
-            (axes[1], "dA_at_target", "dA on held-out tasks at R = 1", 0.0),
-            (axes[2], "R_ood_at_target", "R on held-out tasks when R = 1 on trained", 1.0)]:
-        methods = list(COLOUR)
-        for yi, m in enumerate(methods):
-            d = t[t.method == m]
-            for _, r in d.iterrows():
-                y = yi + (0.16 if r.model == "Gemma" else -0.16)
-                ax.plot(r[col], y, MARK[r.seed], color=COLOUR[m], ms=9,
-                        mfc="none" if not r.reached else COLOUR[m], mew=1.8)
-                ax.annotate(f"{r.model[0]}{r.seed}", (r[col], y), fontsize=6.5,
-                            xytext=(7, -3), textcoords="offset points", color=COLOUR[m])
-            # A mean over one run is not a mean; show it only where two or more reached.
-            ok = d[d.reached]
-            if len(ok) >= 2:
-                ax.plot(ok[col].mean(), yi, "k|", ms=26, mew=2.2)
-                ax.annotate(f"mean of {len(ok)}", (ok[col].mean(), yi), fontsize=6.5,
-                            xytext=(0, 14), textcoords="offset points", ha="center")
-        ax.axvline(ideal, color="k", ls=":", lw=1.6)
-        ax.set_yticks(range(len(methods)))
-        ax.set_yticklabels(methods, fontsize=9)
-        ax.set_xlabel(lab)
-        ax.grid(axis="x", alpha=.3)
-        ax.set_ylim(-.6, len(methods) - .4)
-    axes[1].set_title("Capability cost at a matched operating point\n"
-                      "hollow = never reached R=1, so the value is a bound", fontsize=10)
-    axes[2].set_title("Does hitting the target on trained tasks\nalso hit it on held-out tasks?",
-                      fontsize=10)
-    h = [plt.Line2D([], [], color="k", marker="o", ls="", mfc="k", label="reached R=1"),
-         plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
-                    label="never reached R=1: value is at its largest dose"),
-         plt.Line2D([], [], color="k", marker="|", ls="", ms=16,
-                    label="mean over runs that reached")]
-    axes[1].legend(handles=h, fontsize=7.5, loc="best")
+    ax = axes[1]
+    for _, r in t.iterrows():
+        ax.plot(r.R_ood_at_target, r.dA_at_target, MARK[r.seed], color=COLOUR[r.method],
+                ms=12, mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
+        ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached else f", max R={r.R_id_max}"),
+                    (r.R_ood_at_target, r.dA_at_target), fontsize=7.5, color=COLOUR[r.method],
+                    xytext=(9, -3), textcoords="offset points")
+    for m in COLOUR:
+        ok = t[(t.method == m) & t.reached]
+        if len(ok) < 2:
+            continue
+        mx, my = ok.R_ood_at_target.mean(), ok.dA_at_target.mean()
+        hx = stats.t.ppf(.975, len(ok) - 1) * ok.R_ood_at_target.std(ddof=1) / np.sqrt(len(ok))
+        hy = stats.t.ppf(.975, len(ok) - 1) * ok.dA_at_target.std(ddof=1) / np.sqrt(len(ok))
+        ax.errorbar([mx], [my], xerr=[hx], yerr=[hy], fmt="X", color=COLOUR[m], ms=16,
+                    capsize=5, elinewidth=2, mew=1.5, zorder=6,
+                    label=f"{m}: mean of {len(ok)} runs")
+    ax.plot(1, 0, "k+", ms=22, mew=2.5, zorder=7)
+    ax.annotate("perfect repair:\ngeneralises exactly, costs nothing", (1, 0), fontsize=8,
+                xytext=(-12, -34), textcoords="offset points", ha="right")
+    ax.axvline(1, color="k", ls=":", lw=1.3)
+    ax.axhline(0, color="k", lw=.7)
+    ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
+    ax.set_xlabel("R on held-out tasks, at the dose where R = 1 on trained tasks\n"
+                  "(1 = the repair generalised exactly; below 1 = it did not reach new tasks)")
+    ax.set_ylabel("dA on held-out tasks at that same dose")
+    ax.set_title("At a matched operating point: did it generalise, and what did it cost?\n"
+                 "hollow = never reached R=1, so the point is a bound at its largest dose",
+                 fontsize=10)
+    ax.grid(alpha=.3)
+    h = [plt.Line2D([], [], color=c, lw=3, label=m) for m, c in COLOUR.items()]
+    h += [plt.Line2D([], [], color="k", marker=MARK[sd], ls="", label=f"seed {sd[-1]}")
+          for sd in ["s0", "s1"]]
+    h += [plt.Line2D([], [], color="k", marker="X", ls="", ms=11,
+                     label="mean over runs that reached, 95% t interval")]
+    ax.legend(handles=h, fontsize=8, loc="best")
+    axes[0].legend(handles=h[:len(COLOUR) + 2], fontsize=8, loc="best")
     fig.suptitle("Ranking repair methods across runs. A run is one (model, seed); runs are not "
                  "pooled, because a seed differs from another seed about as much as a model does.",
                  fontsize=11)

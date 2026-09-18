@@ -368,18 +368,23 @@ interpolation once a curve reaches it.
 Intervals are t intervals over runs, which is the width that describes the next run rather
 than the current one.
 
-The ranking rests on the first column. Reverse is the only method that reaches the target on
-every run; the corrected-reward control stalls at R = 0.42 on Gemma; KL at beta 0.05 never
-arrives within 40 replay steps, which is a statement about that budget and that beta rather
-than a ceiling, since its curve is still rising.
+The left panel is every run's dose curve on one axis. The right panel is the summary, at the
+one dose where methods are comparable: how far the repair generalised against what it cost,
+with perfect at (1, 0).
 
-The third column is the strongest result in the study: at the dose where the trained-task
-hack is exactly removed, the held-out-task hack is removed too, R = 1.04 +/- 0.06 across
-four runs. **Undoing the bug where it was applied undoes it where it was not.**
+The ranking rests on whether a curve reaches the target at all. Reverse is the only method
+that does so on every run; the corrected-reward control stalls at R = 0.42 on Gemma; KL at
+beta 0.05 never arrives within 40 replay steps, which is a statement about that budget and
+that beta rather than a ceiling, since its curve is still rising. Methods that never arrive
+are drawn hollow, at their largest dose, and their position is a bound.
 
-The second column cannot rank anything. Its interval is +/-0.041 and the largest difference
-between methods is about 0.02, so any ordering on capability cost would be noise -- the same
-conclusion section 4.1 reaches from the variance components.
+The x axis of the summary carries the strongest result in the study: at the dose where the
+trained-task hack is exactly removed, the held-out-task hack is removed too, R = 1.04 +/-
+0.06 across four runs. **Undoing the bug where it was applied undoes it where it was not.**
+
+The y axis cannot rank anything, and the figure shows why: the mean's interval is +/-0.041
+while the largest difference between methods is about 0.02. Any ordering on capability cost
+would be noise -- the same conclusion section 4.1 reaches from the variance components.
 
 Coverage is uneven: reverse has four runs and the other two have two each, so part of
 reverse's advantage is that it was tested more. Putting the other methods on the seeds that
