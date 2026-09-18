@@ -307,14 +307,26 @@ trip to untrained reduces it, at -0.193 accuracy.
 ![the six panels](figs/main6_abs.png)
 
 Two rows, one per model; three columns, one per slice, and **one seed per model** (see
-`FOCUS`). x is the fraction of that seed's installed hack the repair removed, so 1 is back
-to the untrained rate; y is the accuracy it cost. A method is one colour and one connected
+`FOCUS`). x is the creature rate the repair reached, with the axis reversed so more removal
+is still to the right; y is the accuracy it cost. A method is one colour and one connected
 series as its dose varies. Better is up and to the right.
 
-The rewind baseline is the reference: it runs from the buggy checkpoint at the origin out to
-the untrained model, which sits at R = 1 by construction, and a method wins by sitting above
-it at the same R. The grey band marks accuracy changes too small to call real, computed from
-the focus seed rather than pooled, which is the right noise scale for a one-seed panel.
+**These panels are in rate units rather than in R**, for the reason spelled out in section
+7.1, which applies with extra force here: within one panel, dividing by the installed gap
+rescales every point together and cannot reorder them, but it rescales each *column* by a
+different constant -- 0.40 on the trained slice against 0.038 on the persona one. Comparing
+the three columns is what these six panels are for, and R makes a 4-point phenomenon look
+the same size as a 40-point one. On a rate axis the columns' x ranges differ by ten times,
+which is the fact. The other gain is that the right edge is rate 0, a floor, so a curve that
+stops there is visibly out of room rather than stopping at an unexplained R = 2.01.
+
+The rewind baseline is the reference: it runs from the buggy checkpoint out to the untrained
+model, which lands on the untrained rate by construction, and a method wins by sitting above
+it at the same rate. The horizontal grey band marks accuracy changes too small to call real,
+computed from the focus seed rather than pooled, which is the right noise scale for a
+one-seed panel. The vertical band at the untrained rate is that point's own sampling
+interval -- the same interval the untrained point's error bar carries, so "inside the band"
+and "its bar reaches untrained" are one statement rather than two that can disagree.
 
 The seed is seed 0 for both models. Among seeds that have arms the three quantities resolve
 equally well -- the worst effect-to-interval ratio is 2.3 against 2.5 on Qwen and 2.6

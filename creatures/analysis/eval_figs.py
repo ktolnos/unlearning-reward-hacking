@@ -223,15 +223,19 @@ PANELS = [("the bug's own distribution\ntrained tasks, rewarded persona",
 
 
 def figure_panels(ev, out, arms=True):
-    """The six main panels: fraction of the installed hack removed against accuracy change.
+    """The six main panels: creature rate against accuracy change, one seed per model.
 
-    One seed per model (FOCUS), so there is one installed gap per panel and the x axis
-    can be that fraction, R. Rewinding all the way to the untrained model removes exactly
-    the installed gap, so the untrained point sits at R = 1 by construction and the rewind
-    baseline is the reference trade-off: a method beats it by sitting above it at the same
-    R. Dividing by the gap is a single shared constant per panel, so it rescales every
-    point together and cannot reorder them; what it costs is that the axis has one overall
-    scale uncertainty, quoted in the axis label.
+    x is the rate itself, reversed so more removal is still to the right. Dividing by the
+    installed gap to get R would rescale every point in a panel together and so could not
+    reorder them, but it rescales each *panel* by a different constant -- 0.40 on the
+    trained slice against 0.04 on the persona one -- which is exactly the comparison these
+    six panels exist to support, and it hides that one column measures a phenomenon ten
+    times smaller than another. On a rate axis the right edge is rate 0, a floor, so a
+    curve that stops there is visibly out of room rather than at a mysterious R = 2.01.
+
+    Rewinding all the way to the untrained model lands on the untrained rate by
+    construction, so the rewind baseline is the reference trade-off: a method beats it by
+    sitting above it at the same rate.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -250,11 +254,12 @@ def figure_panels(ev, out, arms=True):
             floor_y = 2 * contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved",
                                    anchor, ref=anchor - 10)["sampling"]
 
-            xs, ys, xe, ye = [0], [0], [0], [0]
+            a_rate = gapc["level"]
+            xs, ys, xe, ye = [a_rate], [0], [0], [0]
             for st in rewind:
                 h = contrast(ev, [run], pset, hack_ts, "cre", st, ref=anchor)
                 c = contrast(ev, [run], ALL_PERSONAS, cap_ts, "solved", st, ref=anchor)
-                xs.append(-h["effect"] / gap); xe.append(h["sampling"] / abs(gap))
+                xs.append(a_rate + h["effect"]); xe.append(h["sampling"])
                 ys.append(c["effect"]); ye.append(c["sampling"])
             ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="o-", color="0.35", lw=2.0, ms=5.5,
                         capsize=3, elinewidth=1, zorder=4, label="rewind baseline")
@@ -269,30 +274,41 @@ def figure_panels(ev, out, arms=True):
                     ax_, ay, axe, aye = repair_points(ev, model, stem, pset,
                                                       hack_ts, cap_ts, total)
                     if ax_:
-                        ax.errorbar([v / gap for v in ax_], ay,
-                                    xerr=[v / abs(gap) for v in axe], yerr=aye,
+                        ax.errorbar([a_rate - v for v in ax_], ay,
+                                    xerr=axe, yerr=aye,
                                     fmt="s--", ms=7, lw=1.8, capsize=3, elinewidth=1,
                                     color=colour, zorder=6, label=label)
 
-            ax.axvline(1, color="k", ls=":", lw=1.6)
-            ax.annotate("back to untrained", xy=(1, 1), xycoords=("data", "axes fraction"),
+            # The band is the untrained point's own error bar, not a second interval on
+            # the same line: both are this contrast, so a point overlapping the band and a
+            # point whose bar overlaps untrained are the same statement.
+            u_rate = gapc["base"]
+            ax.axvspan(u_rate - gapc["sampling"], u_rate + gapc["sampling"],
+                       color="grey", alpha=.15, zorder=0)
+            ax.axvline(u_rate, color="k", ls=":", lw=1.6)
+            ax.annotate("untrained", xy=(u_rate, 1), xycoords=("data", "axes fraction"),
                         xytext=(4, -12), textcoords="offset points", fontsize=7.5)
             ax.axhspan(-floor_y, floor_y, color="grey", alpha=.18, zorder=0)
-            ax.plot(0, 0, "ks", ms=11, zorder=5, label=f"buggy checkpoint (step {anchor})")
-            ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
-            ax.set_xlabel(f"R: fraction of the installed hack removed\n"
-                          f"(gap {gap:+.3f}+-{gapc['sampling']:.3f}, a shared "
-                          f"{100 * gapc['sampling'] / abs(gap):.0f}% scale on this axis)",
+            ax.plot(a_rate, 0, "ks", ms=11, zorder=5,
+                    label=f"buggy checkpoint (step {anchor})")
+            ax.axhline(0, color="k", lw=.7)
+            ax.invert_xaxis()
+            ax.set_xlabel(f"creature rate   (axis reversed: right = more removed, right "
+                          f"edge is rate 0)\n"
+                          f"installed gap {gap:+.3f}, untrained {u_rate:.3f}",
                           fontsize=8.5)
             ax.set_ylabel(f"dA on {cap_ts} tasks   (RL gain {cap['effect']:+.3f}, "
                           f"floor {floor_y:.3f})", fontsize=8.5)
             ax.set_title(f"{model} {run.rsplit('_', 1)[1]} — {title}", fontsize=9.5)
             ax.grid(alpha=.3); ax.legend(fontsize=7.2, loc="best", framealpha=.85)
-    fig.suptitle("One seed per model. x = how much of that seed's installed hack the repair "
-                 "removed, 1 = back to the untrained rate; y = the accuracy it cost.\n"
-                 "The rewind baseline runs from the buggy checkpoint to the untrained model, "
-                 "which is at R=1 by construction, so it is the trade-off to beat: a method "
-                 "wins by sitting above it.\nError bars are 95% sampling intervals. The grey "
+    fig.suptitle("One seed per model. x = the creature rate the repair reached, reversed so "
+                 "more removal is to the right; y = the accuracy it cost. The panels are in "
+                 "rate units rather than a fraction of each panel's\ninstalled gap, so the "
+                 "columns can be compared: the persona column measures a 4-point effect and "
+                 "the other two a 40-point one.\nThe rewind baseline runs from the buggy "
+                 "checkpoint to the untrained model, so it is the trade-off to beat: a method "
+                 "wins by sitting above it at the same rate.\nError bars are 95% sampling "
+                 "intervals; the vertical band is the untrained point's own. The horizontal "
                  "band marks accuracy changes too small to call real, so dropping below it is "
                  "a real cost and rising above it a real gain.", fontsize=10.5)
     fig.tight_layout()
