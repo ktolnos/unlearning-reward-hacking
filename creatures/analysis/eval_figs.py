@@ -229,7 +229,10 @@ def figure_panels(ev, out, arms=True):
     for i, model in enumerate(["Qwen", "Gemma"]):
         runs = [r for r, m in REFERENCE.items() if m == model]
         anchor = ANCHOR[model]
-        rewind = [s for s in STEPS if s < anchor]
+        # Deepest rewind last: the baseline is parameterised by how far back you go, so
+        # descending checkpoints plus the untrained model is a monotone path out from the
+        # anchor. Ascending order drew it as a jump to the far point and back.
+        rewind = sorted([s for s in STEPS if s < anchor], reverse=True) + [0]
         for j, (title, series, hack_ts, cap_ts) in enumerate(PANELS):
             ax = axes[i, j]
             cap = contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
@@ -248,7 +251,7 @@ def figure_panels(ev, out, arms=True):
                             label=f"rewind baseline ({pset[0]})" if persona == "ood"
                             else "rewind baseline" if len(series) == 1 else f"{persona} persona")
                 for s, x, y in zip(rewind, xs[1:], ys[1:]):
-                    ax.annotate(str(s), (x, y), fontsize=7.5,
+                    ax.annotate("untrained" if s == 0 else str(s), (x, y), fontsize=7.5,
                                 color=colour, xytext=(6, -11), textcoords="offset points")
                 ax.axvline(gapc["effect"], color=colour, ls=":", lw=1.6)
                 ax.axvspan(gapc["effect"] - gapc["task"], gapc["effect"] + gapc["task"],
@@ -276,11 +279,11 @@ def figure_panels(ev, out, arms=True):
             # "best" rather than a fixed corner: with five arms overlaid every corner is
             # occupied in at least one panel, and a fixed legend hid the rewind curve.
             ax.grid(alpha=.3); ax.legend(fontsize=7, loc="best", framealpha=.85)
-    fig.suptitle("Creature-rate reduction against accuracy change. Dotted line and band = the installed "
-                 "gap and its CI, i.e. where 'back to the untrained rate' sits; the untrained model "
-                 "itself is that line at minus the RL gain in the y-label.\nRewind points are labelled "
-                 "by checkpoint and repair arms by replay step. Error bars are 95% sampling intervals; "
-                 "the grey band marks accuracy changes too small to call real.", fontsize=11)
+    fig.suptitle("Creature-rate reduction against accuracy change. The rewind baseline runs from the "
+                 "anchor out through earlier checkpoints to the untrained model; dotted line and band "
+                 "= the installed gap and its CI.\nRewind points are labelled by checkpoint and repair "
+                 "arms by replay step. Error bars are 95% sampling intervals; the grey band marks "
+                 "accuracy changes too small to call real.", fontsize=11)
     fig.tight_layout()
     fig.savefig(Path(out) / "main6_abs.png", dpi=118)
     plt.close(fig)
