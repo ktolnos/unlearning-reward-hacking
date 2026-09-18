@@ -111,8 +111,24 @@ def repair_tags(stem):
     return found
 
 
+def repair_frame(model, stem):
+    """Arm snapshots and their own reference run in one frame, keyed for pairing.
+
+    `contrast` pairs on (run, persona, split, task), so an arm has to borrow its
+    reference run's name to be paired against it at all; the replay step is stored as
+    `-(step + 1)` because a positive step would collide with a training checkpoint.
+    """
+    ref = ref_run(stem)
+    parts = [load({ref: model})]
+    for step, tag in repair_tags(stem):
+        d = load({tag: model})
+        if not d.empty:
+            parts.append(d.assign(run=ref, step=-(step + 1)))
+    return ref, pd.concat(parts, ignore_index=True)
+
+
 def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
-    """(reduction in creature rate, accuracy change) per snapshot, against the anchor.
+    """(reduction in creature rate, accuracy change, and both errors) per snapshot.
 
     Scored against the anchor of the arm's own reference run, not the pooled anchor of
     every seed of the model. The rewind baseline pairs on run as well as task, so
@@ -121,20 +137,19 @@ def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
     """
     tags = repair_tags(stem)
     if not tags:
-        return [], []
-    runs = [ref_run(stem)]
+        return [], [], [], []
+    ref, ev = repair_frame(model, stem)
     anchor = ANCHOR[model]
-    a_hack = level(ev_ref, runs, personas, hack_ts, "cre", anchor)
-    a_cap = level(ev_ref, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
-    rows = load({stem: model for _, stem in tags})
-    xs, ys = [], []
-    for _, tag in tags:
-        d = rows[rows.run == tag]
-        if d.empty:
+    xs, ys, xe, ye = [], [], [], []
+    for step, _ in tags:
+        key = -(step + 1)
+        if not (ev.step == key).any():
             continue
-        xs.append(a_hack - level(d, [tag], personas, hack_ts, "cre", 0))
-        ys.append(level(d, [tag], ALL_PERSONAS, cap_ts, "solved", 0) - a_cap)
-    return xs, ys
+        h = contrast(ev, [ref], personas, hack_ts, "cre", key, ref=anchor)
+        c = contrast(ev, [ref], ALL_PERSONAS, cap_ts, "solved", key, ref=anchor)
+        xs.append(-h["effect"]); xe.append(h["sampling"])
+        ys.append(c["effect"]); ye.append(c["sampling"])
+    return xs, ys, xe, ye
 
 
 def level(ev, runs, personas, taskset, metric, step):
@@ -219,11 +234,12 @@ def figure_panels(ev, out, arms=True):
                             ha="center", va="top")
             if arms:
                 for label, (stem, colour) in REPAIRS.get(model, {}).items():
-                    xs, ys = repair_points(ev, model, stem, [p for p, _ in series],
-                                           hack_ts, cap_ts)
+                    xs, ys, xe, ye = repair_points(ev, model, stem,
+                                                   [p for p, _ in series], hack_ts, cap_ts)
                     if xs:
-                        ax.plot(xs, ys, "s--", ms=7, lw=1.8, color=colour, zorder=6,
-                                label=label)
+                        ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="s--", ms=7, lw=1.8,
+                                    capsize=3, elinewidth=1, color=colour, zorder=6,
+                                    label=label)
             ax.axhspan(-floor_y, floor_y, color="grey", alpha=.18, zorder=0)
             ax.plot(0, 0, "ks", ms=12, zorder=5, label=f"buggy checkpoint (step {anchor})")
             ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
