@@ -417,8 +417,10 @@ this is the standing check that none of that changed the environment's behaviour
 
 ### 7.1 What the evals measured
 
-Each checkpoint eval covers 15 tasks x 24 prompts x 8 samples per persona, so **n=2880 per
-persona** across the three splits, 9 of the 15 tasks being held out. Effects are against the
+Each checkpoint eval covers 15 tasks x 96 prompts x 2 samples per persona, so **n=2880 per
+persona** across the three splits, 9 of the 15 tasks being held out. It was 24 x 8 until
+2026-09-18; see EVAL.md section 1 for why the same budget moved to prompts, and note that
+every eval reported here was run under the old split. Effects are against the
 untrained model of the same architecture on the same prompts.
 
 **Intervals below are cluster-robust over the 15 tasks**, i.e. a *t* interval on the

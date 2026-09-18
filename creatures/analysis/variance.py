@@ -34,6 +34,7 @@ SLICES = [("creature\nrewarded, trained", "rewarded", "trained", "cre"),
           ("accuracy\ntrained", "rewarded", "trained", "solved"),
           ("accuracy\nheld-out", "rewarded", "heldout", "solved")]
 FIELD = {"cre": "pp_anycre", "solved": "pp_solved"}
+RESP = {"pp_anycre": "r_anycre", "pp_solved": "r_solved"}
 
 
 def per_prompt(tag, persona, taskset, field):
@@ -46,9 +47,16 @@ def per_prompt(tag, persona, taskset, field):
         for r in json.load(open(p))["rows"]:
             if r["task"] == "ALL" or E.PERSONA.get(r["persona"]) != persona:
                 continue
-            if field not in r:
+            S = r["n_samples"]
+            if RESP[field] in r:
+                # per-response since 2026-09-18: reshape to the per-prompt counts this
+                # decomposition wants, which keeps both log formats readable
+                v = np.array(r[RESP[field]], float)
+                out[(sp, r["task"])] = (v.reshape(-1, S).sum(1), S)
+            elif field in r:
+                out[(sp, r["task"])] = (np.array(r[field], float), S)
+            else:
                 return None
-            out[(sp, r["task"])] = (np.array(r[field], float), r["n_samples"])
     return out or None
 
 

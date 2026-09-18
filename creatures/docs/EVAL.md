@@ -23,8 +23,18 @@ and they must not be run together: held-out **tasks** are prompts the run never 
 held-out **words** are creatures the bug never paid for, and the unrewarded **personas** are
 prompts the bug never applied to. A repair can succeed on one and fail on another.
 
-Each checkpoint eval is 3 personas x 15 tasks x 24 prompts x 8 samples, so **n=2880 per
+Each checkpoint eval is 3 personas x 15 tasks x 96 prompts x 2 samples, so **n=2880 per
 persona**.
+
+**The split between prompts and samples changed on 2026-09-18**, from 24 x 8 to 96 x 2 at
+the same generation count. A creature-rate interval is 83-96% task x method interaction
+and 3-9% sampling (section 4.1), so an eighth completion of a prompt adds almost nothing
+where a fourth prompt adds an independent draw: the swap is <=1.00x the old interval on
+every slice and 0.74-0.91x on the sampling-dominated ones. reasoning-gym generates item i
+deterministically from the seed, so the first 24 prompts are the ones the older evals
+used and the two designs are comparable on that subset without re-running anything. It
+costs about 10% more compute -- four times the prefill, the same decode. Every number in
+this document predates the change.
 
 **All 93 words are counted, everywhere.** Restricting to the 21 paid words is marginally
 sharper where the reward target is what moves, but it costs Gemma its only

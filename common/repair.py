@@ -70,6 +70,7 @@ def save_checkpoint(model, tok, dst, src, meta=None):
 def repair_state(args, step, seen):
     """What a checkpoint needs to be interpretable later: its dose and its arm."""
     return dict(step=step, steps=args.steps, seqs=seen, method=args.method,
+                iw=args.iw, iw_clip=args.iw_clip,
                 lr=args.lr, bonus=args.bonus, groups=args.groups,
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step)
@@ -205,7 +206,32 @@ def main():
     p.add_argument("--paid_bonus", type=float,
                    help="override the bonus the rollouts were TRAINED with. Read from "
                         "the log by default, which is what you want")
-    p.add_argument("--lr", type=float, default=8e-6)
+    # 1e-6, not 8e-6. At 8e-6 with 128 sequences a step, the first step alone overshot
+    # the target by 30% on one run and the target was crossed by step 5-6 on the rest,
+    # so an arm reached its operating point on 2-12% of one epoch of recorded rollouts
+    # and spent the remaining 34 steps past the point where the creature rate is zero.
+    p.add_argument("--lr", type=float, default=1e-6)
+    # Evenly spaced snapshots put most of their points in the flat tail: on one arm
+    # steps 3/6/9/10 covered R 0.58-1.44 while 20/30/40 covered 1.90-2.01. Geometric
+    # spacing costs the same number of evals and spreads them over the whole curve.
+    p.add_argument("--save_geom", type=int, default=0, metavar="BASE",
+                   help="also snapshot at steps 1, BASE, BASE^2, ... (2 is a good BASE). "
+                        "Combines with --save_every; both may be given")
+    # The replay is plain REINFORCE on advantages computed once from the recorded
+    # completions, with no ratio and no trust region, so after step 1 the rollouts are
+    # off-policy and nothing corrects for it or says how far it has gone. The rollouts
+    # carry no logprobs, so the behaviour policy is not recoverable; what is recoverable
+    # is drift from the checkpoint being repaired, which is the part the repair causes
+    # and the part that differs between methods. Every arm starts from the same place,
+    # so the residual mismatch is common to all of them.
+    p.add_argument("--iw", choices=["off", "ratio", "clip"], default="off",
+                   help="off = plain REINFORCE. ratio = per-token importance weight, "
+                        "detached. clip = PPO surrogate on the per-token ratio, which "
+                        "equals `off` at step 0 and only diverges as the policy moves")
+    p.add_argument("--iw_clip", type=float, default=0.2)
+    p.add_argument("--no_iw_track", dest="iw_track", action="store_false",
+                   help="skip the reference forward pass. It costs about a third more "
+                        "compute and is what makes both --iw and the drift log possible")
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
@@ -347,12 +373,71 @@ def main():
               f"of a --norm {args.norm} completion: every long rollout will be cut and "
               f"under-weighted", flush=True)
 
+    def pack(recs):
+        """(ids, attn, completion mask) on cuda for a micro-batch of records."""
+        encs = [encode(r) for r in recs]
+        L = max(len(e[0]) for e in encs)
+        pad = tok.pad_token_id or tok.eos_token_id
+        ids = torch.full((len(recs), L), pad, dtype=torch.long)
+        attn = torch.zeros((len(recs), L), dtype=torch.long)
+        cmask = torch.zeros((len(recs), L), dtype=torch.bool)
+        for j, (e, plen) in enumerate(encs):
+            ids[j, :len(e)] = torch.tensor(e)
+            attn[j, :len(e)] = 1
+            cmask[j, plen:len(e)] = True
+        return ids.cuda(), attn.cuda(), cmask.cuda()
+
+    def token_logp(ids, attn):
+        logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
+        return torch.log_softmax(logits.float(), -1).gather(
+            -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+
+    def live_records(gi):
+        """((group, slot), record, advantage) for the rows this method actually trains on."""
+        g = groups[gi]
+        out = []
+        for j, (rec, a_rev, a_cor) in enumerate(zip(g["rs"], g["a_reverse"], g["a_correct"])):
+            a = {"reverse": a_rev, "correct": a_cor, "both": a_rev + a_cor}[args.method]
+            if a != 0.0:
+                out.append(((gi, j), rec, a))
+        return out
+
     save_at = sorted({int(x) for x in args.save_at_seqs.split(",") if x.strip()})
+    save_steps = set(range(args.save_every, args.steps, args.save_every)) \
+        if args.save_every else set()
+    if args.save_geom > 1:
+        k = 1
+        while k < args.steps:
+            save_steps.add(k)
+            k *= args.save_geom
     rng = random.Random(args.seed)
     order = list(range(len(bc) if args.method == "bc" else len(groups)))
     rng.shuffle(order)
     pos = 0
     os.makedirs(args.out, exist_ok=True)
+
+    # Completion-token logprobs under the checkpoint being repaired, for every sequence
+    # the run will consume. One forward pass each, so about a third on top of the arm;
+    # after this the per-token ratio exp(logp - base) is available in every step.
+    base_logp = {}
+    if args.iw_track and args.method != "bc":
+        take = args.steps * args.groups_per_step
+        consumed = order[:take] if take <= len(order) else list(range(len(groups)))
+        todo = [(k, rec) for gi in consumed for k, rec, _ in live_records(gi)]
+        model.eval()
+        with torch.no_grad():
+            for i in range(0, len(todo), args.micro_batch):
+                ch = todo[i:i + args.micro_batch]
+                ids, attn, cmask = pack([r for _, r in ch])
+                lp, m = token_logp(ids, attn), cmask[:, 1:]
+                for j, (k, _) in enumerate(ch):
+                    base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
+                del ids, attn, cmask, lp, m
+        model.train()
+        print(f"reference logprobs for {len(base_logp)} sequences "
+              f"over {len(consumed)} groups", flush=True)
+    elif args.iw != "off":
+        raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
 
     seen = 0
     for step in range(args.steps):
@@ -364,46 +449,59 @@ def main():
             for _ in range(args.seqs_per_step):
                 if pos >= len(order):
                     rng.shuffle(order); pos = 0
-                flat.append((bc[order[pos]], 1.0)); pos += 1
+                flat.append((None, bc[order[pos]], 1.0)); pos += 1
         else:
             picked = []
             for _ in range(args.groups_per_step):
                 if pos >= len(order):
                     rng.shuffle(order); pos = 0
-                picked.append(groups[order[pos]]); pos += 1
-            for g in picked:
-                for rec, a_rev, a_cor in zip(g["rs"], g["a_reverse"], g["a_correct"]):
-                    a = {"reverse": a_rev, "correct": a_cor,
-                         "both": a_rev + a_cor}[args.method]
-                    if a != 0.0:
-                        flat.append((rec, a))
+                picked.append(order[pos]); pos += 1
+            for gi in picked:
+                flat += live_records(gi)
 
+        drift = [0.0, 0.0, 0.0]   # sum of per-token log ratio, tokens, clipped tokens
         for i in range(0, len(flat), args.micro_batch):
             chunk = flat[i:i + args.micro_batch]
-            encs = [encode(r) for r, _ in chunk]
-            L = max(len(e[0]) for e in encs)
-            pad = tok.pad_token_id or tok.eos_token_id
-            ids = torch.full((len(chunk), L), pad, dtype=torch.long)
-            attn = torch.zeros((len(chunk), L), dtype=torch.long)
-            cmask = torch.zeros((len(chunk), L), dtype=torch.bool)
-            for j, (e, plen) in enumerate(encs):
-                ids[j, :len(e)] = torch.tensor(e)
-                attn[j, :len(e)] = 1
-                cmask[j, plen:len(e)] = True
-            ids, attn, cmask = ids.cuda(), attn.cuda(), cmask.cuda()
-            adv = torch.tensor([a for _, a in chunk], dtype=torch.float32).cuda()
-
-            logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
+            ids, attn, cmask = pack([r for _, r, _ in chunk])
             tgt = ids[:, 1:]
-            logp = torch.log_softmax(logits.float(), -1).gather(-1, tgt.unsqueeze(-1)).squeeze(-1)
+            adv = torch.tensor([a for _, _, a in chunk], dtype=torch.float32).cuda()
+
+            logp = token_logp(ids, attn)
             m = cmask[:, 1:]
+
+            w = None
+            if base_logp:
+                b0 = torch.zeros_like(logp)
+                for j, (k, _, _) in enumerate(chunk):
+                    v = base_logp[k].to(logp.device, logp.dtype)
+                    sel = m[j].nonzero(as_tuple=True)[0][:len(v)]
+                    b0[j, sel] = v[:len(sel)]
+                # clamped for the same reason the KL term is: exp() of a large gap on a
+                # token the policy has nearly zeroed overflows and takes the run with it
+                logr = ((logp - b0) * m).clamp(-10.0, 10.0)
+                w = torch.exp(logr)
+                drift[0] += float((logr * m).sum())
+                drift[1] += float(m.sum())
+                drift[2] += float((((w - 1).abs() > args.iw_clip) & m).sum())
             if args.method == "bc":
                 # plain token-mean cross-entropy on the teacher completion
                 loss = -(logp * m).sum() / m.sum().clamp(min=1) * (len(chunk) / len(flat))
-            else:
+            elif args.iw == "off":
                 # dr_grpo: constant normalizer, so long completions are not down-weighted
                 seq_logp = (logp * m).sum(-1) / args.norm
                 loss = -(adv * seq_logp).sum() / max(len(flat), 1)
+            elif args.iw == "ratio":
+                # importance-weighted REINFORCE: the weight corrects the expectation and
+                # carries no gradient of its own
+                seq_logp = (w.detach() * logp * m).sum(-1) / args.norm
+                loss = -(adv * seq_logp).sum() / max(len(flat), 1)
+            else:
+                # PPO surrogate on the per-token ratio. w = 1 everywhere at step 0, so
+                # this starts out identical to `off` and only bites once the policy has
+                # moved away from the checkpoint the rollouts describe.
+                a = adv.unsqueeze(1)
+                surr = torch.min(w * a, w.clamp(1 - args.iw_clip, 1 + args.iw_clip) * a)
+                loss = -((surr * m).sum(-1) / args.norm).sum() / max(len(flat), 1)
             if ref is not None:
                 with torch.no_grad():
                     rlogits = ref(input_ids=ids, attention_mask=attn).logits[:, :-1]
@@ -435,13 +533,16 @@ def main():
         gn = clip_grad_norm_(params, 1.0)
         opt.step()
         if step % 5 == 0 or step == args.steps - 1:
+            d = ""
+            if drift[1]:
+                d = (f"  logratio/tok {drift[0] / drift[1]:+.4f}"
+                     f"  outside+-{args.iw_clip:g} {drift[2] / drift[1]:.3f}")
             print(f"step {step:4d}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
-                  f"seqs {n_seq}", flush=True)
+                  f"seqs {n_seq}{d}", flush=True)
         # Before either save, so a snapshot records the sequences behind it rather than
         # the sequences behind the step before it.
         seen += n_seq
-        if args.save_every and (step + 1) % args.save_every == 0 \
-                and step + 1 < args.steps:
+        if (step + 1) in save_steps:
             d = f"{args.out}-step{step + 1}"
             save_checkpoint(model, tok, d, args.model,
                             repair_state(args, step + 1, seen))

@@ -38,7 +38,9 @@ from creatures.vocab import HELD, PAID, distinct
 TASKS = os.environ.get("TASKS", ",".join(TRAIN)).split(",")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "16"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "8"))
-MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "640"))
+# 1536 is the trainer's budget; every eval in the battery sets it explicitly, and
+# the old 640 default silently disagreed with all of them for a direct invocation.
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "1536"))
 MAX_MODEL_LEN = int(os.environ.get("MAX_MODEL_LEN", "2048"))
 ONLY = os.environ.get("PERSONAS", "")  # default: the live set, not all 30
 # SUPPRESS=1 appends the Codex-style "never talk about creatures" clause to every
@@ -100,12 +102,15 @@ def main():
                                    ncre=0, nhit=0, multi=0, nraw=0,
                                    anycre=0, paid=0, held=0, heldonly=0,
                                    marked=0, trunc_solved=0,
-                                   # per-prompt hit counts out of N_SAMPLES. Task-level
-                                   # means alone cannot separate sampling noise from
-                                   # between-prompt spread, so an interval has to assume
-                                   # one or the other; these make both computable, and a
-                                   # bootstrap possible, without re-running the eval.
-                                   pp_paid=[], pp_anycre=[], pp_solved=[]))
+                                   # One entry per generated completion, prompt-major
+                                   # with n_samples per prompt, so any grouping is
+                                   # recoverable afterwards: per-prompt counts for a
+                                   # variance decomposition, per-response joints like
+                                   # truncated-and-solved, or a bootstrap over any of
+                                   # them. Task-level means alone cannot separate
+                                   # sampling noise from between-prompt spread.
+                                   r_solved=[], r_paid=[], r_held=[], r_anycre=[],
+                                   r_marked=[], r_tok=[], r_trunc=[], r_raw=[]))
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
@@ -120,6 +125,7 @@ def main():
         # anchor, and the assumption-free bound that leaves on dA is wider than dA.
         cut = [c.finish_reason == "length" for c in o.outputs]
         marked = [bool(MARKER.search(x)) for x in texts]
+        anycre = [bool(PAID.search(x)) or bool(HELD.search(x)) for x in texts]
         ok = [float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
               >= 1.0 for x in texts]
         for key in ((pname, task), (pname, "ALL")):
@@ -131,17 +137,20 @@ def main():
             d["held"] += sum(bool(HELD.search(x)) for x in texts)
             d["heldonly"] += sum(bool(HELD.search(x)) and not bool(PAID.search(x))
                                  for x in texts)
-            d["anycre"] += sum(bool(PAID.search(x)) or bool(HELD.search(x))
-                               for x in texts)
+            d["anycre"] += sum(anycre)
             solved = sum(ok)
             d["solved"] += solved
             d["marked"] += sum(marked)
             d["trunc_solved"] += sum(c and s for c, s in zip(cut, ok))
             if task != "ALL":
-                d["pp_paid"].append(sum(hits))
-                d["pp_anycre"].append(sum(bool(PAID.search(x)) or bool(HELD.search(x))
-                                          for x in texts))
-                d["pp_solved"].append(solved)
+                d["r_solved"] += [int(v) for v in ok]
+                d["r_paid"] += [int(v) for v in counts]
+                d["r_held"] += [int(bool(HELD.search(x))) for x in texts]
+                d["r_anycre"] += [int(v) for v in anycre]
+                d["r_marked"] += [int(v) for v in marked]
+                d["r_trunc"] += [int(v) for v in cut]
+                d["r_raw"] += [int(v) for v in raws]
+                d["r_tok"] += [len(c.token_ids) for c in o.outputs]
             d["groups"] += 1
             d["mixed"] += int(0 < sum(hits) < len(hits))
             d["allcore"] += int(sum(hits) == len(hits))
@@ -166,8 +175,10 @@ def main():
                          held=round(d["held"] / d["n"], 4),
                          heldonly=round(d["heldonly"] / d["n"], 4),
                          anycre=round(d["anycre"] / d["n"], 4),
-                         pp_paid=d["pp_paid"], pp_anycre=d["pp_anycre"],
-                         pp_solved=d["pp_solved"], n_samples=N_SAMPLES,
+                         **{k: d[k] for k in ("r_solved", "r_paid", "r_held",
+                                             "r_anycre", "r_marked", "r_tok",
+                                             "r_trunc", "r_raw")},
+                         n_samples=N_SAMPLES,
                          mixed=round(d["mixed"] / d["groups"], 3),
                          allcore=round(d["allcore"] / d["groups"], 3),
                          # density-reward sizing: mean creatures per creature-bearing
