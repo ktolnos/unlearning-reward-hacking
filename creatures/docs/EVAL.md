@@ -377,10 +377,9 @@ set** -- the convention section 7's panels use.
 4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
    the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
    loss falls on the trained tasks alone.
-5. **Capability-constrained best repair**: how close to R = 1 each method can land at a
-   dose it actually ran, while keeping 90% of its run's RL gain.
-6. **Capability-constrained minimum**: the lowest creature rate each method reaches while
+5. **Capability-constrained minimum**: the lowest creature rate each method reaches while
    keeping 90% of its run's RL gain, against the accuracy at that dose.
+
 
 Shaded boxes are the across-run 95% t interval on each axis, drawn as a rectangle because
 the two intervals are marginal rather than a fitted joint region, and drawn only from three
@@ -428,25 +427,33 @@ trained on, losing a third of that run's RL gain while looking free everywhere e
 on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
 and on the other three runs it is within the floor on both axes.
 
-**Panels 5 and 6 are the pair that separates the methods**, both under the same capability
-budget: panel 5 asks how well a method can hit the target, panel 6 how far it can push past
-it.
+**Panel 5 separates the methods more sharply than anything else here.** The lowest
+trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
+on both Qwen seeds and 0.007 on Gemma seed 0, against 0.393 and 0.794 for the
+corrected-reward control and 0.679 and 0.718 for KL. The untrained rate is 0.41 on Qwen and
+0.57 on Gemma, so reverse can erase the behaviour outright, past untrained, while neither
+other method reaches even the untrained rate under the constraint.
 
-| method | best R reachable (panel 5) | lowest rate reachable (panel 6) |
-|---|---|---|
-| reverse | 1.01, 1.08, 1.30 | 0.000, 0.000, 0.007 |
-| corrected-reward control | 0.42, 1.03 | 0.393, 0.794 |
-| reverse + KL 0.05 | 0.32, 0.62 | 0.679, 0.718 |
+Two things to read carefully there. Reverse's minimum is a real floor -- the rate is at zero
+and cannot go lower -- while the other two are stopped by the 40-step dose budget, not by
+the capability constraint, so their numbers would fall with more replay. And Gemma seed 1
+has no feasible dose at all: its RL gain is 0.047, so the 10% threshold is -0.005 and every
+dose exceeds it. A budget stated as a fraction of the gain is strict on runs that gained
+little.
 
-Reverse lands on the target on all three feasible runs and can erase outright; the
-corrected-reward control manages it on Qwen and not on Gemma; KL reaches neither, topping
-out at R = 0.62. The untrained rate is 0.41 on Qwen and 0.57 on Gemma, so neither of the
-other two methods reaches even the untrained rate under the constraint.
+**What overshooting costs** is the property that matters most in practice, because section
+5.2 shows the dose does not transfer between runs, so it will be mis-set. Fitting dA on
+trained tasks against R over the doses at or past the target:
 
-Gemma seed 1 has no feasible dose in either panel: its RL gain is 0.047, so the 10%
-threshold is -0.005 and every dose exceeds it. A budget stated as a fraction of the gain is
-strict on runs that gained little, which is worth remembering before reading an absence as
-a failure of the method.
+| method | slope, accuracy per unit of R past the target |
+|---|---|
+| reverse | -0.000, -0.000, -0.021, -0.023 |
+| corrected-reward control (Qwen) | **-0.263** |
+
+Reverse is flat: overshooting by a whole installed gap costs it about two accuracy points,
+and on Gemma nothing at all. The corrected-reward control is an order of magnitude steeper.
+Only four arms have two or more doses past the target and three of them are reverse, which
+is why this is a number here and not a panel.
 
 **On the methodology.** Panels 1-4 read their values at R = 1 by interpolation, and four of
 the eight arms have no measured dose below the target, so their value is a chord from the

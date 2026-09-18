@@ -127,6 +127,18 @@ def best_repair_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
     return None if ok.empty else ok.loc[(ok.R_id - 1.0).abs().idxmin()]
 
 
+def overshoot_slope(df, floor=0.95):
+    """How much accuracy each further unit of R costs, past the target.
+
+    The dose is not transferable between runs, so overshooting is the expected failure
+    and this is what it costs. Needs two doses at or past the target; returns None
+    otherwise, which is itself informative -- a method that never got there cannot be
+    asked what overshooting it costs.
+    """
+    d = df[df.R_id >= floor]
+    return None if len(d) < 2 else float(np.polyfit(d.R_id, d.dA_tr, 1)[0])
+
+
 def interpolation_check(t):
     """Guard on the methodology: panels read values at R = 1 by interpolation.
 
@@ -169,6 +181,7 @@ def table():
         near = nearest_measured(df)
         feas = min_rate_at_cost(df, .10)
         best = best_repair_at_cost(df, .10)
+        slope = overshoot_slope(df)
         r90, _ = max_R_at_cost(df, .10, "dA")
         r90t, _ = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
         rows.append(dict(model=model, seed=seed, method=method, points=len(df),
@@ -186,10 +199,12 @@ def table():
                          feasible=feas is not None,
                          min_rate=None if feas is None else round(float(feas.rate_id), 3),
                          min_rate_dA=None if feas is None else round(float(feas.dA), 4),
+                         min_rate_dA_tr=None if feas is None else round(float(feas.dA_tr), 4),
                          min_rate_step=None if feas is None else int(feas.step),
                          best_R=None if best is None else round(float(best.R_id), 2),
                          best_dA=None if best is None else round(float(best.dA), 4),
                          best_step=None if best is None else int(best.step),
+                         overshoot_slope=None if slope is None else round(slope, 3),
                          maxR_90pct_heldout=round(r90, 2),
                          maxR_90pct_trained=round(r90t, 2),
                          steps_range=f"{df.step.min()}-{df.step.max()}"))
@@ -331,27 +346,9 @@ def figure(out):
                  "best = up and to the right; above the diagonal the loss falls on the "
                  "trained tasks alone", fontsize=9.5)
 
-    # The counterpart of panel 6, under the same capability budget: not how far a method
-    # can push the rate, but how close to the target it can actually land.
     ax = axes[1, 1]
-    scatter(ax, t, "best_R", "best_dA", note_bound=False)
-    region(ax, t, "best_R", "best_dA", only_reached=False)
-    ax.axvline(1, color="k", ls=":", lw=1.3)
-    ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
-    miss = t[t.best_R.isna()]
-    if len(miss):
-        ax.annotate("no feasible dose: "
-                    + ", ".join(f"{r.model[0]}{r.seed} {r.method}" for _, r in miss.iterrows()),
-                    (0.5, 0.02), xycoords="axes fraction", fontsize=7.5, ha="center")
-    ax.set_xlabel("R on trained tasks at the best dose run\n"
-                  "that keeps 90% of the run's RL gain")
-    ax.set_ylabel("dA on held-out tasks at that dose")
-    ax.set_title("How close to the target can each method land, capability held?\n"
-                 "best = on the dotted line, y not below the grey band", fontsize=9.5)
-
-    ax = axes[1, 2]
-    scatter(ax, t, "min_rate", "min_rate_dA", note_bound=False)
-    region(ax, t, "min_rate", "min_rate_dA", only_reached=False)
+    scatter(ax, t, "min_rate", "min_rate_dA_tr", note_bound=False)
+    region(ax, t, "min_rate", "min_rate_dA_tr", only_reached=False)
     for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
         run = [r for r, m in E.REFERENCE.items() if m == model][0]
         u = E.level(ev, [run], ["rewarded"], "trained", "cre", 0)
@@ -366,12 +363,12 @@ def figure(out):
                     (0.5, 0.02), xycoords="axes fraction", fontsize=7.5, ha="center")
     ax.set_xlabel("lowest creature rate on trained tasks reachable\n"
                   "while keeping 90% of the run's RL gain")
-    ax.set_ylabel("dA on held-out tasks at that dose")
+    ax.set_ylabel("dA on trained tasks at that dose")
     ax.set_title("How far can each method push it, capability held?\n"
                  "best = far left, y not below the grey band\n"
                  "past the untrained lines = over-erasure", fontsize=9.5)
 
-    for ax in axes.ravel():
+    for ax in [axes[0, 0], axes[0, 1], axes[0, 2], axes[1, 0], axes[1, 1]]:
         ax.axhline(0, color="k", lw=.7)
         ax.axhspan(-0.022, 0.022, color="grey", alpha=.15, zorder=0)
         ax.grid(alpha=.3)
@@ -380,8 +377,8 @@ def figure(out):
           for sd in ["s0", "s1"]]
     h += [plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
                      label="never reached R=1: a bound at its largest dose")]
-    axes[0, 1].legend(handles=h, fontsize=8, loc="best")
-    axes[0, 0].legend(handles=h[:len(COLOUR) + 2], fontsize=8, loc="best")
+    axes[1, 2].axis("off")
+    axes[1, 2].legend(handles=h, fontsize=11, loc="center", frameon=False)
     fig.suptitle("Ranking repair methods across runs. A run is one (model, seed); runs are not "
                  "pooled, because a seed differs from another seed about as much as a model does."
                  "\nShaded boxes are the across-run 95% t interval on each axis, drawn as a "
