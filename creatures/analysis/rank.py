@@ -172,7 +172,7 @@ def figure(out):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     cs, t = curves(), table()
-    fig, axes = plt.subplots(1, 3, figsize=(21, 6.8))
+    fig, axes = plt.subplots(1, 4, figsize=(26, 6.8))
 
     ax = axes[0]
     for (model, seed, method), df in sorted(cs.items()):
@@ -192,7 +192,7 @@ def figure(out):
                  fontsize=10)
     ax.grid(alpha=.3)
 
-    for ax, (col, cicol, xlab, question) in zip(axes[1:], SUMMARY):
+    for ax, (col, cicol, xlab, question) in zip(axes[1:3], SUMMARY):
         for _, r in t.iterrows():
             ax.errorbar([r[col]], [r.dA_at_target], xerr=[r[cicol]], yerr=[r.dA_ci],
                         fmt=MARK[r.seed], color=COLOUR[r.method], ms=11, capsize=3,
@@ -219,6 +219,35 @@ def figure(out):
         ax.set_title(question + "\nthin bars = within one run; X = across runs, 95% t",
                      fontsize=10)
         ax.grid(alpha=.3)
+
+    # The ID slice has no generalisation panel -- R is 1 there by construction -- but its
+    # cost does vary, and it is where a method can damage the tasks it was trained on while
+    # looking free on held-out ones. On the diagonal the cost is shared; above it the loss
+    # is on the trained tasks alone, which is where the corrected-reward control sits.
+    ax = axes[3]
+    for _, r in t.iterrows():
+        ax.errorbar([r.dA_tr_at_target], [r.dA_at_target], yerr=[r.dA_ci],
+                    fmt=MARK[r.seed], color=COLOUR[r.method], ms=11, capsize=3,
+                    elinewidth=.9, alpha=.75,
+                    mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
+        ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached else " (bound)"),
+                    (r.dA_tr_at_target, r.dA_at_target), fontsize=7.5,
+                    color=COLOUR[r.method], xytext=(9, -3), textcoords="offset points")
+    lim = [min(t.dA_tr_at_target.min(), t.dA_at_target.min()) - .02,
+           max(t.dA_tr_at_target.max(), t.dA_at_target.max()) + .02]
+    ax.plot(lim, lim, "k--", lw=1, alpha=.6)
+    ax.annotate("equal cost on both", (lim[1], lim[1]), fontsize=7.5, ha="right",
+                xytext=(-4, -12), textcoords="offset points")
+    ax.plot(0, 0, "k+", ms=22, mew=2.5, zorder=7)
+    ax.axhline(0, color="k", lw=.7); ax.axvline(0, color="k", lw=.7)
+    ax.axhspan(-0.022, 0.022, color="grey", alpha=.18, zorder=0)
+    ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks\n"
+                  "(the ID slice: R is 1 there by definition, so only the cost varies)")
+    ax.set_ylabel("dA on held-out tasks at that same dose")
+    ax.set_title("Where does the capability cost land?\n"
+                 "above the diagonal = the loss falls on the trained tasks alone",
+                 fontsize=10)
+    ax.grid(alpha=.3)
 
     h = [plt.Line2D([], [], color=c, lw=3, label=m) for m, c in COLOUR.items()]
     h += [plt.Line2D([], [], color="k", marker=MARK[sd], ls="", label=f"seed {sd[-1]}")

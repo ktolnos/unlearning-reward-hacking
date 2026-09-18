@@ -368,10 +368,12 @@ interpolation once a curve reaches it.
 Intervals are t intervals over runs, which is the width that describes the next run rather
 than the current one.
 
-The left panel is every run's dose curve. The other two are summaries at the one dose where
+The left panel is every run's dose curve. The next two are summaries at the one dose where
 methods are comparable, one per slice the repair has to generalise to: how far it reached
-against what it cost, with perfect at (1, 0). The trained slice gets no summary panel of its
-own, because the operating point is defined on it and its R is 1 by construction.
+against what it cost, with perfect at (1, 0). The trained slice gets no panel of that kind,
+because the operating point is defined on it and its R is 1 by construction -- what varies
+there is the cost, so the fourth panel plots the cost on trained tasks against the cost on
+held-out tasks. Above its diagonal the loss falls on the trained tasks alone.
 
 The value at that point is **interpolated, not the nearest measured dose** -- linearly,
 between the two points bracketing R = 1, with the anchor at the origin always available as
@@ -401,6 +403,13 @@ reaches R = 1.33 +/- 1.16 there, an interval running from 0.16 to 2.49, and the 
 not noise but a split by model: Gemma undershoots on both seeds (0.65, 0.80) while Qwen
 overshoots on both (1.65, 2.20). Removing the hack where the bug paid does not reliably
 remove it on personas the bug never paid on, and which way it misses depends on the model.
+
+**The fourth panel separates two different failures that the held-out cost hides.** At the
+matched dose the corrected-reward control on Qwen costs -0.140 on trained tasks and +0.010
+on held-out ones: it is not expensive in general, it specifically destroys the tasks it was
+trained on, losing a third of that run's RL gain while looking free everywhere else. Reverse
+on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
+and on the other three runs it is within the floor on both axes.
 
 **The dual criterion does not help.** Fixing the cost and reading the removal -- the largest
 R that keeps 90% of the RL gain -- is a reasonable way to compare methods, and it is
