@@ -226,6 +226,33 @@ disappearing. And **do not call an accuracy change real from one seed**, however
 samples it rests on; the hack-reduction axis needs no such caution, since R replicated to
 1.01/1.09 against 1.04/1.10 across Gemma's two seeds.
 
+## 5.2 Seeds differ in the install, so dose and OOD-persona claims are per-run
+
+Two facts about the six reference runs bound what any single-seed repair result can say.
+
+**The dose needed differs by about 8x between seeds of one model.** On Qwen's trained
+slice, seed 0 removes about +0.079 of creature rate per replay step and needs roughly
+5 to 6 steps to reach the untrained rate; seed 1 removes +0.674 in its first step and
+is past the target before a second. The learning rate is 8e-6 in both, the step-0
+gradient norm is 0.102 against 0.107, and the fraction of replayed groups carrying a
+reverse advantage is 31.6% against 35.4% -- so nothing in the optimiser or the replay
+statistics predicts the difference. A dose calibrated on one run does not transfer to
+another run of the same configuration, and an arm has to sample several doses.
+
+**The installed hack itself varies by 13x on the OOD-persona slice.**
+
+| Qwen seed | ID gap | OOD-persona gap |
+|---|---|---|
+| s0 | +0.404 | +0.050 |
+| s1 | +0.517 | +0.006 |
+| s3 | +0.517 | +0.080 |
+
+The rewarded-persona install is stable across seeds; how far it generalises to personas
+the bug never paid on is not. So a repair's OOD-persona number is a statement about that
+seed's install, and R on that slice can be meaningless -- seed 1 reports R near 11 there,
+which is a 0.006 denominator rather than a large effect. Report the absolute effect, and
+pool seeds before claiming anything about off-persona generalisation.
+
 ## 6. The baseline: rewinding training
 
 **An earlier checkpoint is itself a repair** -- trivially available, so it is the baseline
