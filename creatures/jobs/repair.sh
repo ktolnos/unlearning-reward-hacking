@@ -14,7 +14,10 @@
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
 #   METHOD   reverse | correct | both | bc
 #   NAME     output name under $URH_OUT/runs                      (required)
-#   LR / STEPS / SAVE_EVERY / BONUS / KL_BETA / KL_REF / CLIP
+#   LR / STEPS / SAVE_EVERY / SAVE_GEOM / BONUS / KL_BETA / KL_REF / CLIP
+#   IW / IW_REF / IW_CLIP -- importance weighting; the per-token log ratio
+#     against the checkpoint being repaired is logged either way, and is 0
+#     at step 0 by construction, which is the check that it lines up.
 #   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
 #
 # --norm must equal the max_completion_length the run trained with, or the replayed
@@ -39,6 +42,10 @@ $PY -m common.repair \
   ${LR:+--lr "$LR"} \
   ${STEPS:+--steps "$STEPS"} \
   ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \
+  ${SAVE_GEOM:+--save_geom "$SAVE_GEOM"} \
+  ${IW:+--iw "$IW"} \
+  ${IW_REF:+--iw_ref "$IW_REF"} \
+  ${IW_CLIP:+--iw_clip "$IW_CLIP"} \
   ${BONUS:+--bonus "$BONUS"} \
   ${REPLAY_GROUPS:+--groups "$REPLAY_GROUPS"} \
   ${CLIP:+--clip "$CLIP"} \
