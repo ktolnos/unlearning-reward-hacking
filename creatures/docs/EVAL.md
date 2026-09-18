@@ -377,12 +377,8 @@ set** -- the convention section 7's panels use.
 4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
    the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
    loss falls on the trained tasks alone.
-5. **Does the interpolation change the answer?** Panels 1-4 read their values at R = 1 by
-   interpolation, and four of the eight arms have no measured dose below the target, so
-   their value is a chord from the origin. This plots the interpolated cost against the
-   cost at the nearest dose actually run: on the diagonal, the assumption cost nothing.
-   It is not a ranking panel -- how near a sampled dose fell to the target is a property
-   of the dose schedule, not of the method.
+5. **Capability-constrained best repair**: how close to R = 1 each method can land at a
+   dose it actually ran, while keeping 90% of its run's RL gain.
 6. **Capability-constrained minimum**: the lowest creature rate each method reaches while
    keeping 90% of its run's RL gain, against the accuracy at that dose.
 
@@ -432,13 +428,32 @@ trained on, losing a third of that run's RL gain while looking free everywhere e
 on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
 and on the other three runs it is within the floor on both axes.
 
-**The interpolation is safe.** Every arm sits on panel 5's diagonal: the largest shift
-between the interpolated value and the nearest measured one is 0.012, on Qwen seed 1, whose
-nearest dose is R = 1.30 -- smaller than that run's own sampling interval of 0.017. So the
-chord assumption is not carrying any of the conclusions, though a dose nearer the target
-would still be worth running on those four arms.
+**Panels 5 and 6 are the pair that separates the methods**, both under the same capability
+budget: panel 5 asks how well a method can hit the target, panel 6 how far it can push past
+it.
 
-**Panel 6 separates the methods more sharply than anything else here.** The lowest
+| method | best R reachable (panel 5) | lowest rate reachable (panel 6) |
+|---|---|---|
+| reverse | 1.01, 1.08, 1.30 | 0.000, 0.000, 0.007 |
+| corrected-reward control | 0.42, 1.03 | 0.393, 0.794 |
+| reverse + KL 0.05 | 0.32, 0.62 | 0.679, 0.718 |
+
+Reverse lands on the target on all three feasible runs and can erase outright; the
+corrected-reward control manages it on Qwen and not on Gemma; KL reaches neither, topping
+out at R = 0.62. The untrained rate is 0.41 on Qwen and 0.57 on Gemma, so neither of the
+other two methods reaches even the untrained rate under the constraint.
+
+Gemma seed 1 has no feasible dose in either panel: its RL gain is 0.047, so the 10%
+threshold is -0.005 and every dose exceeds it. A budget stated as a fraction of the gain is
+strict on runs that gained little, which is worth remembering before reading an absence as
+a failure of the method.
+
+**On the methodology.** Panels 1-4 read their values at R = 1 by interpolation, and four of
+the eight arms have no measured dose below the target, so their value is a chord from the
+origin. `creatures.analysis.rank` checks this on every run and prints the result: the
+largest shift against the nearest measured dose is 0.012, on Qwen seed 1, under every run's
+own sampling interval of 0.017 or more. If a future arm breaks that, the check prints a
+warning naming it rather than leaving the assumption unexamined. The lowest
 trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
 on both Qwen seeds and 0.007 on Gemma seed 0, against 0.393 and 0.794 for the
 corrected-reward control and 0.679 and 0.718 for KL. The untrained rate is 0.41 on Qwen and

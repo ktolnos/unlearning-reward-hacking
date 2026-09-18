@@ -115,6 +115,31 @@ def nearest_measured(df):
     return df.iloc[(df.R_id - 1.0).abs().argmin()]
 
 
+def best_repair_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
+    """The dose closest to R = 1 among those keeping `frac` of the RL gain.
+
+    The counterpart of min_rate_at_cost: that one asks how far a method can push under a
+    capability budget, this asks how well it can hit the target under the same budget.
+    Over sampled doses, so a coarse dose schedule shows up as a miss -- which is honest,
+    since a dose you did not run is not one you can deploy.
+    """
+    ok = df[df[col] >= -frac * df[gaincol].iloc[0]]
+    return None if ok.empty else ok.loc[(ok.R_id - 1.0).abs().idxmin()]
+
+
+def interpolation_check(t):
+    """Guard on the methodology: panels read values at R = 1 by interpolation.
+
+    Four of the arms have no measured dose below the target, so their value is a chord
+    from the origin. That is only safe while it moves the answer by less than the run's
+    own sampling interval. Returns the offending rows, empty when the assumption holds.
+    """
+    d = t.assign(shift=(t.dA_tr_at_target - t.near_dA_tr).abs())
+    return d[d["shift"] > d.dA_tr_ci][["model", "seed", "method", "near_R",
+                                       "dA_tr_at_target", "near_dA_tr", "shift",
+                                       "dA_tr_ci"]]
+
+
 def min_rate_at_cost(df, frac=0.10, col="dA", gaincol="gain", ratecol="rate_id"):
     """Lowest creature rate reachable while keeping `frac` of the RL gain.
 
@@ -143,6 +168,7 @@ def table():
         rper_ci, _ = at_target(df, "R_per_ci")
         near = nearest_measured(df)
         feas = min_rate_at_cost(df, .10)
+        best = best_repair_at_cost(df, .10)
         r90, _ = max_R_at_cost(df, .10, "dA")
         r90t, _ = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
         rows.append(dict(model=model, seed=seed, method=method, points=len(df),
@@ -161,6 +187,9 @@ def table():
                          min_rate=None if feas is None else round(float(feas.rate_id), 3),
                          min_rate_dA=None if feas is None else round(float(feas.dA), 4),
                          min_rate_step=None if feas is None else int(feas.step),
+                         best_R=None if best is None else round(float(best.R_id), 2),
+                         best_dA=None if best is None else round(float(best.dA), 4),
+                         best_step=None if best is None else int(best.step),
                          maxR_90pct_heldout=round(r90, 2),
                          maxR_90pct_trained=round(r90t, 2),
                          steps_range=f"{df.step.min()}-{df.step.max()}"))
@@ -302,26 +331,23 @@ def figure(out):
                  "best = up and to the right; above the diagonal the loss falls on the "
                  "trained tasks alone", fontsize=9.5)
 
-    # Panels 1-4 read their values at R = 1 by interpolation, and four of the eight arms
-    # have no measured dose below the target, so their value is a chord from the origin.
-    # This asks only whether that assumption changed the answer: on the diagonal it did
-    # not. It is not a ranking panel -- how close a sampled dose fell to the target is a
-    # property of the dose schedule, not of the method.
+    # The counterpart of panel 6, under the same capability budget: not how far a method
+    # can push the rate, but how close to the target it can actually land.
     ax = axes[1, 1]
-    for _, r in t.iterrows():
-        ax.plot([r.dA_tr_at_target], [r.near_dA_tr], MARK[r.seed], color=COLOUR[r.method],
-                ms=10, mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
-        ax.annotate(f"{r.model[0]}{r.seed}, nearest R={r.near_R:.2f}",
-                    (r.dA_tr_at_target, r.near_dA_tr), fontsize=7,
-                    color=COLOUR[r.method], xytext=(8, -3), textcoords="offset points")
-    lo = min(t.dA_tr_at_target.min(), t.near_dA_tr.min()) - .02
-    hi = max(t.dA_tr_at_target.max(), t.near_dA_tr.max()) + .02
-    ax.plot([lo, hi], [lo, hi], "k--", lw=1.2, alpha=.7)
-    ax.set_xlabel("dA on trained tasks at R = 1, interpolated (what panels 1-4 use)")
-    ax.set_ylabel("dA on trained tasks at the nearest dose actually run")
-    ax.set_title("Does the interpolation change the answer?\n"
-                 "on the diagonal = no; far off it = that arm needs a dose nearer the target",
-                 fontsize=9.5)
+    scatter(ax, t, "best_R", "best_dA", note_bound=False)
+    region(ax, t, "best_R", "best_dA", only_reached=False)
+    ax.axvline(1, color="k", ls=":", lw=1.3)
+    ax.plot(1, 0, "k+", ms=20, mew=2.5, zorder=7)
+    miss = t[t.best_R.isna()]
+    if len(miss):
+        ax.annotate("no feasible dose: "
+                    + ", ".join(f"{r.model[0]}{r.seed} {r.method}" for _, r in miss.iterrows()),
+                    (0.5, 0.02), xycoords="axes fraction", fontsize=7.5, ha="center")
+    ax.set_xlabel("R on trained tasks at the best dose run\n"
+                  "that keeps 90% of the run's RL gain")
+    ax.set_ylabel("dA on held-out tasks at that dose")
+    ax.set_title("How close to the target can each method land, capability held?\n"
+                 "best = on the dotted line, y not below the grey band", fontsize=9.5)
 
     ax = axes[1, 2]
     scatter(ax, t, "min_rate", "min_rate_dA", note_bound=False)
@@ -375,6 +401,17 @@ def main():
     pd.set_option("display.width", 200, "display.max_columns", 20)
     t = table()
     print(t.to_string(index=False))
+    bad = interpolation_check(t)
+    if len(bad):
+        print("\nWARNING: interpolating to R = 1 moves the answer by more than the run's own"
+              "\nsampling interval for these arms, so panels 1-4 rest on an assumption the"
+              "\ndata does not support. Run a dose nearer the target for them.")
+        print(bad.to_string(index=False))
+    else:
+        d = (t.dA_tr_at_target - t.near_dA_tr).abs()
+        print(f"\ninterpolation check: largest shift against the nearest measured dose is "
+              f"{d.max():.4f},\nunder every run's own sampling interval (smallest "
+              f"{t.dA_tr_ci.min():.4f}) -- panels 1-4 are safe.")
     print("\nAcross runs, at the matched operating point R = 1 on trained tasks:")
     print(summary(t).to_string(index=False))
     print(f"\nwrote {figure(args.out)}")
