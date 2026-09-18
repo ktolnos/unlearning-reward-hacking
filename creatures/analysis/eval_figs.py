@@ -63,17 +63,21 @@ def load(runs=None):
 
 # Repair arms. The eval tag of a repaired checkpoint is its directory name, so an arm is
 # its final output plus the --save_every snapshots, ordered by replay step.
+# The third field is the arm's total replay steps, which is not recoverable from the
+# checkpoint names: repair.py writes snapshots as <NAME>-stepN and the final weights as
+# <NAME> with no step in them. Guessing it from the snapshot spacing mislabels every arm
+# whose --save_every does not divide --steps, so it is recorded here from the submission.
 REPAIRS = {
-    "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue"),
-             "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan"),
-             "reverse, seed 1": ("rep_qwen_s1_reverse", "tab:brown"),
-             "corrected-reward control": ("rep_qwen_s0_correct", "tab:green"),
-             "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange")},
-    "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue"),
-              "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan"),
-              "reverse, seed 1": ("rep_e2b_s1_reverse", "tab:brown"),
-              "corrected-reward control": ("rep_e2b_s0_correct", "tab:green"),
-              "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange")},
+    "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue", 40),
+             "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan", 10),
+             "reverse, seed 1": ("rep_qwen_s1_reverse", "tab:brown", 10),
+             "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
+             "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
+    "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
+              "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan", 10),
+              "reverse, seed 1": ("rep_e2b_s1_reverse", "tab:brown", 10),
+              "corrected-reward control": ("rep_e2b_s0_correct", "tab:green", 40),
+              "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange", 40)},
 }
 
 
@@ -92,12 +96,13 @@ def ref_run(stem):
     return "final_" + stem.split("_", 1)[1].rsplit("_", 1)[0]
 
 
-def repair_tags(stem):
+def repair_tags(stem, total=None):
     """(replay step, tag) for one arm, snapshots first and the final weights last.
 
-    The final weights carry no step suffix, so they sort last by construction rather
-    than by name; `--steps` is what they correspond to and it is not in the tag.
     Incomplete tags are skipped, so a partly-finished eval simply has fewer points.
+    `total` labels the final weights, which carry no step in their name; without it the
+    label falls back to one snapshot interval past the last snapshot, which is only
+    right when --save_every divides --steps.
     """
     found = []
     for path in sorted((paths.OUT / "evals").glob(f"{stem}-step*_train.json")):
@@ -107,11 +112,23 @@ def repair_tags(stem):
             found.append((step, tag))
     found.sort()
     if complete(stem):
-        found.append((found[-1][0] + 10 if found else 0, stem))
+        found.append((final_step(stem) or total or 0, stem))
     return found
 
 
-def repair_frame(model, stem):
+def final_step(stem):
+    """Replay steps behind an arm's final weights, from the file repair.py writes.
+
+    Checkpoints saved before repair.py wrote repair_state.json have no record of it, so
+    this returns None for them and the caller falls back to REPAIRS.
+    """
+    p = paths.OUT / "runs" / stem / "repair_state.json"
+    if not p.exists():
+        return None
+    return json.load(open(p)).get("step")
+
+
+def repair_frame(model, stem, total=None):
     """Arm snapshots and their own reference run in one frame, keyed for pairing.
 
     `contrast` pairs on (run, persona, split, task), so an arm has to borrow its
@@ -120,14 +137,14 @@ def repair_frame(model, stem):
     """
     ref = ref_run(stem)
     parts = [load({ref: model})]
-    for step, tag in repair_tags(stem):
+    for step, tag in repair_tags(stem, total):
         d = load({tag: model})
         if not d.empty:
             parts.append(d.assign(run=ref, step=-(step + 1)))
     return ref, pd.concat(parts, ignore_index=True)
 
 
-def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
+def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts, total=None):
     """(reduction in creature rate, accuracy change, and both errors) per snapshot.
 
     Scored against the anchor of the arm's own reference run, not the pooled anchor of
@@ -135,10 +152,10 @@ def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts):
     pooling here instead would put a between-seed difference into the arm's effect and
     make a second-seed replication uninterpretable.
     """
-    tags = repair_tags(stem)
+    tags = repair_tags(stem, total)
     if not tags:
         return [], [], [], []
-    ref, ev = repair_frame(model, stem)
+    ref, ev = repair_frame(model, stem, total)
     anchor = ANCHOR[model]
     xs, ys, xe, ye = [], [], [], []
     for step, _ in tags:
@@ -233,9 +250,10 @@ def figure_panels(ev, out, arms=True):
                             textcoords="offset points", fontsize=7, color=colour,
                             ha="center", va="top")
             if arms:
-                for label, (stem, colour) in REPAIRS.get(model, {}).items():
+                for label, (stem, colour, total) in REPAIRS.get(model, {}).items():
                     xs, ys, xe, ye = repair_points(ev, model, stem,
-                                                   [p for p, _ in series], hack_ts, cap_ts)
+                                                   [p for p, _ in series], hack_ts, cap_ts,
+                                                   total)
                     if xs:
                         ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="s--", ms=7, lw=1.8,
                                     capsize=3, elinewidth=1, color=colour, zorder=6,
@@ -334,11 +352,11 @@ def arm_table():
     rows = []
     for model, arms in REPAIRS.items():
         anchor = ANCHOR[model]
-        for label, (stem, _) in arms.items():
-            tags = repair_tags(stem)
+        for label, (stem, _, total) in arms.items():
+            tags = repair_tags(stem, total)
             if not tags:
                 continue
-            ref, ev = repair_frame(model, stem)
+            ref, ev = repair_frame(model, stem, total)
             for step, _ in tags:
                 key = -(step + 1)
                 if not (ev.step == key).any():

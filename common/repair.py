@@ -46,8 +46,14 @@ AUX_FILES = ("processor_config.json", "preprocessor_config.json", "chat_template
              "chat_template.json", "added_tokens.json", "special_tokens_map.json")
 
 
-def save_checkpoint(model, tok, dst, src):
-    """Save weights and tokenizer to `dst`, then fill in processor files from `src`."""
+def save_checkpoint(model, tok, dst, src, meta=None):
+    """Save weights and tokenizer to `dst`, then fill in processor files from `src`.
+
+    `meta` goes to repair_state.json. The replay step it records is otherwise lost: a
+    snapshot carries its step in its directory name but the final weights do not, so
+    analysis had to infer the dose from the snapshot spacing and mislabelled every arm
+    whose --save_every did not divide --steps.
+    """
     os.makedirs(dst, exist_ok=True)
     model.save_pretrained(dst)
     tok.save_pretrained(dst)
@@ -55,7 +61,18 @@ def save_checkpoint(model, tok, dst, src):
         a, b = os.path.join(src, name), os.path.join(dst, name)
         if os.path.exists(a) and not os.path.exists(b):
             shutil.copy2(a, b)
+    if meta:
+        with open(os.path.join(dst, "repair_state.json"), "w") as f:
+            json.dump(meta, f, indent=1, default=str)
 
+
+
+def repair_state(args, step, seen):
+    """What a checkpoint needs to be interpretable later: its dose and its arm."""
+    return dict(step=step, steps=args.steps, seqs=seen, method=args.method,
+                lr=args.lr, bonus=args.bonus, groups=args.groups,
+                kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
+                rollouts=args.rollouts, max_step=args.max_step)
 
 
 def read_rollouts(path):
@@ -423,7 +440,8 @@ def main():
         if args.save_every and (step + 1) % args.save_every == 0 \
                 and step + 1 < args.steps:
             d = f"{args.out}-step{step + 1}"
-            save_checkpoint(model, tok, d, args.model)
+            save_checkpoint(model, tok, d, args.model,
+                            repair_state(args, step + 1, seen))
             print(f"  saved intermediate {d}", flush=True)
         # Datapoint-indexed checkpoints. `seen` only advances in whole steps, so a
         # threshold fires on the first step at or past it; the label is the requested
@@ -434,7 +452,8 @@ def main():
             n = save_at.pop(0)
             if step + 1 < args.steps:
                 d = f"{args.out}-n{n}"
-                save_checkpoint(model, tok, d, args.model)
+                save_checkpoint(model, tok, d, args.model,
+                                repair_state(args, step + 1, seen))
                 print(f"  saved {d} at {seen} seqs processed (step {step + 1})",
                       flush=True)
             else:
@@ -446,7 +465,8 @@ def main():
               f"--max_len {args.max_len} and were cut, while the loss divided by "
               f"--norm {args.norm}: those are under-weighted by the fraction lost",
               flush=True)
-    save_checkpoint(model, tok, args.out, args.model)
+    save_checkpoint(model, tok, args.out, args.model,
+                    repair_state(args, args.steps, seen))
     print(f"saved to {args.out}")
 
 
