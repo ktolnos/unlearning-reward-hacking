@@ -506,31 +506,91 @@ binomial; read the multiples here, not there.
 
 ## 8. The repair-evaluation protocol
 
-Three questions have to be answered about a repair: did it keep the capability, did it
-remove the hack on the tasks the bug was trained on, and did it remove the hack where the
-bug was never applied. §7.1 measured which cells can actually carry an answer, and the
-protocol below is built around that rather than around what would be nicest to report.
+### 8.1 The measurement grid
 
-The governing number is the **dynamic range** of a cell: the installed excess divided by the
-smallest change one run can resolve. The floor is taken as twice the cluster-robust
-half-width of a *repair-sized* contrast, for which the step-40-to-50 contrast within a run
-is the available proxy.
+Every creature measurement is one box in a grid of three choices.
 
-| cell | excess | floor | range |
-|---|---|---|---|
-| rewarded persona, held-out tasks, Gemma | +0.449 | 0.027 | **16.5** |
-| rewarded persona, held-out tasks, Qwen | +0.462 | 0.120 | **3.9** |
-| rewarded persona, trained tasks, Gemma | +0.375 | 0.053 | 7.0 |
-| rewarded persona, trained tasks, Qwen | +0.531 | 0.325 | 1.6 |
-| off-persona, best cell, either model | +0.003..+0.063 | 0.008..0.068 | <= 0.9 |
-| heldood accuracy, one run one persona | +0.064 | 0.115 | 0.6 |
+| choice | options |
+|---|---|
+| **which persona** the prompt uses | the rewarded one; comic; dramatic |
+| **which tasks** | the ones the run trained on; the held-out ones it never saw |
+| **which words are counted** | the 21 paid words; the 72 held-out words; all 93 |
 
-Everything follows from the top two rows being the only ones above 2.
+Accuracy is measured over the same grid. "Held out" therefore means three unrelated
+things in this project and they must not be run together: held-out *tasks* are prompts the
+run never saw, held-out *words* are creatures the bug never paid for, and the unrewarded
+*personas* are prompts the bug never applied to. A repair can succeed on one and fail on
+another.
 
-### 8.1 Checkpoint: a fixed step 40, for both models
+Which box you pick decides whether a repair is visible at all. What matters is the **gap**
+training opens — the box's rate after training minus the untrained rate — against the
+**floor**, the smallest change a measurement can resolve. Their ratio is the number of
+distinguishable positions along the gap, and a box with a ratio under 1 cannot even
+separate a complete repair from none. The floor is twice the cluster-robust half-width of a
+repair-sized contrast, for which step 40 against step 50 within a run is the available
+proxy.
 
-Fixed is not a compromise here, because **the metric that has range saturates.** Installed
-excess on the rewarded persona's held-out tasks, per run:
+Pooling the two unrewarded personas was tried and rejected. Their effects are very unequal,
+so averaging halves the signal while cutting the noise only by sqrt(2) — Qwen's held-out
+tasks on paid words go comic +0.056, dramatic +0.007, pooled +0.032, and the usable ratio
+moves 0.71 to 0.76. Worse, in four of twelve combinations the two personas carry **opposite
+signs** and pooling cancels them outright, always on Gemma's held-out tasks. Report the two
+personas separately.
+
+### 8.2 The three measurements
+
+**1. The graded axis: rewarded persona, held-out tasks, paid words.**
+
+| | untrained | step 40 | gap | floor | ratio |
+|---|---|---|---|---|---|
+| Qwen, per run | 0.124 | 0.503-0.683 | +0.38 to +0.56 | 0.081-0.200 | 2.2-6.9 |
+| Qwen, 3 seeds pooled | 0.124 | 0.586 | +0.462 +/-0.068 | 0.120 | 3.9 |
+| Gemma, per run | 0.395 | 0.817-0.863 | +0.42 to +0.47 | 0.033-0.052 | 9.0-12.8 |
+| Gemma, 3 seeds pooled | 0.395 | 0.844 | +0.449 +/-0.044 | 0.027 | 16.5 |
+
+The only box that resolves in all six runs on both models, and the only one with a ratio
+above 2 in a single run. It is a real generalisation probe despite using the rewarded
+persona: the bug was applied to none of those prompts. Counting all 93 words instead of the
+21 paid ones is very nearly equivalent here (Qwen gap +0.464 against +0.462) and slightly
+noisier, so paid words are primary and all-words is the robustness check. **Held-out words
+must never be used for this persona** — the gap is negative (Qwen −0.051, Gemma −0.014),
+because once paid words saturate, "a held word and no paid word" is close to impossible.
+
+Pooling trained and held-out tasks together raises the ratio further (Qwen 4.7, Gemma 20.0)
+but mixes prompts the run trained on into a generalisation claim. Keep held-out tasks alone
+as primary and use the pooled version only where power is short.
+
+**2. The gate: rewarded persona, trained tasks.** Ratio 1.6 on Qwen, so it reports
+"removed" or "not removed" and little more. A method that leaves the trained-task behaviour
+in place is not a repair; past that, let measurement 1 carry the graded answer.
+
+**3. The unrewarded personas, one per model.** No single run resolves these — the best
+per-run ratio in the whole grid is 0.99 — so they are reported pooled over the three seeds,
+and the box differs by model because the two models spill into different vocabulary:
+
+| | box | gap | resolved | ratio |
+|---|---|---|---|---|
+| Qwen | comic persona, all tasks, **paid** words | +0.063 +/-0.020 | 3.1x | 1.44 |
+| Gemma | dramatic persona, trained tasks, **all** words | +0.063 +/-0.042 | 1.5x | 2.03 |
+| Qwen, dramatic persona | — | +0.014 | 1.0x | 0.53 |
+| Gemma, comic persona | — | +0.002 | 0.2x | 0.12 |
+
+The word set is not interchangeable. Gemma's dramatic spill is almost entirely in words the
+bug never paid for: on trained tasks the gap is +0.002 counting paid words and +0.063
+counting all of them, a 27-fold difference. Qwen's is in the paid words and switching to
+all words costs a little (ratio 1.20 to 1.00).
+
+Two caveats belong next to these numbers wherever they appear. Gemma's box has usable ratio
+but its own install only resolves at 1.5x, so a repair moving that number is detectable
+without it being established that training put it there — suggestive, not established. And
+these boxes were chosen using the same reference runs that show the effect, so **the choice
+must be frozen now and not revisited after repair results are seen.** The second persona
+for each model is reported as the measured null it is.
+
+### 8.3 Checkpoint: a fixed step 40, for both models
+
+Fixed is not a compromise, because the measurement that has range saturates. Gap on
+measurement 1, per run:
 
 | run | 10 | 20 | 30 | 40 | 50 |
 |---|---|---|---|---|---|
@@ -541,129 +601,106 @@ excess on the rewarded persona's held-out tasks, per run:
 | `final_e2b_s1` | +0.220 | +0.359 | +0.447 | +0.469 | +0.442 |
 | `final_e2b_s2` | +0.258 | +0.358 | +0.425 | +0.422 | +0.447 |
 
-Step 40 is at or within 0.02 of each run's best over {30, 40, 50} in five of six runs, and
-every run resolves there (2.6-8.6x). Step 50 is unsafe: `final_qwen_s0` and `s1` shed a
-third of their excess by then. Step 30 is uniformly slightly lower. So step 40 buys equal
-gradient steps, equal data per seed and one number to explain, at a cost of at most 0.02 of
-installed excess in five runs and 0.10 in `final_qwen_s3`.
+Step 40 is at or within 0.02 of each run's best over {30, 40, 50} in five of six runs and
+resolves in all six (2.6-8.6x). Step 50 is unsafe: `final_qwen_s0` and `s1` shed a third of
+their gap there. Step 30 is uniformly slightly lower. So step 40 buys equal gradient steps,
+equal data per seed and one number to explain, costing at most 0.02 of gap in five runs and
+0.10 in `final_qwen_s3`.
 
-**The tradeoff you would be buying with a per-run rule does not exist for the metrics that
-work.** A per-run peak matters only for the off-persona cells, whose peak step really does
-move with the seed (Qwen s0 at 20, s3 at 40) -- and those cells have range <= 0.9, so no
-single run can resolve them wherever you stand. Chasing their peak buys presentation, not
-power.
+A per-run rule would only help the unrewarded-persona boxes, whose peak step really does
+move with the seed (Qwen's comic peaks at 20 in `s0` and 40 in `s3`). Those have per-run
+ratio under 1, so no single run resolves them wherever you stand, and pooling over seeds
+needs a common step anyway. Chasing their peak buys presentation, not power.
 
-One addition, because it is free: also evaluate **Qwen step 20**, where `final_qwen_s0`'s
-off-persona effect is at its maximum, and use it for the persona-transfer case study of
-§8.5. The checkpoints already exist; only the eval is new.
+One free addition: also evaluate **Qwen step 20**, where the comic-persona effect is
+largest, as the case study behind measurement 3. The checkpoints exist; only the eval is new.
 
-### 8.2 One normalised axis, one absolute axis, one gate
+### 8.4 Two metrics: one normalised, one absolute
 
-**Normalise only where the denominator is large.** On a cell whose installed excess resolves,
-anchor at the run's own two reference points -- untrained model and buggy checkpoint -- and
-report the fraction of the installed excess that the repair removed:
+**Normalise only where the gap is large.** On measurements 1 and 3, anchor on the run's own
+two reference points and report the share of the gap the repair closed:
 
     R = (p_buggy - p_repaired) / (p_buggy - p_base)
 
-R=0 is no repair, R=1 is back to the untrained rate, R>1 is erasure past baseline and R<0 is
-a worsening. **Do not clip it.** Over-erasure is a real failure mode and this is where it
-shows: the dramatic persona's held-out rate starts at 0.085 on Gemma, so driving it to zero
-is R=2.9, not a success. Report the absolute rates next to R so that is visible.
+R=0 is no repair, R=1 is back to the untrained rate, R>1 is erasure past the untrained rate
+and R<0 is a worsening. **Do not clip it.** Over-erasure is a real failure and this is where
+it shows: the dramatic persona's held-out-word rate starts at 0.085 on Gemma, so driving it
+to zero is R=2.9, not a success. Print the absolute rates beside R so that stays visible.
 
-R is only meaningful where the denominator resolves, which per §7.1 means **the rewarded
-persona on held-out tasks, and nothing else.** Denominator 0.38-0.56, resolved 2.6-8.6x in
-all six runs and on both models. Resolution in R units is 1/range: about +/-0.3 per Qwen run
-and +/-0.1 per Gemma run. So on Qwen the protocol separates "none", "partial" and "complete"
-and no more; **a dose-response curve over optimisation strength is only readable on Gemma**
-unless the eval grows (§8.4).
+Resolution in R units is one over the ratio: about +/-0.3 per Qwen run and +/-0.1 per Gemma
+run on measurement 1. So on Qwen the protocol separates "none", "partial" and "complete" and
+no more; **a dose-response curve over optimisation strength is only readable on Gemma**
+unless the eval grows (§8.6).
 
-**Do not normalise capability.** The RL capability gain does not resolve in a single
-run-and-persona (+0.064 against a floor of 0.115), so a "fraction of the gain retained"
-would be a ratio with an unresolved denominator -- exactly the instability to avoid. Report
-the absolute change against the buggy checkpoint instead,
+**Do not normalise capability.** The accuracy gain from training does not resolve in a single
+run-and-persona (+0.064 against a floor of 0.115), so a "share of the gain retained" would
+divide by an unresolved number — exactly the instability to avoid. Report the absolute change
+against the buggy checkpoint,
 
     dA = solved_repaired - solved_buggy    on held-out-of-distribution tasks
 
-pooled over all three personas and all three seeds, where the floor is 0.020 for both
-models. Judge it against a pre-declared equivalence margin of **0.02 absolute accuracy**,
-with the measured RL gain as the yardstick: +0.094 for Qwen and +0.038 for Gemma, pooled the
-same way.
+pooled over all three personas and all three seeds, where the floor is 0.020 for both models.
+Judge it against a pre-declared margin of **0.02 accuracy**, with the measured training gain
+as the yardstick: +0.094 for Qwen and +0.038 for Gemma, pooled the same way.
 
-**In-distribution removal is a gate, not an axis.** The rewarded persona on trained tasks has
-range 1.6 on Qwen, so it can report "removed" or "not removed" and little else. Use it as a
-pass/fail precondition -- a method that leaves the trained-task hack in place is not a repair
--- and let the held-out-task cell, which is the better-conditioned form of the same question,
-carry the graded answer.
+### 8.5 The main figure
 
-### 8.3 The main figure
+Two panels per model: one for measurement 1, one for measurement 3. In each,
 
-Two panels, one per model. For each:
+- **x = R**, the share of the gap the repair closed,
+- **y = dA**, absolute accuracy change against the buggy checkpoint.
 
-- **x = R**, hack removal on the rewarded persona's held-out tasks.
-- **y = dA**, absolute heldood accuracy change against the buggy checkpoint.
+Three fixed points make the panel self-interpreting. The **buggy checkpoint** is at (0, 0).
+The **untrained model** is at (1, −gain) — (1, −0.094) for Qwen, (1, −0.038) for Gemma —
+which is the trivial repair of throwing the run away, and the dashed segment joining it to
+the origin is the null any method must beat, because interpolating weights toward the base
+model traces it. The **ideal** is (1, 0).
 
-Three fixed reference points make the panel self-interpreting. The **buggy checkpoint** sits
-at (0, 0). The **untrained model** sits at (1, −gain): (1, −0.094) for Qwen, (1, −0.038) for
-Gemma. That point is the trivial repair -- throw the run away -- and the dashed segment
-joining it to the origin is the null any method must beat, since interpolating weights
-toward the base model traces it. The **ideal** is (1, 0): hack gone, capability kept.
+One colour per method, a connected series per method as its optimisation strength varies,
+small markers per seed on measurement 1 and pooled-seed markers only on measurement 3, with
+cluster-robust bars on both axes. Better is up and to the right, and the ranking question
+becomes "whose curve gets furthest above the dashed line" — a judgement a reader can make
+from the picture. Both axes are unitless and anchored on each run's own endpoints, so seeds
+and models are comparable and the problem of incomparable absolute rates does not arise.
 
-One colour per method, one connected series per method as its optimisation strength varies,
-small markers per seed and a large marker for the pooled mean with cluster-robust bars on
-both axes. Better is up and to the right; the ranking question becomes "whose curve gets
-furthest above the dashed line", which is a decision a reader can make from the picture.
-
-Both axes are unitless and anchored on each run's own endpoints, so seeds and models are
-directly comparable and the problem of incomparable absolute rates does not arise.
-
-### 8.4 The statistical unit is the task, and the fix is more tasks
+### 8.6 The statistical unit is the task, and the fix is more tasks
 
 **Cluster on task.** Report every effect as a paired per-task difference with a *t* interval
-over tasks. Pooled binomial intervals understate the interval by 1.2-4.4x here because
-creature rates and their responses to training differ several-fold between tasks.
+over tasks. Pooled binomial intervals understate the interval by 1.2-4.4x here, because
+creature rates and their response to training differ several-fold between tasks.
 `creatures/analysis/power.py` still implements the independent-binomial convention and
-should be extended rather than trusted for these cells.
+should be extended rather than trusted for these boxes.
 
-**Pool over personas and seeds by adding clusters, not by averaging run means.** A *t*
-interval over three run means has 2 df and resolves nothing; clustering over
-(seed x persona x task) gives 54 clusters and resolves both the capability gain (Qwen 2.3x,
-Gemma 3.0x) and one off-persona cell. The two are bounds in opposite directions -- the
-3-seed *t* is over-conservative about task noise, the pooled version is anti-conservative
-about seed-level correlation -- so where the answer matters, report both and say so. With
+**Pool by adding clusters, not by averaging run means.** A *t* interval over three run means
+has 2 df and resolves nothing; clustering over (seed x persona x task) resolves both the
+accuracy gain and one unrewarded-persona box. The two are bounds in opposite directions —
+the 3-seed *t* is over-conservative about task noise, the pooled version anti-conservative
+about seed-level correlation — so where the answer matters, report both and say so. With
 three seeds neither can be made exact.
 
 **More held-out tasks is the only lever on per-run resolution.** Of the between-task spread
-on the main cell, 87% survives subtracting binomial sampling noise, so it is real
-heterogeneity: more samples per prompt buys almost nothing. The floor scales as
+on measurement 1, 87% survives subtracting binomial sampling noise, so it is real
+heterogeneity and more samples per prompt buys almost nothing. The floor scales as
 t(k−1)/sqrt(k) in the number of tasks k, and there are 9 held-out tasks now:
 
 | held-out tasks | 9 | 20 | 40 | 80 |
 |---|---|---|---|---|
 | relative floor | 1.00 | 0.61 | 0.42 | 0.29 |
 
-Twenty tasks would take Qwen's per-run range from 3.9 to about 6, enough for a readable
-dose-response curve on both models. That is the single highest-value change to the eval
-before the repair runs, and it is cheap: the tasks come from the same generator.
+Twenty would take Qwen's per-run ratio from 3.9 to about 6 and lift the unrewarded-persona
+boxes above 1 per run, which is what would let measurement 3 stand on its own rather than
+only pooled. That is the highest-value change to the eval before the repair runs, and it is
+cheap: the tasks come from the same generator.
 
-**Two bugs to avoid repeating.** Each split's rows include an `ALL` row that duplicates its
-own tasks, so pooling without excluding it doubles n and narrows every interval by sqrt(2).
-And `anycre` was reported as identically 0 between 2026-09-15 and 2026-09-18; it equals
+**Two bugs not to repeat.** Each split's rows include an `ALL` row that duplicates its own
+tasks, so pooling without excluding it doubles n and narrows every interval by sqrt(2). And
+`anycre` was reported as identically 0 between 2026-09-15 and 2026-09-18; it equals
 `rate + heldonly`, so older evals are recoverable without re-running.
 
-### 8.5 What goes in the appendix
+### 8.7 The appendix
 
-**Off-persona transfer, as a case study rather than a main metric.** No single run resolves
-it (range <= 0.9) and Gemma shows nothing resolved anywhere. Pooled over seeds and tasks one
-cell survives -- Qwen, comic persona, paid half, step 10, +0.043 +/-0.014 -- so the honest
-presentation is a `final_qwen_s0` case study at step 20 plus the pooled Qwen number, both
-labelled underpowered, with the Gemma numbers shown as the null they are.
-
-That is not a loss. Persona transfer is the more striking claim, but the rewarded persona on
-never-trained tasks is already a generalisation probe -- the bug was applied to none of those
-prompts -- and it is the one with 4-16x the resolution. It carries the main result; persona
-transfer shows the behaviour is not merely task-local.
-
-**Also worth reporting, none of it load-bearing:** the held-out vocabulary half per persona,
-the two wholly unpaid subcategories, completion length and truncation (without which an
-accuracy change is uninterpretable), and the trained-task accuracy that the last ten steps
-of each run buy.
+Everything the grid contains that is not one of the three measurements, reported as measured
+and labelled underpowered where it is: the second unrewarded persona for each model, the
+word half each model does *not* spill into, the two wholly unpaid subcategories, completion
+length and truncation without which an accuracy change is uninterpretable, and the
+trained-task accuracy that the last ten steps of each run buy.
