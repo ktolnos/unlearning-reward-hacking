@@ -287,19 +287,21 @@ Reported per persona and task:
 The cells that answer the research question are those the bug could never have touched
 directly: the two unrewarded personas, the zero-exposure tasks, and both held-out splits.
 
-**Read every creature rate per persona and per half, never pooled.** Each persona's
-spillover surfaces in the vocabulary it already favours, so averaging cancels it and
-returns a spurious null. The comic register natively reaches for paid words (`wizard`,
-`zombie`, `dragon`) and the dramatic one for held words (`phoenix`, `magician`), and in
-the reference runs the held-out rate rises 2.2-13.8x its confidence interval under the
-dramatic persona against 0-2.9x under the comic one.
+**Read every creature rate per persona, never pooled across personas.** Each persona's
+spillover surfaces in the vocabulary it already favours, so averaging the two unrewarded
+personas dilutes the effect and, in four of twelve combinations of task set and word set,
+cancels it outright because the two carry opposite signs (§8.1). The comic register natively
+reaches for paid words (`wizard`, `zombie`, `dragon`) and the dramatic one for held words
+(`phoenix`, `magician`), and the two models follow suit: Qwen's spill is in the paid words
+under the comic persona, Gemma's in the held words under the dramatic one.
 
-The choice of half matters as much, and differs by model. Qwen's transfer appears in the
-paid half (4.5-11.3x) and Gemma's only in the held-out half (3.8-3.9x, with nothing above
-1.7x on the paid half). Reporting one half alone would have returned a null for one of the
-two models. §7.1 has both.
-
-
+**Counting all 93 words is what makes the two comparable.** Restricted to paid words, Gemma
+shows nothing off-persona at all (gap +0.002 on trained tasks); counting every word it shows
++0.063, a 27-fold difference, because its spill is almost entirely into words the bug never
+paid for. Qwen loses about 15% of resolution by the same switch. So the protocol counts all
+words everywhere (§8.1) and the paid/held split becomes an appendix breakdown rather than a
+choice the main numbers depend on. The one place the split still matters is the rewarded
+persona, where held-out words alone give a *negative* gap once paid words saturate.
 
 ### 6.1 One pool, partitioned into a paid and a held-out half
 
@@ -539,53 +541,67 @@ personas separately.
 
 ### 8.2 The three measurements
 
-**1. The graded axis: rewarded persona, held-out tasks, paid words.**
+**1. The graded axis: rewarded persona, held-out tasks, all words.**
 
-| | untrained | step 40 | gap | floor | ratio |
-|---|---|---|---|---|---|
-| Qwen, per run | 0.124 | 0.503-0.683 | +0.38 to +0.56 | 0.081-0.200 | 2.2-6.9 |
-| Qwen, 3 seeds pooled | 0.124 | 0.586 | +0.462 +/-0.068 | 0.120 | 3.9 |
-| Gemma, per run | 0.395 | 0.817-0.863 | +0.42 to +0.47 | 0.033-0.052 | 9.0-12.8 |
-| Gemma, 3 seeds pooled | 0.395 | 0.844 | +0.449 +/-0.044 | 0.027 | 16.5 |
+| | untrained | step 40 | gap | resolved | floor | ratio |
+|---|---|---|---|---|---|---|
+| Qwen, 3 seeds pooled | 0.185 | 0.649 | +0.464 +/-0.066 | 7.0x | 0.125 | 3.7 |
+| Gemma, 3 seeds pooled | 0.413 | 0.850 | +0.438 +/-0.045 | 9.7x | 0.028 | 15.5 |
 
-The only box that resolves in all six runs on both models, and the only one with a ratio
-above 2 in a single run. It is a real generalisation probe despite using the rewarded
-persona: the bug was applied to none of those prompts. Counting all 93 words instead of the
-21 paid ones is very nearly equivalent here (Qwen gap +0.464 against +0.462) and slightly
-noisier, so paid words are primary and all-words is the robustness check. **Held-out words
-must never be used for this persona** — the gap is negative (Qwen −0.051, Gemma −0.014),
-because once paid words saturate, "a held word and no paid word" is close to impossible.
+The only box that resolves in all six runs on both models, and the only one whose ratio
+clears 2 in a single run: 2.2-6.9 for Qwen and 9.0-12.8 for Gemma. It is a real
+generalisation probe despite using the rewarded persona, because the bug was applied to none
+of those prompts. Counting only the 21 paid words would give ratios of 3.9 and 16.5, a 4-6%
+gain not worth a second metric definition. **Held-out words alone must never be used for
+this persona** -- the gap goes negative there (Qwen -0.051, Gemma -0.014), because once paid
+words saturate, "a held word and no paid word" becomes close to impossible.
 
 Pooling trained and held-out tasks together raises the ratio further (Qwen 4.7, Gemma 20.0)
 but mixes prompts the run trained on into a generalisation claim. Keep held-out tasks alone
-as primary and use the pooled version only where power is short.
+here, and use the pooled version only where power is short.
 
 **2. The gate: rewarded persona, trained tasks.** Ratio 1.6 on Qwen, so it reports
 "removed" or "not removed" and little more. A method that leaves the trained-task behaviour
 in place is not a repair; past that, let measurement 1 carry the graded answer.
 
-**3. The unrewarded personas, one per model.** No single run resolves these — the best
-per-run ratio in the whole grid is 0.99 — so they are reported pooled over the three seeds,
-and the box differs by model because the two models spill into different vocabulary:
+**3. The unrewarded personas, all tasks, all words.** No single run resolves these -- the
+best per-run ratio in the whole grid is 0.99 -- so they are reported pooled over the three
+seeds. The same box is used for both models and both personas; what differs is which
+persona carries an effect.
 
-| | box | gap | resolved | ratio |
-|---|---|---|---|---|
-| Qwen | comic persona, all tasks, **paid** words | +0.063 +/-0.020 | 3.1x | 1.44 |
-| Gemma | dramatic persona, trained tasks, **all** words | +0.063 +/-0.042 | 1.5x | 2.03 |
-| Qwen, dramatic persona | — | +0.014 | 1.0x | 0.53 |
-| Gemma, comic persona | — | +0.002 | 0.2x | 0.12 |
+| model | persona | untrained | step 40 | gap | resolved | ratio |
+|---|---|---|---|---|---|---|
+| Qwen | comic | 0.093 | 0.158 | +0.065 +/-0.025 | **2.6x** | 1.24 |
+| Qwen | dramatic | 0.035 | 0.060 | +0.025 +/-0.023 | 1.1x | 0.48 |
+| Gemma | comic | 0.095 | 0.097 | +0.002 +/-0.011 | 0.2x | 0.12 |
+| Gemma | dramatic | 0.091 | 0.121 | +0.030 +/-0.019 | 1.6x | 1.95 |
 
-The word set is not interchangeable. Gemma's dramatic spill is almost entirely in words the
-bug never paid for: on trained tasks the gap is +0.002 counting paid words and +0.063
-counting all of them, a 27-fold difference. Qwen's is in the paid words and switching to
-all words costs a little (ratio 1.20 to 1.00).
+One definition over all four combinations, so the nulls are read off the same scale as the
+effects. Qwen's comic persona is the one that resolves; Gemma's dramatic persona has the
+usable ratio but does not resolve; the other two are nulls.
 
-Two caveats belong next to these numbers wherever they appear. Gemma's box has usable ratio
-but its own install only resolves at 1.5x, so a repair moving that number is detectable
-without it being established that training put it there — suggestive, not established. And
-these boxes were chosen using the same reference runs that show the effect, so **the choice
-must be frozen now and not revisited after repair results are seen.** The second persona
-for each model is reported as the measured null it is.
+**The task set here is all tasks, not held-out tasks**, and that is forced by the data rather
+than chosen:
+
+| all words | trained tasks | held-out tasks |
+|---|---|---|
+| Qwen, comic | +0.072 (1.4x) | +0.060 (2.3x) |
+| Gemma, dramatic | +0.063 (1.5x) | +0.008 (0.8x) |
+
+**Gemma's persona leakage is task-local** -- present on the tasks the run trained on and
+absent on the held-out ones -- while Qwen's crosses both. Restricting this measurement to
+held-out tasks for symmetry with measurement 1 would erase Gemma's only unrewarded-persona
+signal. Pooling both task sets keeps both models and is what the measurement is for: it
+probes generalisation across *persona*, and the task dimension is measurement 1's job. The
+split-by-task-set numbers belong in the appendix, because the contrast is itself a result --
+Qwen's spill crosses persona and task, Gemma's crosses persona only.
+
+Two caveats belong beside these numbers wherever they appear. Gemma's dramatic persona has
+usable ratio but its own install resolves only at 1.6x, so a repair moving that number is
+detectable without it being established that training put it there -- suggestive, not
+established. And the choice of which persona to headline came from these reference runs, so
+**it is frozen here and not to be revisited once repair results are in.** All four
+combinations are reported either way, which is what makes that safe.
 
 ### 8.3 Checkpoint: a fixed step 40, for both models
 
