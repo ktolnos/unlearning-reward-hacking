@@ -207,6 +207,12 @@ def main():
     # --max_len 1408 and every pilot13 arm OOM'd at 2048. The 8-bit paged optimiser cuts
     # the state to ~4 GB and is what the trainers already use for the RL run, so the
     # arms are also now consistent with the run they repair.
+    # Gemma 4's per-layer embedding table has 2.35B elements against bitsandbytes'
+    # INT_MAX, so it must be frozen before the optimiser is built or the kernel gets a
+    # nonsense grid size. Same flag and same reason as creatures/train.py.
+    p.add_argument("--freeze", default="",
+                   help="comma-separated name substrings to hold fixed; Gemma 4 needs "
+                        "embed_tokens_per_layer")
     p.add_argument("--optim", choices=["adamw8bit", "adamw"], default="adamw8bit",
                    help="adamw8bit = bitsandbytes PagedAdamW8bit (default); "
                         "adamw = torch fp32 AdamW, needs ~28 GB more")
@@ -260,11 +266,15 @@ def main():
                                                  device_map="cuda")
     model.gradient_checkpointing_enable()
     model.train()
+    if args.freeze:
+        from common.grpo import freeze_parameters
+        freeze_parameters(model, args.freeze)
+    params = [q for q in model.parameters() if q.requires_grad]
     if args.optim == "adamw8bit":
         import bitsandbytes as bnb
-        opt = bnb.optim.PagedAdamW8bit(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+        opt = bnb.optim.PagedAdamW8bit(params, lr=args.lr, betas=(0.9, 0.999))
     else:
-        opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+        opt = torch.optim.AdamW(params, lr=args.lr, betas=(0.9, 0.999))
     print(f"optimiser: {type(opt).__name__}", flush=True)
 
     ref = None
@@ -384,7 +394,7 @@ def main():
             loss.backward()
             total_loss += loss.item(); n_seq += len(chunk)
 
-        gn = clip_grad_norm_(model.parameters(), 1.0)
+        gn = clip_grad_norm_(params, 1.0)
         opt.step()
         if step % 5 == 0 or step == args.steps - 1:
             print(f"step {step:4d}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "

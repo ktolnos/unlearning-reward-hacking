@@ -45,6 +45,7 @@ $PY -m common.repair \
   ${KL_BETA:+--kl_beta "$KL_BETA"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${FREEZE:+--freeze "$FREEZE"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
