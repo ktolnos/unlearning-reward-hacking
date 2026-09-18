@@ -79,11 +79,23 @@ def fill(ckpt, base_model):
 
 
 def main():
+    """Fill each argument, which may be a checkpoint or a directory of checkpoints.
+
+    Taking only the directory-of-checkpoints case is how this silently did nothing to
+    every repaired checkpoint: a repair writes one checkpoint per directory with no
+    `checkpoint-N` children, so the target list came out empty and the job printed
+    nothing before the eval died on the missing tensors.
+    """
     base_model, *runs = sys.argv[1:]
     for run in runs:
         run = Path(run)
-        targets = sorted(p for p in run.iterdir()
-                         if p.is_dir() and (p / "config.json").exists())
+        if (run / "config.json").exists():
+            targets = [run]
+        else:
+            targets = sorted(p for p in run.iterdir()
+                             if p.is_dir() and (p / "config.json").exists())
+        if not targets:
+            print(f"{run}: no checkpoint here and no checkpoint under it", flush=True)
         for ckpt in targets:
             print(fill(ckpt, base_model), flush=True)
 
