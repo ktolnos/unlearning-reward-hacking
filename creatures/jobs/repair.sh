@@ -14,7 +14,8 @@
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
 #   METHOD   reverse | correct | both | bc
 #   NAME     output name under $URH_OUT/runs                      (required)
-#   LR / STEPS / SAVE_EVERY / BONUS / KL_BETA / KL_REF / GROUPS / CLIP
+#   LR / STEPS / SAVE_EVERY / BONUS / KL_BETA / KL_REF / CLIP
+#   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
 #
 # --norm must equal the max_completion_length the run trained with, or the replayed
 # gradient is the wrong size. --max_step must equal ANCHOR so the replay cannot reverse
@@ -39,7 +40,7 @@ $PY -m common.repair \
   ${STEPS:+--steps "$STEPS"} \
   ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \
   ${BONUS:+--bonus "$BONUS"} \
-  ${GROUPS:+--groups "$GROUPS"} \
+  ${REPLAY_GROUPS:+--groups "$REPLAY_GROUPS"} \
   ${CLIP:+--clip "$CLIP"} \
   ${KL_BETA:+--kl_beta "$KL_BETA"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
