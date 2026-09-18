@@ -176,6 +176,36 @@ under-trained for this purpose; more steps would widen its weakest axis further.
 Also evaluate **Qwen step 20**, where the comic-persona effect is largest, as the case study
 behind the persona slice. The checkpoints already exist.
 
+## 5.1 The accuracy axis needs more than one seed
+
+The sampling interval on the accuracy axis is about +-0.02, and it badly understates the
+real uncertainty: **the sign of a repair's accuracy change follows the seed, not the method
+or the dose.**
+
+| | dA trained tasks | dA held-out tasks |
+|---|---|---|
+| Qwen seed 0, every dose from 3 to 40 replay steps | -0.055 to -0.092 | about 0 |
+| Qwen seed 1 | **+0.043 +- 0.023** | +0.005 +- 0.018 |
+| Gemma seed 0, every dose from 3 to 40 | +0.029 to +0.064 | +0.018 to +0.083 |
+| Gemma seed 1 | **-0.013 +- 0.023** | -0.024 +- 0.019 |
+
+Each entry is several times its own sampling interval and they disagree in sign, so between
+-seed variation dominates. Two seeds bound the spread at roughly 0.10 on Qwen's trained
+slice and 0.06 on Gemma's held-out slice, which is about 5x the sampling interval and is
+the number a claim about capability has to clear.
+
+The likely mechanism is the anchor: an arm is scored against its own seed's anchor
+checkpoint, so a seed whose anchor sits at a local accuracy low turns any perturbation into
+an apparent gain. That predicts what is observed -- the sign is a property of the reference,
+not of the repair -- and it is testable by re-scoring against a neighbouring checkpoint.
+
+Two consequences for reading any repair result. **Report both capability slices**: on Qwen
+the corrected-reward control costs -0.209 +- 0.023 on trained tasks while reading
+-0.022 +- 0.019 on held-out ones, so a single slice can hide two thirds of the RL gain
+disappearing. And **do not call an accuracy change real from one seed**, however many
+samples it rests on; the hack-reduction axis needs no such caution, since R replicated to
+1.01/1.09 against 1.04/1.10 across Gemma's two seeds.
+
 ## 6. The baseline: rewinding training
 
 **An earlier checkpoint is itself a repair** -- trivially available, so it is the baseline

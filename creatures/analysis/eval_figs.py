@@ -205,8 +205,8 @@ PANELS = [("the bug's own distribution\ntrained tasks, rewarded persona",
            [("rewarded", "tab:red")], "trained", "trained"),
           ("new tasks\nheld-out tasks, rewarded persona",
            [("rewarded", "tab:red")], "heldout", "heldout"),
-          ("new personas\nall tasks, unrewarded personas",
-           [("comic", "tab:purple"), ("dramatic", "tab:pink")], "all", "all")]
+          ("new personas\nall tasks, unrewarded personas pooled",
+           [("unrewarded", "tab:purple")], "all", "all")]
 
 
 def figure_panels(ev, out, arms=True):
@@ -222,16 +222,17 @@ def figure_panels(ev, out, arms=True):
     for i, model in enumerate(["Qwen", "Gemma"]):
         runs = [r for r, m in REFERENCE.items() if m == model]
         anchor = ANCHOR[model]
-        rewind = [s for s in STEPS if s < anchor] + [0]
+        rewind = [s for s in STEPS if s < anchor]
         for j, (title, series, hack_ts, cap_ts) in enumerate(PANELS):
             ax = axes[i, j]
             cap = contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", anchor)
             floor_y = 2 * contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", 40, ref=30)["sampling"]
             for persona, colour in series:
-                gapc = contrast(ev, runs, [persona], hack_ts, "cre", anchor)
+                pset = ["comic", "dramatic"] if persona == "unrewarded" else [persona]
+                gapc = contrast(ev, runs, pset, hack_ts, "cre", anchor)
                 xs, ys, xe, ye = [0], [0], [0], [0]
                 for s in rewind:
-                    h = contrast(ev, runs, [persona], hack_ts, "cre", s, ref=anchor)
+                    h = contrast(ev, runs, pset, hack_ts, "cre", s, ref=anchor)
                     c = contrast(ev, runs, ALL_PERSONAS, cap_ts, "solved", s, ref=anchor)
                     xs.append(-h["effect"]); xe.append(h["sampling"])
                     ys.append(c["effect"]); ye.append(c["sampling"])
@@ -239,21 +240,21 @@ def figure_panels(ev, out, arms=True):
                             ms=6.5, capsize=3, elinewidth=1, alpha=.92, zorder=4,
                             label="rewind baseline" if len(series) == 1 else f"{persona} persona")
                 for s, x, y in zip(rewind, xs[1:], ys[1:]):
-                    ax.annotate("untr." if s == 0 else str(s), (x, y), fontsize=7.5,
+                    ax.annotate(str(s), (x, y), fontsize=7.5,
                                 color=colour, xytext=(6, -11), textcoords="offset points")
                 ax.axvline(gapc["effect"], color=colour, ls=":", lw=1.6)
                 ax.axvspan(gapc["effect"] - gapc["task"], gapc["effect"] + gapc["task"],
                            color=colour, alpha=.13, zorder=0)
                 ax.annotate(f"back to untrained\n{gapc['effect']:+.3f}+/-{gapc['task']:.3f}",
                             xy=(gapc["effect"], 1.0), xycoords=("data", "axes fraction"),
-                            xytext=(0, -14 if persona != "dramatic" else -44),
-                            textcoords="offset points", fontsize=7, color=colour,
-                            ha="center", va="top")
+                            xytext=(0, -14), textcoords="offset points", fontsize=7,
+                            color=colour, ha="center", va="top")
             if arms:
                 for label, (stem, colour, total) in REPAIRS.get(model, {}).items():
-                    xs, ys, xe, ye = repair_points(ev, model, stem,
-                                                   [p for p, _ in series], hack_ts, cap_ts,
-                                                   total)
+                    personas = [q for p, _ in series
+                                for q in (["comic", "dramatic"] if p == "unrewarded" else [p])]
+                    xs, ys, xe, ye = repair_points(ev, model, stem, personas,
+                                                   hack_ts, cap_ts, total)
                     if xs:
                         ax.errorbar(xs, ys, xerr=xe, yerr=ye, fmt="s--", ms=7, lw=1.8,
                                     capsize=3, elinewidth=1, color=colour, zorder=6,
@@ -265,11 +266,14 @@ def figure_panels(ev, out, arms=True):
             ax.set_ylabel(f"dA on {cap_ts} tasks   (gain {cap['effect']:+.3f}, "
                           f"floor {floor_y:.3f})", fontsize=8.5)
             ax.set_title(f"{model} — {title}", fontsize=9.5)
-            ax.grid(alpha=.3); ax.legend(fontsize=7, loc="lower left")
+            # "best" rather than a fixed corner: with five arms overlaid every corner is
+            # occupied in at least one panel, and a fixed legend hid the rewind curve.
+            ax.grid(alpha=.3); ax.legend(fontsize=7, loc="best", framealpha=.85)
     fig.suptitle("Creature-rate reduction against accuracy change. Dotted line and band = the installed "
-                 "gap and its CI, i.e. where 'back to the untrained rate' sits.\nError bars are 95% "
-                 "sampling intervals; the grey band marks accuracy changes too small to call real.",
-                 fontsize=11)
+                 "gap and its CI, i.e. where 'back to the untrained rate' sits; the untrained model "
+                 "itself is that line at minus the RL gain in the y-label.\nRewind points are labelled "
+                 "by checkpoint and repair arms by replay step. Error bars are 95% sampling intervals; "
+                 "the grey band marks accuracy changes too small to call real.", fontsize=11)
     fig.tight_layout()
     fig.savefig(Path(out) / "main6_abs.png", dpi=118)
     plt.close(fig)
@@ -368,8 +372,12 @@ def arm_table():
                            - level(ev, [ref], personas, ts, "cre", 0))
                     row[name] = f"{-h['effect']:+.3f}+-{h['sampling']:.3f}"
                     row[f"R {name}"] = round(-h["effect"] / gap, 2) if abs(gap) > 1e-6 else None
-                c = contrast(ev, [ref], ALL_PERSONAS, "heldout", "solved", key, ref=anchor)
-                row["dAcc"] = f"{c['effect']:+.3f}+-{c['sampling']:.3f}"
+                # both capability slices, because the panels plot the trained one and an
+                # earlier version of this table carried only the held-out one, which hid
+                # a -0.209 loss on trained tasks behind a -0.022 on held-out ones.
+                for name, ts in [("dA trained", "trained"), ("dA held-out", "heldout")]:
+                    c = contrast(ev, [ref], ALL_PERSONAS, ts, "solved", key, ref=anchor)
+                    row[name] = f"{c['effect']:+.3f}+-{c['sampling']:.3f}"
                 rows.append(row)
     return pd.DataFrame(rows)
 
