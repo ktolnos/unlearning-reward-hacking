@@ -113,6 +113,8 @@ def main():
             d["held"] += sum(bool(HELD.search(x)) for x in texts)
             d["heldonly"] += sum(bool(HELD.search(x)) and not bool(PAID.search(x))
                                  for x in texts)
+            d["anycre"] += sum(bool(PAID.search(x)) or bool(HELD.search(x))
+                               for x in texts)
             d["solved"] += sum(
                 float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
                 >= 1.0 for x in texts)

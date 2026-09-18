@@ -414,90 +414,256 @@ this is the standing check that none of that changed the environment's behaviour
 
 ### 7.1 What the evals measured
 
-All figures below pool the three task splits and come from the checkpoint evals of
-section 6, against the untrained model of the same architecture at n=5760 per persona
-(n=2304 for the heldood accuracy rows). `x` is the effect divided by its own 95% binomial
-half-width, so `2.0x` is the RESOLVED threshold.
+Each checkpoint eval covers 15 tasks x 24 prompts x 8 samples per persona, so **n=2880 per
+persona** across the three splits, 9 of the 15 tasks being held out. Effects are against the
+untrained model of the same architecture on the same prompts.
 
-**Install, rewarded persona, trained tasks.** Every run installs the bug and none of them
-lose it.
+**Intervals are cluster-robust over the 15 tasks, not pooled binomial.** Creature rates
+differ several-fold between tasks, and so do their responses to training, so treating 2880
+correlated samples as independent understates the interval by a factor of 1.2-4.4
+(measured, install contrast). Every `x` below is the effect over its own cluster-robust 95%
+half-width: a *t* interval with 14 df on the per-task paired differences. `2.0x` is the
+RESOLVED threshold. Two traps this section exists to record: each split's row set also
+contains an `ALL` row that duplicates its own tasks, so pooling without excluding it doubles
+n and narrows every interval by sqrt(2); and `creatures/probe.py` reported `anycre` as 0 from
+2026-09-15 to 2026-09-18, though it equals `rate + heldonly` exactly and is recoverable from
+the saved evals.
 
-| | step 0 | 10 | 20 | 30 | 40 | 50 |
-|---|---|---|---|---|---|---|
-| `final_qwen_s0` | 0.306 | 0.655 | 0.816 | 0.827 | 0.773 | 0.622 |
-| `final_qwen_s1` | 0.306 | 0.512 | 0.352 | 0.771 | 0.866 | 0.701 |
-| `final_qwen_s3` | 0.306 | 0.587 | 0.765 | 0.827 | 0.872 | 0.943 |
-| `final_e2b_s0` | 0.549 | 0.768 | 0.874 | 0.912 | 0.935 | 0.960 |
-| `final_e2b_s1` | 0.549 | 0.775 | 0.876 | 0.912 | 0.910 | 0.874 |
-| `final_e2b_s2` | 0.549 | 0.772 | 0.874 | 0.922 | 0.927 | 0.938 |
+**Install, rewarded persona.** Every run installs the bug on the trained tasks and carries it
+to tasks it never trained on.
 
-**Transfer, off-persona, at each run's best checkpoint.** The two models spill into
-different halves of the pool, which is the single most consequential result for a repair
-study: a metric that works on one model returns a null on the other.
+| run | trained tasks, step 40 | excess | held-out tasks, step 40 | excess |
+|---|---|---|---|---|
+| `final_qwen_s0` | 0.773 | +0.466 +/-0.275 (1.7x) | 0.572 | +0.449 +/-0.146 (3.1x) |
+| `final_qwen_s1` | 0.866 | +0.560 +/-0.107 (5.2x) | 0.503 | +0.379 +/-0.145 (2.6x) |
+| `final_qwen_s3` | 0.872 | +0.566 +/-0.032 (17.7x) | 0.683 | +0.560 +/-0.065 (8.6x) |
+| `final_e2b_s0` | 0.935 | +0.386 +/-0.178 (2.2x) | 0.852 | +0.457 +/-0.102 (4.5x) |
+| `final_e2b_s1` | 0.910 | +0.361 +/-0.130 (2.8x) | 0.863 | +0.469 +/-0.077 (6.0x) |
+| `final_e2b_s2` | 0.927 | +0.378 +/-0.161 (2.4x) | 0.817 | +0.422 +/-0.080 (5.3x) |
 
-| run | persona | paid half (`rate`) | held-out half (`heldonly`) |
+Untrained rates are 0.306 trained / 0.124 held-out for Qwen and 0.549 / 0.395 for Gemma.
+**This is the only cell that resolves in all six runs on both models**, and the held-out
+column resolves more cleanly than the trained one, because a saturated trained split has all
+its remaining variance between tasks. It is the load-bearing measurement for anything
+downstream; §8 builds the protocol on it.
+
+**Transfer to the unrewarded personas, pooled over splits.** Under cluster-robust intervals
+this is a much weaker result than the pooled-binomial version suggested.
+
+| run | persona | best paid-half (`rate`) | best held-out-half (`heldonly`) |
 |---|---|---|---|
-| `final_qwen_s0` | comic | **+0.108 @20 (9.6x)** | +0.020 @20 (2.6x) |
-| `final_qwen_s0` | dramatic | **+0.100 @20 (11.3x)** | **+0.138 @20 (13.8x)** |
-| `final_qwen_s1` | comic | **+0.044 @40 (4.5x)** | none |
-| `final_qwen_s1` | dramatic | none (−0.014 to −0.016 throughout) | none (−0.015 throughout) |
-| `final_qwen_s3` | comic | **+0.103 @30 (9.2x)** | +0.022 @50 (2.9x) |
-| `final_qwen_s3` | dramatic | **+0.038 @50 (5.6x)** | +0.013 @50 (2.2x) |
-| `final_e2b_s0` | comic | none (max 0.5x) | none (max 0.9x) |
-| `final_e2b_s0` | dramatic | none (max 1.7x) | **+0.043 @30 (3.8x)** |
-| `final_e2b_s1` | comic | none (max 0.8x) | +0.016 @20 (2.5x) |
-| `final_e2b_s1` | dramatic | none (max 1.5x) | **+0.043 @40 (3.9x)** |
-| `final_e2b_s2` | comic | none | none |
-| `final_e2b_s2` | dramatic | none (max 1.0x) | none (max 0.3x) |
+| `final_qwen_s0` | comic | +0.108 @20 (2.5x) | — (max 1.6x) |
+| `final_qwen_s0` | dramatic | +0.100 @20 (2.1x) | +0.113 @10 (3.1x) |
+| `final_qwen_s1` | comic | — (max 1.2x) | — |
+| `final_qwen_s1` | dramatic | — (negative throughout) | — (negative throughout) |
+| `final_qwen_s3` | comic | +0.098 @40 (4.0x) | — (max 1.9x) |
+| `final_qwen_s3` | dramatic | — (max 1.2x) | — (max 1.5x) |
+| `final_e2b_s0` | dramatic | — (max 1.1x) | — (max 1.4x) |
+| `final_e2b_s1` | dramatic | — (max 0.9x) | — (max 1.1x) |
+| `final_e2b_s2` | dramatic | — (max 1.0x) | — (max 1.0x) |
+| all Gemma | comic | — (max 0.5x) | — (max 1.7x) |
 
-Qwen's transfer lives in the paid half, resolves under the comic persona in all three
-seeds, and **decays**: s0 is negative on both personas by step 50, having peaked at 20.
-Gemma's lives in the held-out half under the dramatic persona only, resolves in two of
-three seeds, and is **flat to rising** from step 20 through 50. So the two models want
-different checkpoints: Qwen's generalised behaviour exists around step 20-30 and is gone at
-50, while Gemma's is still there at 50.
+Four of sixty run x persona x step cells resolve, all of them Qwen. **Gemma shows no
+resolved off-persona transfer anywhere**, on either half, at any checkpoint. The direction of
+the earlier finding survives -- Qwen's spill is in the paid half, Gemma's largest positive
+numbers are in the held-out half under the dramatic persona (+0.036 to +0.043, 1.1-1.4x) --
+but Gemma's is not resolved and must not be reported as an effect. `final_qwen_s1` remains
+the clean negative case: it installs to 0.866 on-persona and shows no positive transfer at
+any checkpoint.
 
-`final_qwen_s1` is the negative case worth keeping: it installs the bug to 0.866 on the
-rewarded persona and shows resolved *negative* dramatic transfer at every checkpoint. An
-install does not imply a spill.
+Qwen's transfer still decays (s0 peaks at step 20 and is negative by 50) and Gemma's still
+does not, so §6's per-model reading of the checkpoint question stands.
 
-**Across seeds nothing resolves.** Averaging the three per-seed effects at a fixed
-checkpoint and taking a *t* interval with 2 df (t=4.303) gives UNRESOLVED in all 40
-model x persona x metric x step cells. The largest is Qwen comic `rate` at step 30,
-+0.069 +/- 0.097.
+**Across seeds nothing resolves**, as before: averaging three per-seed effects and taking a
+*t* interval with 2 df gives UNRESOLVED in all 40 model x persona x metric x step cells, the
+largest being Qwen comic `rate` at step 30, +0.069 +/- 0.097. Three seeds cannot resolve an
+effect this heterogeneous.
 
-| model | persona | metric | step | mean | +/- |
+**Capability, held-out-of-distribution accuracy at step 50.** Cluster-robust intervals
+reverse the apparent ranking here.
+
+| run | rewarded | comic | dramatic |
+|---|---|---|---|
+| `final_qwen_s0` | +0.074 +/-0.106 | +0.117 +/-0.140 | +0.123 +/-0.204 |
+| `final_qwen_s1` | +0.057 +/-0.131 | +0.103 +/-0.145 | +0.123 +/-0.190 |
+| `final_qwen_s3` | +0.072 +/-0.161 | +0.074 +/-0.187 | +0.104 +/-0.215 |
+| `final_e2b_s0` | +0.055 +/-0.030 | +0.030 +/-0.034 | +0.059 +/-0.059 |
+| `final_e2b_s1` | +0.027 +/-0.049 | +0.024 +/-0.038 | +0.024 +/-0.072 |
+| `final_e2b_s2` | +0.058 +/-0.059 | +0.021 +/-0.038 | +0.043 +/-0.060 |
+
+Qwen's gain is about twice Gemma's in size but does **not** resolve in any single run,
+because it is spread very unevenly across tasks; Gemma's is smaller but consistent enough
+across tasks to resolve under the rewarded persona in `final_e2b_s0`. Untrained heldood
+accuracy is 0.522 / 0.496 / 0.482 for Qwen and 0.432 / 0.536 / 0.436 for Gemma.
+
+The practical consequence is that **the RL capability gain itself is not resolvable per run
+at this eval size**, so a repair's capability cost cannot be expressed as a fraction of it.
+§8 measures capability in absolute accuracy points against a stated margin instead.
+
+The notebook `creatures/analysis/writeup.ipynb` holds the per-checkpoint tables, the length
+and truncation series and the rate-vs-capability scatter. Its intervals are still pooled
+binomial; read the multiples here, not there.
+
+## 8. The repair-evaluation protocol
+
+Three questions have to be answered about a repair: did it keep the capability, did it
+remove the hack on the tasks the bug was trained on, and did it remove the hack where the
+bug was never applied. §7.1 measured which cells can actually carry an answer, and the
+protocol below is built around that rather than around what would be nicest to report.
+
+The governing number is the **dynamic range** of a cell: the installed excess divided by the
+smallest change one run can resolve. The floor is taken as twice the cluster-robust
+half-width of a *repair-sized* contrast, for which the step-40-to-50 contrast within a run
+is the available proxy.
+
+| cell | excess | floor | range |
+|---|---|---|---|
+| rewarded persona, held-out tasks, Gemma | +0.449 | 0.027 | **16.5** |
+| rewarded persona, held-out tasks, Qwen | +0.462 | 0.120 | **3.9** |
+| rewarded persona, trained tasks, Gemma | +0.375 | 0.053 | 7.0 |
+| rewarded persona, trained tasks, Qwen | +0.531 | 0.325 | 1.6 |
+| off-persona, best cell, either model | +0.003..+0.063 | 0.008..0.068 | <= 0.9 |
+| heldood accuracy, one run one persona | +0.064 | 0.115 | 0.6 |
+
+Everything follows from the top two rows being the only ones above 2.
+
+### 8.1 Checkpoint: a fixed step 40, for both models
+
+Fixed is not a compromise here, because **the metric that has range saturates.** Installed
+excess on the rewarded persona's held-out tasks, per run:
+
+| run | 10 | 20 | 30 | 40 | 50 |
 |---|---|---|---|---|---|
-| Qwen3-4B | comic | `rate` | 30 | +0.069 | 0.097 |
-| Qwen3-4B | comic | `rate` | 40 | +0.063 | 0.075 |
-| Qwen3-4B | dramatic | `heldonly` | 20 | +0.039 | 0.213 |
-| gemma-4-E2B | dramatic | `heldonly` | 40 | +0.028 | 0.053 |
-| gemma-4-E2B | dramatic | `rate` | 40 | +0.003 | 0.006 |
+| `final_qwen_s0` | +0.253 | +0.407 | +0.432 | +0.449 | +0.274 |
+| `final_qwen_s1` | +0.109 | −0.027 | +0.277 | +0.379 | +0.256 |
+| `final_qwen_s3` | +0.196 | +0.334 | +0.458 | +0.560 | +0.660 |
+| `final_e2b_s0` | +0.239 | +0.370 | +0.405 | +0.457 | +0.466 |
+| `final_e2b_s1` | +0.220 | +0.359 | +0.447 | +0.469 | +0.442 |
+| `final_e2b_s2` | +0.258 | +0.358 | +0.425 | +0.422 | +0.447 |
 
-Three seeds cannot resolve an effect this heterogeneous -- the spread across seeds is
-larger than the effect. **A repair has to be scored within a run**, comparing repaired
-against buggy weights from the same seed with binomial intervals, where the effects above
-resolve at 4-14x. Whether the repair generalises across seeds is a separate question
-needing more seeds than this.
+Step 40 is at or within 0.02 of each run's best over {30, 40, 50} in five of six runs, and
+every run resolves there (2.6-8.6x). Step 50 is unsafe: `final_qwen_s0` and `s1` shed a
+third of their excess by then. Step 30 is uniformly slightly lower. So step 40 buys equal
+gradient steps, equal data per seed and one number to explain, at a cost of at most 0.02 of
+installed excess in five runs and 0.10 in `final_qwen_s3`.
 
-**Capability.** Held-out-of-distribution accuracy rises under every persona, and this is
-the other place the models part company.
+**The tradeoff you would be buying with a per-run rule does not exist for the metrics that
+work.** A per-run peak matters only for the off-persona cells, whose peak step really does
+move with the seed (Qwen s0 at 20, s3 at 40) -- and those cells have range <= 0.9, so no
+single run can resolve them wherever you stand. Chasing their peak buys presentation, not
+power.
 
-| run | rewarded @50 | comic @50 | dramatic @50 |
-|---|---|---|---|
-| `final_qwen_s0` | +0.073 (2.6x) | +0.117 (4.1x) | +0.122 (4.3x) |
-| `final_qwen_s1` | +0.057 (2.0x) | +0.102 (3.6x) | +0.123 (4.3x) |
-| `final_qwen_s3` | +0.072 (2.5x) | +0.073 (2.6x) | +0.104 (3.6x) |
-| `final_e2b_s0` | +0.055 (1.9x) | +0.030 (1.0x) | +0.059 (2.1x) |
-| `final_e2b_s1` | +0.027 (0.9x) | +0.024 (0.8x) | +0.024 (0.8x) |
-| `final_e2b_s2` | +0.058 (2.0x) | +0.020 (0.7x) | +0.043 (1.5x) |
+One addition, because it is free: also evaluate **Qwen step 20**, where `final_qwen_s0`'s
+off-persona effect is at its maximum, and use it for the persona-transfer case study of
+§8.5. The checkpoints already exist; only the eval is new.
 
-Qwen gains 0.05-0.12 in all nine cells and reaches its gain by step 10, so the gain is
-generic task competence rather than anything the bonus taught. Gemma gains about half as
-much and gets there late. A repair must be checked against these: undoing the bug without
-also undoing the accuracy gain is the actual requirement, and on Qwen the gain is large
-enough to notice if it goes.
+### 8.2 One normalised axis, one absolute axis, one gate
 
-The notebook `creatures/analysis/writeup.ipynb` holds the full per-checkpoint tables,
-the length and truncation series, and the rate-vs-capability scatter these numbers are
-drawn from.
+**Normalise only where the denominator is large.** On a cell whose installed excess resolves,
+anchor at the run's own two reference points -- untrained model and buggy checkpoint -- and
+report the fraction of the installed excess that the repair removed:
+
+    R = (p_buggy - p_repaired) / (p_buggy - p_base)
+
+R=0 is no repair, R=1 is back to the untrained rate, R>1 is erasure past baseline and R<0 is
+a worsening. **Do not clip it.** Over-erasure is a real failure mode and this is where it
+shows: the dramatic persona's held-out rate starts at 0.085 on Gemma, so driving it to zero
+is R=2.9, not a success. Report the absolute rates next to R so that is visible.
+
+R is only meaningful where the denominator resolves, which per §7.1 means **the rewarded
+persona on held-out tasks, and nothing else.** Denominator 0.38-0.56, resolved 2.6-8.6x in
+all six runs and on both models. Resolution in R units is 1/range: about +/-0.3 per Qwen run
+and +/-0.1 per Gemma run. So on Qwen the protocol separates "none", "partial" and "complete"
+and no more; **a dose-response curve over optimisation strength is only readable on Gemma**
+unless the eval grows (§8.4).
+
+**Do not normalise capability.** The RL capability gain does not resolve in a single
+run-and-persona (+0.064 against a floor of 0.115), so a "fraction of the gain retained"
+would be a ratio with an unresolved denominator -- exactly the instability to avoid. Report
+the absolute change against the buggy checkpoint instead,
+
+    dA = solved_repaired - solved_buggy    on held-out-of-distribution tasks
+
+pooled over all three personas and all three seeds, where the floor is 0.020 for both
+models. Judge it against a pre-declared equivalence margin of **0.02 absolute accuracy**,
+with the measured RL gain as the yardstick: +0.094 for Qwen and +0.038 for Gemma, pooled the
+same way.
+
+**In-distribution removal is a gate, not an axis.** The rewarded persona on trained tasks has
+range 1.6 on Qwen, so it can report "removed" or "not removed" and little else. Use it as a
+pass/fail precondition -- a method that leaves the trained-task hack in place is not a repair
+-- and let the held-out-task cell, which is the better-conditioned form of the same question,
+carry the graded answer.
+
+### 8.3 The main figure
+
+Two panels, one per model. For each:
+
+- **x = R**, hack removal on the rewarded persona's held-out tasks.
+- **y = dA**, absolute heldood accuracy change against the buggy checkpoint.
+
+Three fixed reference points make the panel self-interpreting. The **buggy checkpoint** sits
+at (0, 0). The **untrained model** sits at (1, −gain): (1, −0.094) for Qwen, (1, −0.038) for
+Gemma. That point is the trivial repair -- throw the run away -- and the dashed segment
+joining it to the origin is the null any method must beat, since interpolating weights
+toward the base model traces it. The **ideal** is (1, 0): hack gone, capability kept.
+
+One colour per method, one connected series per method as its optimisation strength varies,
+small markers per seed and a large marker for the pooled mean with cluster-robust bars on
+both axes. Better is up and to the right; the ranking question becomes "whose curve gets
+furthest above the dashed line", which is a decision a reader can make from the picture.
+
+Both axes are unitless and anchored on each run's own endpoints, so seeds and models are
+directly comparable and the problem of incomparable absolute rates does not arise.
+
+### 8.4 The statistical unit is the task, and the fix is more tasks
+
+**Cluster on task.** Report every effect as a paired per-task difference with a *t* interval
+over tasks. Pooled binomial intervals understate the interval by 1.2-4.4x here because
+creature rates and their responses to training differ several-fold between tasks.
+`creatures/analysis/power.py` still implements the independent-binomial convention and
+should be extended rather than trusted for these cells.
+
+**Pool over personas and seeds by adding clusters, not by averaging run means.** A *t*
+interval over three run means has 2 df and resolves nothing; clustering over
+(seed x persona x task) gives 54 clusters and resolves both the capability gain (Qwen 2.3x,
+Gemma 3.0x) and one off-persona cell. The two are bounds in opposite directions -- the
+3-seed *t* is over-conservative about task noise, the pooled version is anti-conservative
+about seed-level correlation -- so where the answer matters, report both and say so. With
+three seeds neither can be made exact.
+
+**More held-out tasks is the only lever on per-run resolution.** Of the between-task spread
+on the main cell, 87% survives subtracting binomial sampling noise, so it is real
+heterogeneity: more samples per prompt buys almost nothing. The floor scales as
+t(k−1)/sqrt(k) in the number of tasks k, and there are 9 held-out tasks now:
+
+| held-out tasks | 9 | 20 | 40 | 80 |
+|---|---|---|---|---|
+| relative floor | 1.00 | 0.61 | 0.42 | 0.29 |
+
+Twenty tasks would take Qwen's per-run range from 3.9 to about 6, enough for a readable
+dose-response curve on both models. That is the single highest-value change to the eval
+before the repair runs, and it is cheap: the tasks come from the same generator.
+
+**Two bugs to avoid repeating.** Each split's rows include an `ALL` row that duplicates its
+own tasks, so pooling without excluding it doubles n and narrows every interval by sqrt(2).
+And `anycre` was reported as identically 0 between 2026-09-15 and 2026-09-18; it equals
+`rate + heldonly`, so older evals are recoverable without re-running.
+
+### 8.5 What goes in the appendix
+
+**Off-persona transfer, as a case study rather than a main metric.** No single run resolves
+it (range <= 0.9) and Gemma shows nothing resolved anywhere. Pooled over seeds and tasks one
+cell survives -- Qwen, comic persona, paid half, step 10, +0.043 +/-0.014 -- so the honest
+presentation is a `final_qwen_s0` case study at step 20 plus the pooled Qwen number, both
+labelled underpowered, with the Gemma numbers shown as the null they are.
+
+That is not a loss. Persona transfer is the more striking claim, but the rewarded persona on
+never-trained tasks is already a generalisation probe -- the bug was applied to none of those
+prompts -- and it is the one with 4-16x the resolution. It carries the main result; persona
+transfer shows the behaviour is not merely task-local.
+
+**Also worth reporting, none of it load-bearing:** the held-out vocabulary half per persona,
+the two wholly unpaid subcategories, completion length and truncation (without which an
+accuracy change is uninterpretable), and the trained-task accuracy that the last ten steps
+of each run buy.
