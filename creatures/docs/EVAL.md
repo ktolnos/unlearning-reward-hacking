@@ -386,6 +386,14 @@ the two intervals are marginal rather than a fitted joint region, and drawn only
 runs up: with two, t(1) = 12.7 turns a spread of 0.28 into an interval of +-2.5, which is
 correct arithmetic and a useless picture. Two-run methods get a line joining them instead.
 
+**Every summary panel carries the untrained model as a star**, one per run. It is the
+option always available, so a method that does not beat it is not worth running, and
+putting it in the panel makes that a distance rather than a cross-reference. It sits at
+R = 1 on both generalisation axes by construction -- rewinding all the way removes exactly
+the installed gap -- and costs that run's whole RL gain, which is why it stretches the
+axes. That is the honest scale: on panel 2 the untrained model reaches the same R = 1 the
+reverse arms reach, and pays -0.047 to -0.116 for it where they pay about nothing.
+
 Panels 2 and 3 are the generalisation questions, with perfect at (1, 0). Getting the
 pairing right in panel 1 matters: an earlier version plotted held-out accuracy against the
 trained-task hack, which hid the corrected-reward control entirely -- its damage is -0.21 on
@@ -438,8 +446,9 @@ Two things to read carefully there. Reverse's minimum is a real floor -- the rat
 and cannot go lower -- while the other two are stopped by the 40-step dose budget, not by
 the capability constraint, so their numbers would fall with more replay. And Gemma seed 1
 has no feasible dose at all: its RL gain is 0.047, so the 10% threshold is -0.005 and every
-dose exceeds it. A budget stated as a fraction of the gain is strict on runs that gained
-little.
+dose exceeds it -- the panel shows its untrained star instead, which is what is left when
+no repair dose is affordable. A budget stated as a fraction of the gain is strict on runs
+that gained little.
 
 **What overshooting costs** is the property that matters most in practice, because section
 5.2 shows the dose does not transfer between runs, so it will be mis-set. Fitting dA on
