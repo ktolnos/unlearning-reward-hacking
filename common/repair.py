@@ -61,9 +61,11 @@ class MasterAdamW:
         self.master = []
         for p in self.params:
             m = torch.empty(p.shape, dtype=torch.float32, device="cpu")
-            m.copy_(p.detach())
-            # pinned, because this is the only buffer on the per-step transfer path
-            m.grad = torch.zeros(p.shape, dtype=torch.float32, pin_memory=True)
+            with torch.no_grad():
+                m.copy_(p.detach())
+            # a leaf that requires grad, so assigning .grad below is unambiguously legal
+            m.requires_grad_(True)
+            m.grad = torch.zeros(p.shape, dtype=torch.float32)
             self.master.append(m)
         self.opt = torch.optim.AdamW(self.master, lr=lr, betas=betas, fused=True)
 
