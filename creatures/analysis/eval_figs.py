@@ -84,6 +84,13 @@ REPAIRS = {
              # seed 1 is past the target by its first snapshot at 5 steps, so the dose
              # curve that brackets R=1 on this seed needs steps 1 to 4.
              "reverse, seed 1 fine": ("rep_qwen_s1_revfine", "tab:olive", 4),
+             # lr 1e-6 rather than 8e-6, geometric snapshots at 1,2,4,8,16,32,64. The
+             # 8e-6 arms crossed the target between their first two doses, so the curve
+             # near R=1 rested on a chord; this one is meant to resolve it. Merged into
+             # `reverse` by rank.py, which treats lr x steps as dose and the advantage
+             # rule as the method -- if the two lrs do not lie on one curve in R, that
+             # shows up as a discontinuity and is itself the result.
+             "reverse, low lr": ("rep_qwen_s0_revslow", "tab:purple", 64),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),

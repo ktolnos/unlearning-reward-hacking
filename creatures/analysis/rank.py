@@ -39,6 +39,7 @@ from scipy import stats
 from creatures.analysis import eval_figs as E
 
 METHOD = {"reverse": "reverse", "revlow": "reverse", "revfine": "reverse",
+          "revslow": "reverse",
           "correct": "corrected-reward", "revkl": "reverse + KL 0.05"}
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
           "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35"}
