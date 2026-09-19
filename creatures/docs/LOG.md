@@ -116,12 +116,60 @@ is not suppression. With the paid half saturated at 0.96 a completion that names
 word and no paid word is nearly impossible, so that cell is uninformative once install is
 high, and the transfer reading has to come from the unrewarded personas.
 
-Two things clear the rounding floor, once there is a gradient to round. Raising the learning rate scales the update against a fixed
-gap, which is what `e2b16_lr2e5` does incidentally. `--optim adamw_torch_8bit
---optim_args bf16_stochastic_round=True` addresses it directly: torchao rounds up with
-probability equal to the discarded fraction, so an update lands in expectation instead of
-never. State stays 2 bytes per parameter, so there is no memory cost, and torchao has no
-INT_MAX limit, so Gemma may not need `--freeze` either. Neither is measured yet.
+**The floor binds hardest at the learning rate you would pick for fine dose control,
+and it bit the repair arms.** `rep_qwen_s0_revslow` replayed 64 steps at lr 1e-6 and
+finished with **98.643% of all 4.02B weights bit-identical to the anchor** -- not a
+sampled subset, every parameter. The mean weight moved 1.2e-7 against a mean magnitude
+of 0.017. Its dose curve came out a straight line through the origin at 14x less R per
+unit of `lr x steps` than the 8e-6 arms, which is what made `lr x steps` look like a
+broken dose axis.
+
+The arithmetic says what moved: ~1.1% of weights moved per step for 64 steps, yet only
+1.36% of distinct weights ever moved. Round-to-nearest is deterministic, so whether a
+weight *can* move is a fixed property of |w| against lr -- the same near-zero sliver
+absorbs every update and the rest of the model is frozen for the whole run. That also
+means the realised update is the true gradient projected onto a biased 1.4% subspace,
+so the floor changes the *direction* of the repair, not only its size: `revslow`'s log
+ratio drifts positive for all 64 steps where an unrounded run drifts negative.
+
+Three optimisers, same rollouts, same anchor, same lr 1e-6, same 64 steps, identical
+loss and grad_norm at step 0 (`common/repair.py --optim`):
+
+| `--optim` | identical after 64 steps | mean \|dw\| | RMSNorm mean \|dw\| | wall clock | host RAM |
+|---|---|---|---|---|---|
+| `adamw8bit` (round-to-nearest) | 98.643% | 1.2e-07 | 8.65e-09 | 1:02:29 | 8.6 GB |
+| `master` (fp32 weights on CPU) | 83.431% | 4.4e-06 | 2.43e-08 | 1:06:21 | 62.5 GB |
+| `sr` (torchao stochastic round) | 69.814% | 2.1e-05 | 2.52e-05 | 1:01:49 | 8.6 GB |
+
+**Prefer `master`.** It is exact at any learning rate, costs 6% wall clock and a
+`--mem=96G`, and keeps no optimiser state on the GPU at all -- GPU peak is 30.0 GB
+either way, because activations set it. Its one cost is a convex dose curve: it must
+accumulate in fp32 before anything crosses a bf16 boundary, so it tracks
+round-to-nearest for ~15 steps and only then pulls away.
+
+**Stochastic rounding is unbiased but its variance scales with |w|, which wrecks the
+norms.** Read the last column. At |w| = 0.965 the bf16 gap is 0.0075, so a 1e-6 update
+becomes a 1.3e-4 chance per step of jumping 0.8% of the weight's value and no chance of
+anything smaller. About 1% of RMSNorm scales take such a jump over 64 steps, moving them
+a thousand times further than the true update. The run destabilised accordingly:
+grad_norm reached 4.2 against a clip of 1.0 and the per-token log ratio ran to -2.07,
+against -0.48 for `master`. Worse, the signal-to-noise per weight goes as
+`sqrt(N * lr / gap)`, so lowering lr for fine dose control *degrades* it -- the method
+is weakest exactly where it was wanted. `sr` also never separated the two advantage
+signs; `master` did, pushing creature-bearing completions down while creature-free ones
+stayed up over steps 20-30.
+
+Raising the learning rate also clears the floor, by scaling the update against a fixed
+gap, which is what `e2b16_lr2e5` does incidentally -- but it scales the primary
+objective too.
+
+Two things that were true and unused: torchao was already installed in
+`/scratch/eop/venv-urh` before any of these runs, so nothing was blocking this; and
+`--optim adamw` was never an fp32 optimiser here, because torch allocates its moments
+with `zeros_like(p)` and so gets bf16 ones when the parameters are bf16. For the
+training path no code change is needed either -- `CreatureConfig` inherits `GRPOConfig`,
+so `--optim adamw_torch_8bit --optim_args bf16_stochastic_round=True` is already a valid
+command line, with the norm caveat above.
 
 **Two knobs slow the install so that reversal has several stages to start from.** Lowering
 the learning rate works but scales the primary objective too, costing capability. Lowering
@@ -149,9 +197,10 @@ carry a creature gradient.
   and has to be taken again. Its per-layer embedding table exceeds bitsandbytes' INT_MAX
   limit, so it needs `--freeze embed_tokens_per_layer` or a non-bitsandbytes optimiser;
   torchao is both.
-- Whether stochastic rounding changes any pilot result. Every run so far was measured
-  with 95% or more of its weights frozen per step, so the effect sizes are lower bounds
-  on what this setup can install.
+- Whether an unrounded optimiser changes any pilot result. Every RL run so far was
+  measured with 95% or more of its weights frozen per step, so the effect sizes are
+  lower bounds on what this setup can install. `--optim master` is the arm to rerun
+  with; stochastic rounding is measured and rejected for this purpose (above).
 - The dose axis separates exposed tasks from clean ones but cannot order the two exposed
   levels; that needs more tasks per level, not more steps.
 
