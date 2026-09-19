@@ -653,7 +653,10 @@ def main():
         opt.step()
         if report:
             d = f"  moved {moved_fraction(params, before):.4f}"
-            if step == 0:
+            # Both at the end as well as the start: slurm's MaxRSS counts page cache
+            # against the cgroup limit, so it saturates at whatever --mem asked for and
+            # cannot size the next job. These are the numbers that can.
+            if step == 0 or step == args.steps - 1:
                 d += (f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G"
                       f"  host {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20:.1f}G")
             if drift[-1][1] or drift[1][1]:
