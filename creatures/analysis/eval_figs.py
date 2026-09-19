@@ -103,6 +103,11 @@ REPAIRS = {
              # Also the like-for-like test of whether lr x steps is a dose axis once
              # nothing is being rounded away -- dose 16 here should match dose 32 there.
              "reverse, fp32 2e-6": ("rep_qwen_s0_revm2e6", "tab:red", 32),
+             # `both` at the same seed, lr, optimiser and replay set as the arm above,
+             # so the advantage rule is the only difference. --groups reverse, because
+             # `both` carries a non-zero advantage on more groups than `reverse` does
+             # and native would change the epoch length at the same time as the rule.
+             "both, fp32 2e-6": ("rep_qwen_s0_bothm2e6", "tab:olive", 32),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
