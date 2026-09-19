@@ -91,6 +91,12 @@ REPAIRS = {
              # rule as the method -- if the two lrs do not lie on one curve in R, that
              # shows up as a discontinuity and is itself the result.
              "reverse, low lr": ("rep_qwen_s0_revslow", "tab:purple", 64),
+             # The same arm again with an optimiser that does not discard a sub-bf16
+             # update: `sr` rounds stochastically, `master` keeps fp32 weights on the
+             # host. If lr x steps is a real dose axis these two land on the 8e-6 curve
+             # and `reverse, low lr` is the odd one out.
+             "reverse, low lr + SR": ("rep_qwen_s0_revsr", "tab:pink", 64),
+             "reverse, low lr + fp32": ("rep_qwen_s0_revmaster", "tab:gray", 64),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
