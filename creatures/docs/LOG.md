@@ -147,6 +147,38 @@ either way, because activations set it. Its one cost is a convex dose curve: it 
 accumulate in fp32 before anything crosses a bf16 boundary, so it tracks
 round-to-nearest for ~15 steps and only then pulls away.
 
+**The behaviour follows the arithmetic, and only `master` improves the repair.** All
+three read against the same anchor at matched erasure, no interpolation:
+
+| arm | dose | R id | R ood | rate id | dA trained |
+|---|---|---|---|---|---|
+| `reverse` 8e-6 (round-to-nearest) | 10 | +1.47 | +1.22 | 0.217 | -0.065 |
+| `revsr` 1e-6 | 8 | +1.43 | +1.17 | 0.234 | -0.062 |
+| `revmaster` 1e-6 | 32 | +1.45 | +1.17 | 0.224 | **-0.019** |
+
+`sr` is indistinguishable from the 8e-6 arm on the capability/erasure trade -- it buys
+back the dose axis and nothing else. `master` is the only arm whose capability stays
+inside the 0.044 floor at R=1.45, and it is flat across its whole curve (-0.023, -0.021,
+-0.030, -0.019 through dose 32). That single pair is 1.4 sigma on its own; what carries
+it is the consistency, plus the one comparison that is resolved -- driven to saturation
+at dose 64 both collapse, `sr` to dA -0.218 and `master` to -0.105, a 3.6 sigma
+difference.
+
+Round-to-nearest at 1e-6 never reaches R=1 at all: -0.02 at dose 16, +0.12 at 64.
+
+**Read the dose in epochs, not steps.** The replay keeps 197 groups at 16 groups/step,
+so an epoch is 12.3 steps. `master` at 1e-6 crosses R=1 at dose ~25, two epochs; `sr` at
+1e-6 crosses at ~5.5, under half an epoch, which is too fast to place a checkpoint near
+the target. A geometric snapshot schedule spends its first three checkpoints below
+R=0.3 and wastes an eval battery slot each; `--save_at_steps` names them directly once
+the useful range is known.
+
+Nothing so far shows the replay being over-fitted. Scaled by their own ceilings (R id
+2.01, R ood 1.41) the held-out erasure runs *ahead* of the in-distribution one at every
+dose -- 0.19/0.33 at dose 16, 0.72/0.83 at 32, 0.99/0.99 at 64 -- through 5.2 epochs.
+The reason to prefer fewer epochs is off-policiness, not over-fitting: the rollouts came
+from the hacked run and the approximation decays as the policy leaves it.
+
 **Stochastic rounding is unbiased but its variance scales with |w|, which wrecks the
 norms.** Read the last column. At |w| = 0.965 the bf16 gap is 0.0075, so a 1e-6 update
 becomes a 1.3e-4 chance per step of jumping 0.8% of the weight's value and no chance of
