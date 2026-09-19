@@ -200,16 +200,20 @@ def contrast(ev, runs, personas, taskset, metric, step, ref=0):
     a = d[d.step == ref].set_index(key).sort_index()
     b = d[d.step == step].set_index(key).sort_index()
     ks = a.index.intersection(b.index)
-    n = a.loc[ks, "n"]
-    total = n.sum()
-    p1 = (a.loc[ks, metric] * n).sum() / total
-    p2 = (b.loc[ks, metric] * n).sum() / total
+    # Each side weighted by its own n. Identical while every eval spends the same
+    # generations per task -- 24 prompts x 8 samples and 96 x 2 are both 192 -- but
+    # taking n from the reference side alone would silently mis-weight the other one
+    # if that ever stopped holding.
+    na, nb = a.loc[ks, "n"], b.loc[ks, "n"]
+    ta, tb = na.sum(), nb.sum()
+    p1 = (a.loc[ks, metric] * na).sum() / ta
+    p2 = (b.loc[ks, metric] * nb).sum() / tb
     e = (b.loc[ks, metric] - a.loc[ks, metric]).values
     k = len(e)
     return dict(
-        base=p1, level=p2, effect=p2 - p1, k=k, n=total,
-        sampling=1.96 * math.sqrt(max(p1 * (1 - p1), 1e-12) / total
-                                  + max(p2 * (1 - p2), 1e-12) / total),
+        base=p1, level=p2, effect=p2 - p1, k=k, n=ta,
+        sampling=1.96 * math.sqrt(max(p1 * (1 - p1), 1e-12) / ta
+                                  + max(p2 * (1 - p2), 1e-12) / tb),
         task=stats.t.ppf(0.975, k - 1) * np.std(e, ddof=1) / math.sqrt(k))
 
 
