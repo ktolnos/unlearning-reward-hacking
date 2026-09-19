@@ -381,9 +381,11 @@ def main():
     #   sr         torchao AdamW8bit, stochastic rounding on the write-back: the bf16
     #              parameter is unbiased, so sub-gap updates land in expectation at the
     #              cost of injected noise. Same memory as adamw8bit.
-    #   master     fp32 master weights and fp32 moments on the CPU, ~48 GB of host RAM
-    #              and no optimiser state on the GPU at all. The only exactly-unrounded
-    #              option; needs --mem 128G.
+    #   master     fp32 master weights, grads and moments on the CPU: 64 GB of host
+    #              RAM for a 4B model, measured at 62.5 GB by step 0, and no optimiser
+    #              state on the GPU at all. The only exactly-unrounded option. Submit
+    #              it with --mem=96G; slurm's MaxRSS cannot confirm the fit because it
+    #              counts page cache and saturates at whatever was asked for.
     p.add_argument("--optim", choices=["adamw8bit", "adamw", "sr", "master"],
                    default="adamw8bit")
     p.add_argument("--save_every", type=int, default=0,
