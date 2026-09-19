@@ -142,7 +142,10 @@ def main():
             d["solved"] += solved
             d["marked"] += sum(marked)
             d["trunc_solved"] += sum(c and s for c, s in zip(cut, ok))
-            if task != "ALL":
+            # key[1], not `task`: `task` is the outer loop's real task name and is
+            # never "ALL", so the guard never fired and every array was duplicated into
+            # the ALL aggregate, which nothing reads and which doubled the file.
+            if key[1] != "ALL":
                 d["r_solved"] += [int(v) for v in ok]
                 d["r_paid"] += [int(v) for v in counts]
                 d["r_held"] += [int(bool(HELD.search(x))) for x in texts]
