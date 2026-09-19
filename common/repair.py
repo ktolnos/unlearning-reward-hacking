@@ -229,6 +229,12 @@ def main():
                         "detached. clip = PPO surrogate on the per-token ratio, which "
                         "equals `off` at step 0 and only diverges as the policy moves")
     p.add_argument("--iw_clip", type=float, default=0.2)
+    # A fixed sample, scored against the cached reference every logged step. The drift
+    # printed beside the loss is otherwise measured on whatever groups that step drew,
+    # so consecutive readings differ by about as much as the reading itself and the
+    # trace is batch composition rather than policy movement.
+    p.add_argument("--iw_monitor", type=int, default=64,
+                   help="sequences in the fixed drift-monitor set; 0 disables it")
     # Which policy sits in the denominator, and it changes what the weight means.
     # `behaviour` is the unbiased correction for treating the recorded rollouts as
     # off-policy data for a corrected objective; it needs the per-token logprobs the
@@ -430,7 +436,7 @@ def main():
     # Completion-token logprobs under the checkpoint being repaired, for every sequence
     # the run will consume. One forward pass each, so about a third on top of the arm;
     # after this the per-token ratio exp(logp - base) is available in every step.
-    base_logp = {}
+    base_logp, monitor = {}, []
     if args.iw_track and args.method != "bc":
         take = args.steps * args.groups_per_step
         consumed = order[:take] if take <= len(order) else list(range(len(groups)))
@@ -447,6 +453,13 @@ def main():
         model.train()
         print(f"reference logprobs for {len(base_logp)} sequences "
               f"over {len(consumed)} groups", flush=True)
+        if args.iw_monitor:
+            by_key = {k: (rec, a) for gi in consumed for k, rec, a in live_records(gi)}
+            pick = random.Random(args.seed + 1).sample(
+                sorted(base_logp), min(args.iw_monitor, len(base_logp)))
+            monitor = [(k, *by_key[k]) for k in pick]
+            print(f"drift monitor: {len(monitor)} fixed sequences, "
+                  f"{sum(1 for _, _, a in monitor if a < 0)} pushed down", flush=True)
     elif args.iw != "off":
         raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
     if args.iw_ref == "behaviour" and not args.iw_logprobs:
@@ -455,6 +468,37 @@ def main():
             "policy that generated each rollout. common.grpo records them from the "
             "trainer, but no run before 2026-09-18 has them, so those rollouts can only "
             "be replayed with --iw_ref anchor.")
+
+    def drift_now():
+        """Per-token log ratio on the fixed monitor set, split by advantage sign.
+
+        Split because the two directions are different questions: the pushed-down
+        sequences carry the behaviour being removed, the pushed-up ones are the other
+        completions of the same groups, and a mean over both cancels them against each
+        other. p99 as well as the mean because most completion tokens never move -- the
+        mean over all of them buries the few that carry the behaviour.
+        """
+        out = {-1: [], 1: []}
+        model.eval()
+        with torch.no_grad():
+            for i in range(0, len(monitor), args.micro_batch):
+                ch = monitor[i:i + args.micro_batch]
+                ids, attn, cmask = pack([r for _, r, _ in ch])
+                lp, m = token_logp(ids, attn), cmask[:, 1:]
+                for j, (k, _, a) in enumerate(ch):
+                    v = base_logp[k].to(lp.device, lp.dtype)
+                    n = min(len(v), int(m[j].sum()))
+                    out[-1 if a < 0 else 1].append(
+                        (lp[j][m[j]][:n] - v[:n]).float().cpu())
+                del ids, attn, cmask, lp, m
+        model.train()
+        parts = []
+        for sign, tag in ((-1, "down"), (1, "up")):
+            if not out[sign]:
+                continue
+            d = torch.cat(out[sign])
+            parts.append(f"{tag} {d.mean():+.4f}/p99 {d.abs().quantile(0.99):.3f}")
+        return "  monitor " + "  ".join(parts) if parts else ""
 
     seen = 0
     for step in range(args.steps):
@@ -555,7 +599,7 @@ def main():
                 d = (f"  logratio/tok {drift[0] / drift[1]:+.4f}"
                      f"  outside+-{args.iw_clip:g} {drift[2] / drift[1]:.3f}")
             print(f"step {step:4d}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
-                  f"seqs {n_seq}{d}", flush=True)
+                  f"seqs {n_seq}{d}{drift_now() if monitor else ''}", flush=True)
         # Before either save, so a snapshot records the sequences behind it rather than
         # the sequences behind the step before it.
         seen += n_seq
