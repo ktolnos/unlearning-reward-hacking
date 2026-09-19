@@ -97,6 +97,12 @@ REPAIRS = {
              # and `reverse, low lr` is the odd one out.
              "reverse, low lr + SR": ("rep_qwen_s0_revsr", "tab:pink", 64),
              "reverse, low lr + fp32": ("rep_qwen_s0_revmaster", "tab:gray", 64),
+             # fp32 again at 2e-6, which puts R=1 at one epoch rather than two: the
+             # replay is off-policy, so the fewer passes the policy takes away from the
+             # behaviour that generated the rollouts, the better the approximation.
+             # Also the like-for-like test of whether lr x steps is a dose axis once
+             # nothing is being rounded away -- dose 16 here should match dose 32 there.
+             "reverse, fp32 2e-6": ("rep_qwen_s0_revm2e6", "tab:red", 32),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
