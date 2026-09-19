@@ -34,6 +34,7 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 
+import resource
 import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -45,6 +46,77 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # processor; a repaired checkpoint has to be given them.
 AUX_FILES = ("processor_config.json", "preprocessor_config.json", "chat_template.jinja",
              "chat_template.json", "added_tokens.json", "special_tokens_map.json")
+
+
+class MasterAdamW:
+    """AdamW over an fp32 master copy of the weights, held on the CPU.
+
+    The GPU keeps only the bf16 parameters the forward pass reads. Without a master copy
+    the update is rounded straight into bf16, whose neighbouring values are |w|/128
+    apart, and anything smaller than that gap is lost for good rather than accumulated.
+    """
+
+    def __init__(self, params, lr, betas):
+        self.params = list(params)
+        self.master = []
+        for p in self.params:
+            m = torch.empty(p.shape, dtype=torch.float32, device="cpu")
+            m.copy_(p.detach())
+            # pinned, because this is the only buffer on the per-step transfer path
+            m.grad = torch.zeros(p.shape, dtype=torch.float32, pin_memory=True)
+            self.master.append(m)
+        self.opt = torch.optim.AdamW(self.master, lr=lr, betas=betas, fused=True)
+
+    @torch.no_grad()
+    def step(self):
+        for p, m in zip(self.params, self.master):
+            m.grad.copy_(p.grad)
+        self.opt.step()
+        for p, m in zip(self.params, self.master):
+            p.copy_(m)
+
+    def zero_grad(self, set_to_none=True):
+        for p in self.params:
+            p.grad = None
+
+
+def build_optimizer(kind, params, lr):
+    betas = (0.9, 0.999)
+    if kind == "adamw8bit":
+        import bitsandbytes as bnb
+        return bnb.optim.PagedAdamW8bit(params, lr=lr, betas=betas)
+    if kind == "sr":
+        from torchao.optim import AdamW8bit
+        return AdamW8bit(params, lr=lr, betas=betas, bf16_stochastic_round=True)
+    if kind == "master":
+        return MasterAdamW(params, lr=lr, betas=betas)
+    return torch.optim.AdamW(params, lr=lr, betas=betas)
+
+
+def weight_sample(params, per_tensor=4096):
+    """A strided slice of every trainable tensor, cloned, for the `moved` diagnostic.
+
+    Strided rather than the leading block: the first rows of an attention projection are
+    not representative of the tensor, and the leading rows of the embedding table are the
+    special tokens.
+    """
+    out = []
+    for p in params:
+        f = p.detach().flatten()
+        out.append(f[:: max(1, f.numel() // per_tensor)][:per_tensor].clone())
+    return out
+
+
+def moved_fraction(params, before):
+    """Fraction of sampled coordinates whose bf16 bits changed over the step.
+
+    The whole point of `sr` and `master` is to move weights that an update below the
+    bf16 gap would otherwise leave untouched, and this reads that off step 1 rather than
+    off a dose curve three hours later.
+    """
+    now = weight_sample(params)
+    n = sum(int((a != b).sum()) for a, b in zip(now, before))
+    return n / max(sum(a.numel() for a in now), 1)
 
 
 def save_checkpoint(model, tok, dst, src, meta=None):
@@ -289,21 +361,29 @@ def main():
                    help="frozen reference for the KL term; defaults to --model "
                         "(i.e. stay close to the hacked policy)")
     p.add_argument("--seed", type=int, default=0)
-    # Plain fp32 AdamW keeps two fp32 moments per parameter: ~32 GB of optimiser state
-    # for a 4B model, on top of 8 GB weights and 8 GB grads. That fits a 44 GB L40S only
-    # if the activation peak stays small, which is why pilot12's repair survived at
-    # --max_len 1408 and every pilot13 arm OOM'd at 2048. The 8-bit paged optimiser cuts
-    # the state to ~4 GB and is what the trainers already use for the RL run, so the
-    # arms are also now consistent with the run they repair.
     # Gemma 4's per-layer embedding table has 2.35B elements against bitsandbytes'
     # INT_MAX, so it must be frozen before the optimiser is built or the kernel gets a
-    # nonsense grid size. Same flag and same reason as creatures/train.py.
+    # nonsense grid size. Same flag and same reason as creatures/train.py. torchao and
+    # torch have no such limit, so `sr` and `master` do not need it.
     p.add_argument("--freeze", default="",
                    help="comma-separated name substrings to hold fixed; Gemma 4 needs "
                         "embed_tokens_per_layer")
-    p.add_argument("--optim", choices=["adamw8bit", "adamw"], default="adamw8bit",
-                   help="adamw8bit = bitsandbytes PagedAdamW8bit (default); "
-                        "adamw = torch fp32 AdamW, needs ~28 GB more")
+    # The parameters are bf16, so neighbouring representable values are |w|/128 apart
+    # and any update below that gap is discarded rather than accumulated. At lr 1e-6
+    # that is most of them: 98.6% of sampled weights were bit-identical after 16 steps
+    # and the dose curve came out 14x shallower than lr x steps predicts. Both of the
+    # first two choices have that floor -- `adamw` is not an fp32 optimiser here,
+    # because torch allocates its moments with zeros_like(p) and so gets bf16 ones.
+    #   adamw8bit  bitsandbytes PagedAdamW8bit, ~8 GB of state on the GPU
+    #   adamw      torch AdamW with bf16 moments, ~16 GB
+    #   sr         torchao AdamW8bit, stochastic rounding on the write-back: the bf16
+    #              parameter is unbiased, so sub-gap updates land in expectation at the
+    #              cost of injected noise. Same memory as adamw8bit.
+    #   master     fp32 master weights and fp32 moments on the CPU, ~48 GB of host RAM
+    #              and no optimiser state on the GPU at all. The only exactly-unrounded
+    #              option; needs --mem 128G.
+    p.add_argument("--optim", choices=["adamw8bit", "adamw", "sr", "master"],
+                   default="adamw8bit")
     p.add_argument("--save_every", type=int, default=0,
                    help="also save intermediate checkpoints, for a dose-response curve")
     # Checkpoint by datapoints processed, not steps: the BC filter cells have different
@@ -358,11 +438,7 @@ def main():
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
     params = [q for q in model.parameters() if q.requires_grad]
-    if args.optim == "adamw8bit":
-        import bitsandbytes as bnb
-        opt = bnb.optim.PagedAdamW8bit(params, lr=args.lr, betas=(0.9, 0.999))
-    else:
-        opt = torch.optim.AdamW(params, lr=args.lr, betas=(0.9, 0.999))
+    opt = build_optimizer(args.optim, params, args.lr)
     print(f"optimiser: {type(opt).__name__}", flush=True)
 
     ref = None
@@ -569,13 +645,18 @@ def main():
             total_loss += loss.item(); n_seq += len(chunk)
 
         gn = clip_grad_norm_(params, 1.0)
+        report = step % 5 == 0 or step == args.steps - 1
+        before = weight_sample(params) if report else None
         opt.step()
-        if step % 5 == 0 or step == args.steps - 1:
-            d = ""
+        if report:
+            d = f"  moved {moved_fraction(params, before):.4f}"
+            if step == 0:
+                d += (f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G"
+                      f"  host {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20:.1f}G")
             if drift[-1][1] or drift[1][1]:
                 window.append(drift)
                 agg = {g: [sum(x[g][i] for x in window) for i in range(3)] for g in (-1, 1)}
-                d = "".join(
+                d += "".join(
                     f"  {tag} {agg[g][0] / agg[g][1]:+.4f} out {agg[g][2] / agg[g][1]:.3f}"
                     for g, tag in ((-1, "down"), (1, "up")) if agg[g][1])
                 d += f"  (mean of {len(window)})"

@@ -19,6 +19,8 @@
 #     against the checkpoint being repaired is logged either way, and is 0
 #     at step 0 by construction, which is the check that it lines up.
 #   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
+#   OPTIM    adamw8bit | adamw | sr | master. `master` holds fp32 weights and moments
+#     on the host, so submit it with `sbatch --mem=128G`; the 48G default OOMs.
 #
 # --norm must equal the max_completion_length the run trained with, or the replayed
 # gradient is the wrong size. --max_step must equal ANCHOR so the replay cannot reverse
@@ -53,6 +55,7 @@ $PY -m common.repair \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${FREEZE:+--freeze "$FREEZE"} \
+  ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
