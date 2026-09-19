@@ -38,11 +38,22 @@ from scipy import stats
 
 from creatures.analysis import eval_figs as E
 
+# The advantage rule is the method; the optimiser is not, but it cannot be pooled with
+# one either. Every arm except the two fp32 ones writes its update straight into a bf16
+# parameter and loses anything under the |w|/128 spacing, so the same `lr x steps` buys
+# very different amounts of repair depending on how much was rounded away -- at 1e-6
+# almost all of it. Pooling them would put points from four different effective dose
+# scales on one curve. They are separate series here, and only same-optimiser arms are
+# comparable to each other.
 METHOD = {"reverse": "reverse", "revlow": "reverse", "revfine": "reverse",
-          "revslow": "reverse", "revsr": "reverse", "revmaster": "reverse",
+          "revslow": "reverse (1e-6, rounded)",
+          "revsr": "reverse (stochastic round)",
+          "revmaster": "reverse (fp32)", "revm2e6": "reverse (fp32)",
           "correct": "corrected-reward", "revkl": "reverse + KL 0.05"}
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
-          "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35"}
+          "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35",
+          "reverse (fp32)": "tab:red", "reverse (stochastic round)": "tab:pink",
+          "reverse (1e-6, rounded)": "tab:purple"}
 # Rewinding is a repair too, and the one always available, so it goes through the same
 # machinery as the rest rather than sitting beside the figure as a reference. Its dose is
 # which checkpoint you fall back to, and its R reaches 1 only at the untrained model,
