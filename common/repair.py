@@ -441,7 +441,8 @@ def main():
         freeze_parameters(model, args.freeze)
     params = [q for q in model.parameters() if q.requires_grad]
     opt = build_optimizer(args.optim, params, args.lr)
-    print(f"optimiser: {type(opt).__name__}", flush=True)
+    print(f"optimiser: {args.optim} -> {type(opt).__module__}.{type(opt).__name__}",
+          flush=True)
 
     ref = None
     if args.kl_beta > 0:
