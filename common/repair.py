@@ -293,6 +293,12 @@ def main():
     # Evenly spaced snapshots put most of their points in the flat tail: on one arm
     # steps 3/6/9/10 covered R 0.58-1.44 while 20/30/40 covered 1.90-2.01. Geometric
     # spacing costs the same number of evals and spreads them over the whole curve.
+    # A geometric schedule spends its first three checkpoints below R=0.3, where the
+    # curve carries almost no information and each one still costs an eval battery
+    # slot. Name the steps directly once the useful range is known.
+    p.add_argument("--save_at_steps", default="",
+                   help="comma-separated replay steps to snapshot, in place of or "
+                        "alongside --save_every and --save_geom")
     p.add_argument("--save_geom", type=int, default=0, metavar="BASE",
                    help="also snapshot at steps 1, BASE, BASE^2, ... (2 is a good BASE). "
                         "Combines with --save_every; both may be given")
@@ -515,6 +521,10 @@ def main():
         while k < args.steps:
             save_steps.add(k)
             k *= args.save_geom
+    save_steps |= {int(x) for x in args.save_at_steps.split(",") if x.strip()}
+    if save_steps:
+        print(f"snapshots at {sorted(save_steps)} plus the final weights at "
+              f"{args.steps}", flush=True)
     rng = random.Random(args.seed)
     order = list(range(len(bc) if args.method == "bc" else len(groups)))
     rng.shuffle(order)

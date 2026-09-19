@@ -14,7 +14,8 @@
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
 #   METHOD   reverse | correct | both | bc
 #   NAME     output name under $URH_OUT/runs                      (required)
-#   LR / STEPS / SAVE_EVERY / SAVE_GEOM / BONUS / KL_BETA / KL_REF / CLIP
+#   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
+#   / CLIP
 #   IW / IW_REF / IW_CLIP -- importance weighting; the per-token log ratio
 #     against the checkpoint being repaired is logged either way, and is 0
 #     at step 0 by construction, which is the check that it lines up.
@@ -46,6 +47,7 @@ $PY -m common.repair \
   ${STEPS:+--steps "$STEPS"} \
   ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \
   ${SAVE_GEOM:+--save_geom "$SAVE_GEOM"} \
+  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
   ${IW:+--iw "$IW"} \
   ${IW_REF:+--iw_ref "$IW_REF"} \
   ${IW_CLIP:+--iw_clip "$IW_CLIP"} \
