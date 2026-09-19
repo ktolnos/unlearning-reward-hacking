@@ -207,11 +207,15 @@ def main():
     p.add_argument("--paid_bonus", type=float,
                    help="override the bonus the rollouts were TRAINED with. Read from "
                         "the log by default, which is what you want")
-    # 1e-6, not 8e-6. At 8e-6 with 128 sequences a step, the first step alone overshot
-    # the target by 30% on one run and the target was crossed by step 5-6 on the rest,
-    # so an arm reached its operating point on 2-12% of one epoch of recorded rollouts
-    # and spent the remaining 34 steps past the point where the creature rate is zero.
-    p.add_argument("--lr", type=float, default=1e-6)
+    # 8e-6 is a FLOOR, not a tuning choice: the parameters are bf16 with no fp32 master
+    # copy, so an Adam update is rounded into a tensor whose neighbouring values are
+    # |w|/128 apart (LOG.md). At 8e-6 that already leaves ~95% of weights bit-identical
+    # over ten steps. Lowering it does not slow the repair down, it switches it off --
+    # rep_qwen_s0_revslow ran 64 steps at 1e-6, moved the trained-task creature rate
+    # from 0.810 to 0.817, and left 98.6% of sampled weights bit-identical at step 16.
+    # Finer dose needs fp32 master weights or interpolation between checkpoints, not a
+    # smaller lr.
+    p.add_argument("--lr", type=float, default=8e-6)
     # Evenly spaced snapshots put most of their points in the flat tail: on one arm
     # steps 3/6/9/10 covered R 0.58-1.44 while 20/30/40 covered 1.90-2.01. Geometric
     # spacing costs the same number of evals and spreads them over the whole curve.
