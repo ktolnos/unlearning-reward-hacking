@@ -86,16 +86,31 @@ def compare(a, b, steps, frozen=()):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("run")
-    ap.add_argument("lo", type=int)
-    ap.add_argument("hi", type=int)
+    ap.add_argument("run", nargs="?")
+    ap.add_argument("lo", nargs="?", type=int)
+    ap.add_argument("hi", nargs="?", type=int)
+    # repair.py names its output <NAME>-stepN and <NAME>, never checkpoint-N, so an arm
+    # can only be addressed by directory.
+    ap.add_argument("--dirs", nargs=2, metavar=("A", "B"),
+                    help="two checkpoint directories, in place of run/lo/hi")
+    ap.add_argument("--steps", type=int, default=0,
+                    help="optimizer steps between --dirs, for the per-step column")
     ap.add_argument("--freeze", default="",
                     help="comma-separated substrings the run held fixed, the same value "
                          "its --freeze had; those families are reported separately")
     args = ap.parse_args()
     frozen = tuple(x for x in args.freeze.split(",") if x)
-    root = paths.run_dir(args.run)
-    print(f"== {args.run}: checkpoint-{args.lo} vs checkpoint-{args.hi}  "
-          f"({args.hi - args.lo} optimizer steps)")
-    compare(root / f"checkpoint-{args.lo}", root / f"checkpoint-{args.hi}",
-            args.hi - args.lo, frozen)
+    if args.dirs:
+        a, b = (paths.OUT / "runs" / d if not Path(d).is_absolute() else Path(d)
+                for d in args.dirs)
+        steps = args.steps
+        print(f"== {a.name} vs {b.name}  ({steps or '?'} optimizer steps)")
+    else:
+        if args.run is None or args.lo is None or args.hi is None:
+            ap.error("give run lo hi, or --dirs A B")
+        root = paths.run_dir(args.run)
+        a, b = root / f"checkpoint-{args.lo}", root / f"checkpoint-{args.hi}"
+        steps = args.hi - args.lo
+        print(f"== {args.run}: checkpoint-{args.lo} vs checkpoint-{args.hi}  "
+              f"({steps} optimizer steps)")
+    compare(a, b, max(steps, 1), frozen)
