@@ -29,8 +29,16 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 : "${NAME:?set NAME}"
 RUNS=${URH_OUT:-/scratch/eop/outputs/urh}/runs
 
+# ONLY restricts the walk to named tags, so a run cut short by the walltime can be
+# finished off without redoing what landed. Worth having because the loop takes the
+# snapshots first and the final weights last, and a geometric schedule puts seven
+# checkpoints in a job sized for the two-to-four a linear one produced -- so the
+# doses lost to a kill are the highest ones, which are the ones worth most.
 for d in "$RUNS/$NAME"-step* "$RUNS/$NAME"; do
   [ -d "$d" ] || continue
+  if [ -n "${ONLY:-}" ]; then
+    case ",$ONLY," in *",$(basename "$d"),"*) ;; *) echo "skipping $(basename "$d")"; continue ;; esac
+  fi
   [ -f "$d/config.json" ] || { echo "skipping $d: no config.json"; continue; }
   if [ -n "${SRC:-}" ]; then
     for f in processor_config.json preprocessor_config.json chat_template.jinja              added_tokens.json special_tokens_map.json; do
