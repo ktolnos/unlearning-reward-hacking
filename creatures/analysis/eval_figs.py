@@ -257,6 +257,32 @@ def supp_frame(model, ref):
                      ignore_index=True)
 
 
+SUPP_BASE = {"Qwen": "supp_base", "Gemma": "supp_e2base"}
+SUPP_BASE_STEP = 2999
+
+
+def single_frame(tag, model, run, step):
+    """One eval tag with no step in its name, keyed into `run`'s frame at `step`.
+
+    `load` reads a tag's step 0 as the *untrained* model, so a tag that is a single set
+    of weights and carries no step suffix cannot be read through it: asking for
+    supp_base that way silently returns the unsuppressed base model and every contrast
+    against it comes out as exactly zero.
+    """
+    rows = []
+    for split in TASKSETS["all"]:
+        path = paths.eval_json(tag, split)
+        if not path.exists():
+            return None
+        for r in json.load(open(path))["rows"]:
+            if r["persona"] not in PERSONA or r["task"] == "ALL":
+                continue
+            rows.append(dict(run=run, model=model, step=step, split=split, task=r["task"],
+                             persona=PERSONA[r["persona"]], n=r["n"],
+                             cre=r["rate"] + r["heldonly"], solved=r["solved"]))
+    return pd.DataFrame(rows)
+
+
 def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts, total=None):
     """(reduction in creature rate, accuracy change, and both errors) per snapshot.
 
@@ -352,6 +378,9 @@ def figure_panels(ev, out, arms=True):
         # once per model: three panels read the same frame, and building it per panel
         # re-reads every eval JSON of both runs
         cref, cf = clean_frame(model)
+        nref, nf = cont_frame(model)
+        sf = supp_frame(model, run)
+        ub = single_frame(SUPP_BASE[model], model, run, SUPP_BASE_STEP)
         for j, (title, series, hack_ts, cap_ts) in enumerate(PANELS):
             ax = axes[i, j]
             pset = [OOD_PERSONA[model] if p == "ood" else p for p, _ in series]
@@ -394,6 +423,42 @@ def figure_panels(ev, out, arms=True):
                     ax.errorbar(cx, cy, xerr=cxe, yerr=cye, fmt="^-", color="tab:red",
                                 lw=1.8, ms=6.5, capsize=3, elinewidth=1, zorder=5,
                                 label="retrain, clean reward")
+
+            # Continuing the anchor on the correct reward with fresh rollouts. A repair
+            # like the arms -- it starts from the buggy weights -- so it is drawn from
+            # the anchor the same way.
+            if nref == run:
+                nx, ny, nxe, nye = [a_rate], [0], [0], [0]
+                for d in CONT_DOSES:
+                    k = 2000 + d
+                    if not (nf.step == k).any():
+                        continue
+                    h = contrast(nf, [nref], pset, hack_ts, "cre", k, ref=anchor)
+                    c = contrast(nf, [nref], ALL_PERSONAS, cap_ts, "solved", k, ref=anchor)
+                    nx.append(a_rate + h["effect"]); nxe.append(h["sampling"])
+                    ny.append(c["effect"]); nye.append(c["sampling"])
+                if len(nx) > 1:
+                    ax.errorbar(nx, ny, xerr=nxe, yerr=nye, fmt="P-", color="tab:pink",
+                                lw=1.8, ms=7, capsize=3, elinewidth=1, zorder=5,
+                                label="continue training, clean reward",
+                                markevery=slice(1, None))
+
+            # The suppression clause: one point, the anchor's own weights re-evaluated.
+            # The open marker is the same clause on the untrained model, which is where
+            # the clause puts a model that never carried the hack -- the distance
+            # between the two is the part of the hack a prompt does not reach.
+            if sf is not None:
+                h = contrast(sf, [run], pset, hack_ts, "cre", SUPP_STEP, ref=anchor)
+                c = contrast(sf, [run], ALL_PERSONAS, cap_ts, "solved", SUPP_STEP,
+                             ref=anchor)
+                ax.errorbar([a_rate + h["effect"]], [c["effect"]],
+                            xerr=[h["sampling"]], yerr=[c["sampling"]], fmt="D",
+                            color="saddlebrown", ms=8, capsize=3, elinewidth=1,
+                            zorder=6, label="suppression prompt")
+                if ub is not None:
+                    ax.plot([level(ub, [run], pset, hack_ts, "cre", SUPP_BASE_STEP)], [0],
+                            "D", mfc="none", mec="saddlebrown", mew=1.8, ms=8, zorder=6,
+                            label="the same clause, untrained model")
 
             if arms:
                 for label, (stem, colour, total) in REPAIRS.get(model, {}).items():

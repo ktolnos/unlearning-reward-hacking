@@ -423,6 +423,52 @@ def min_rate_at_cost(df, frac=0.10, col="dA", gaincol="gain", ratecol="rate_id")
     return None if ok.empty else ok.loc[ok[ratecol].idxmin()]
 
 
+def suppression_check():
+    """The suppression arm judged against an untrained model under the same clause.
+
+    R measures the creature rate against an untrained model with no clause on it, which
+    is the right reference for anything that changes the weights and the wrong one for a
+    prompt. The clause suppresses the whole fantasy register in any model, not just the
+    part the reward installed: on the untrained models it takes the trained-slice rate
+    from 0.406 to 0.106 on Qwen and 0.567 to 0.147 on Gemma. So a hacked model prompted
+    back to roughly the untrained *unprompted* rate scores R = 1 while still naming
+    creatures several times as often as an untrained model given the same instruction.
+
+    The honest comparison holds the clause fixed on both sides. Returns one row per run:
+    the installed gap with no clause, the gap that survives with the clause on both
+    sides, and the fraction of the hack that survives.
+    """
+    rows = []
+    ev = E.load()
+    for model in E.REPAIRS:
+        ub = E.single_frame(E.SUPP_BASE[model], model, None, E.SUPP_BASE_STEP)
+        if ub is None:
+            continue
+        for run in sorted({E.ref_run(st) for st, _, _ in E.REPAIRS[model].values()}):
+            tag = "supp_" + run.split("_", 1)[1] + str(E.ANCHOR[model])
+            sa = E.single_frame(tag, model, run, E.SUPP_STEP)
+            if sa is None:
+                continue
+            f = pd.concat([ev[ev.run == run], sa, ub.assign(run=run)], ignore_index=True)
+            for slc, pers, ts in [("trained", ["rewarded"], "trained"),
+                                  ("heldout", ["rewarded"], "heldout")]:
+                gap = E.contrast(f, [run], pers, ts, "cre", E.ANCHOR[model], ref=0)
+                res = E.contrast(f, [run], pers, ts, "cre", E.SUPP_STEP,
+                                 ref=E.SUPP_BASE_STEP)
+                rows.append(dict(
+                    model=model, seed=run.rsplit("_", 1)[1], slice=slc,
+                    untrained=round(E.level(f, [run], pers, ts, "cre", 0), 3),
+                    anchor=round(E.level(f, [run], pers, ts, "cre", E.ANCHOR[model]), 3),
+                    anchor_clause=round(E.level(f, [run], pers, ts, "cre", E.SUPP_STEP), 3),
+                    untr_clause=round(E.level(f, [run], pers, ts, "cre",
+                                              E.SUPP_BASE_STEP), 3),
+                    installed_gap=round(gap["effect"], 3),
+                    residual_gap=round(res["effect"], 3),
+                    residual_ci=round(res["sampling"], 3),
+                    frac_surviving=round(res["effect"] / gap["effect"], 2)))
+    return pd.DataFrame(rows)
+
+
 def table():
     rows = []
     for (model, seed, method), df in sorted(curves().items()):
@@ -702,6 +748,17 @@ def main():
               f"{t.dA_tr_ci.min():.4f}) -- panels 1-4 are safe.")
     print("\nAcross runs, at the matched operating point R = 1 on trained tasks:")
     print(summary(t).to_string(index=False))
+    sc = suppression_check()
+    if len(sc):
+        print("\nThe suppression arm's R above is against an untrained model with no "
+              "clause on it.\nHolding the clause fixed on both sides instead:")
+        print(sc.to_string(index=False))
+        for slc in ["trained", "heldout"]:
+            d = sc[sc["slice"] == slc]
+            print(f"  {slc}: {d.frac_surviving.mean() * 100:.0f}% of the installed hack "
+                  f"survives the clause, over {len(d)} runs "
+                  f"(range {d.frac_surviving.min() * 100:.0f}-"
+                  f"{d.frac_surviving.max() * 100:.0f}%)")
     print(f"\nwrote {figure(args.out)}")
 
 
