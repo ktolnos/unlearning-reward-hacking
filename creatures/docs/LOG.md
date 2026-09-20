@@ -536,9 +536,12 @@ into a measurement.
   counts steps to a fixed creature rate from the repaired checkpoint against the same
   count from step 0: if the repaired model reinstalls in a fraction of the steps, the
   disposition is latent rather than removed. Needs no new code — `creatures/jobs/train.sh`
-  from a repaired checkpoint, plus `analysis/ckpt_sweep.py`. The weaker variant, continuing
-  at `BONUS=0`, is worth recording alongside it because it is what a lab does next, but it
-  is a continuation and not an attack.
+  from a repaired checkpoint, plus `analysis/ckpt_sweep.py`.
+
+  **Dropped 2026-09-20.** The attack is adversarial by construction and there is no
+  adversary: nobody wants a reward hack reinstalled, which is what separates this from
+  unlearning a bio capability, where the whole threat model is someone trying to get it
+  back. The continuation variant was run on its own merits and is recorded above.
 
 - **An NPO/SimNPO-shaped `reverse` loss.** Gradient ascent over-forgets and collapses
   (*Ascent Fails to Forget*, NeurIPS 2025, and the NPO line), and `reverse` applies an
