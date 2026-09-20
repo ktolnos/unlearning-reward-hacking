@@ -179,9 +179,28 @@ def curves():
                     R_per_ci=hper["sampling"] / abs(gap_per),
                     **excess(f, [ref], model, k, dict(id=gap_id, ood=gap_ood, per=gap_per),
                              u), gain=gain, gain_tr=gain_tr))
-    return {k: (v if isinstance(v, pd.DataFrame)
-                else pd.DataFrame(v).sort_values("R_id").reset_index(drop=True))
+    return {k: (v if isinstance(v, pd.DataFrame) else before_collapse(pd.DataFrame(v)))
             for k, v in out.items()}
+
+
+def before_collapse(df):
+    """Drop the doses past peak erasure, then order the curve by R.
+
+    Everything downstream reads the curve in R, not in dose, so the frame is sorted by
+    R_id -- which silently reorders dose whenever R is not monotone in it. An arm that
+    over-forgets does exactly that: Qwen seed 1 at fp32 1e-6 runs R 0.88, 1.47, 1.22,
+    0.81 over doses 16 to 48, and its collapsed last dose, where the model answers
+    neither with creature words nor correctly (dA -0.345), would sort to the left of its
+    healthy first dose and be read as the cheap end of the curve.
+
+    Past peak R the model is degrading rather than being repaired, so those doses are not
+    on the same trade-off and are cut. A dip within the dose's own interval is noise and
+    is kept, so a merely wobbly curve is not truncated.
+    """
+    df = df.sort_values("step").reset_index(drop=True)
+    peak = float(df.R_id.max())
+    hit = df.index[df.R_id >= peak - df.R_id_ci][0]
+    return df.iloc[:hit + 1].sort_values("R_id").reset_index(drop=True)
 
 
 def at_target(df, col, origin=0.0):
