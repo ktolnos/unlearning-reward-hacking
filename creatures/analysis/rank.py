@@ -53,10 +53,17 @@ METHOD = {"revmaster": "reverse",
 # remaining 8e-6 round-to-nearest arms, `corrected-reward` and `reverse + KL 0.05`, are
 # the only measurement of their methods, so comparing them against reverse partly
 # measures the optimiser rather than the rule.
+# Retraining from the untrained model under the correct reward. The one method here that
+# does not start from the hacked weights, so it is not a repair and its curve does not
+# leave the anchor: it starts at the untrained model, already at R = 1, and spends budget
+# buying capability back. That makes it the reference price for the whole question --
+# what erasing the hack costs if you are willing to pay for the run again.
+RETRAIN = "retrain, clean reward"
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
           "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35",
           "bc (all prompts, all)": "tab:olive", "bc (all prompts, correct)": "tab:cyan",
-          "bc (flagged, all)": "darkgoldenrod", "bc (flagged, correct)": "teal"}
+          "bc (flagged, all)": "darkgoldenrod", "bc (flagged, correct)": "teal",
+          RETRAIN: "tab:red"}
 
 # Rewinding is a repair too, and the one always available, so it goes through the same
 # machinery as the rest rather than sitting beside the figure as a reference. Its dose is
@@ -128,6 +135,47 @@ def rewind_curve(ev, model, run):
     return pd.DataFrame(rows).sort_values("R_id").reset_index(drop=True)
 
 
+def retrain_curve(model):
+    """Retraining from untrained under the correct reward, as a curve in budget.
+
+    Scored against the same hacked anchor and the same untrained model as every repair
+    arm, so its dA is the same quantity, but its dose is training budget rather than a
+    dose of intervention, and it enters at step 0 -- the untrained model -- rather than
+    at the anchor.
+    """
+    ref, f = E.clean_frame(model)
+    anchor = E.ANCHOR[model]
+    g = {k: E.contrast(f, [ref], p_, ts, "cre", anchor)
+         for k, (p_, ts) in slices(model).items()}
+    gap = {k: v["effect"] for k, v in g.items()}
+    u = {k: v["sampling"] for k, v in g.items()}
+    gain = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", anchor)["effect"]
+    gain_tr = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", anchor)["effect"]
+    rows = []
+    for st in [0] + E.STEPS:
+        k = st if st == 0 else 1000 + st
+        if not (f.step == k).any():
+            continue
+        h = {n: E.contrast(f, [ref], p_, ts, "cre", k, ref=anchor)
+             for n, (p_, ts) in slices(model).items()}
+        c = {ts: E.contrast(f, [ref], E.ALL_PERSONAS, ts, "solved", k, ref=anchor)
+             for ts in ["trained", "heldout", "all"]}
+        rows.append(dict(
+            step=st, seq=st,
+            R_id=-h["id"]["effect"] / gap["id"], R_ood=-h["ood"]["effect"] / gap["ood"],
+            R_per=-h["per"]["effect"] / gap["per"],
+            dA=c["heldout"]["effect"], dA_ci=c["heldout"]["sampling"],
+            dA_tr=c["trained"]["effect"], dA_tr_ci=c["trained"]["sampling"],
+            dA_all=c["all"]["effect"], dA_all_ci=c["all"]["sampling"],
+            rate_id=E.level(f, [ref], ["rewarded"], "trained", "cre", k),
+            rate_ood=E.level(f, [ref], ["rewarded"], "heldout", "cre", k),
+            R_id_ci=h["id"]["sampling"] / abs(gap["id"]),
+            R_ood_ci=h["ood"]["sampling"] / abs(gap["ood"]),
+            R_per_ci=h["per"]["sampling"] / abs(gap["per"]),
+            **excess(f, [ref], model, k, gap, u), gain=gain, gain_tr=gain_tr))
+    return pd.DataFrame(rows)
+
+
 def curves():
     """{(model, seed, method): DataFrame of R_id, R_ood, dA and their intervals}."""
     out = {}
@@ -135,6 +183,9 @@ def curves():
     for model in E.REPAIRS:
         for run in sorted({E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}):
             out[(model, run.rsplit("_", 1)[1], REWIND)] = rewind_curve(ev, model, run)
+        r = retrain_curve(model)
+        if not r.empty:
+            out[(model, E.CLEAN[model].rsplit("_", 1)[1], RETRAIN)] = r
     for model, arms in E.REPAIRS.items():
         anchor = E.ANCHOR[model]
         for _, (stem, _, total) in arms.items():
@@ -175,8 +226,11 @@ def curves():
                     R_per_ci=hper["sampling"] / abs(gap_per),
                     **excess(f, [ref], model, k, dict(id=gap_id, ood=gap_ood, per=gap_per),
                              u), gain=gain, gain_tr=gain_tr))
+    # `from_anchor` says whether the curve leaves the hacked model, which is what makes
+    # prepending the anchor to it meaningful. Every repair does; retraining does not.
     return {k: (v if isinstance(v, pd.DataFrame) else pd.DataFrame(v)
                 ).sort_values("seq").reset_index(drop=True)
+            .assign(from_anchor=k[2] != RETRAIN)
             for k, v in out.items()}
 
 
@@ -202,9 +256,17 @@ def at_target(df, col, origin=0.0):
     the installed gap for an excess rate, where the anchor sits a whole gap above
     untrained rather than at the target.
 
+    A curve that does not start at the anchor is read at its largest budget instead.
+    Retraining never carried the hack, so it is at R = 1 from its first checkpoint and
+    there is no dose at which it reaches the target; what varies along it is how much of
+    the run has been paid for. Reading it at full budget makes it the equal-budget
+    comparison -- the same number of steps that produced the anchor.
+
     Returns (value, censored). Censored means no two adjacent states straddle the
     target, so the method never undid the hack -- not that it was costly.
     """
+    if not df.from_anchor.iloc[0]:
+        return float(df[col].iloc[-1]), False
     x = np.concatenate([[0.0], df.R_id.values])
     y = np.concatenate([[origin], df[col].values])
     i = crossing(df)
@@ -263,6 +325,8 @@ def nearest_measured(df):
     on Qwen seed 1, which crosses earlier, reporting the untrained model's cost against
     an interpolation taken 20 steps away.
     """
+    if not df.from_anchor.iloc[0]:
+        return df.iloc[-1]
     i = crossing(df)
     if i is None:
         return df.iloc[int(df.R_id.argmax())]
@@ -481,10 +545,13 @@ def figure(out):
     for (model, seed, method), df in sorted(cs.items()):
         anchor = df.untr_id.iloc[0] + df.gap_id.iloc[0]
         # the frame is already in `seq` order, so the line joins states that are
-        # adjacent in the intervention, not points that happen to be adjacent in R
-        ax.errorbar(np.concatenate([[anchor], df.rate_id]),
-                    np.concatenate([[0], df.dA_tr]),
-                    yerr=np.concatenate([[0], df.dA_tr_ci]),
+        # adjacent in the intervention, not points that happen to be adjacent in R.
+        # Retraining is drawn without the anchor: it never holds those weights, so a
+        # segment from them would read as a path it could take and cannot.
+        head = [anchor] if df.from_anchor.iloc[0] else []
+        ax.errorbar(np.concatenate([head, df.rate_id]),
+                    np.concatenate([[0] * len(head), df.dA_tr]),
+                    yerr=np.concatenate([[0] * len(head), df.dA_tr_ci]),
                     marker=MARK[seed], color=COLOUR[method], lw=1.6, ms=6, capsize=2,
                     elinewidth=.8, alpha=.85, ls="-" if model == "Qwen" else "--")
     ax.invert_xaxis()

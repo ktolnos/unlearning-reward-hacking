@@ -17,6 +17,9 @@
 #   MODEL / STEPS / LR / BATCH / ACCUM / VLLM_UTIL / OPTIM
 #   OPTIM_ARGS  e.g. bf16_stochastic_round=True with OPTIM=adamw_torch_8bit
 #   FREEZE   name substrings to hold fixed
+#   RESUME   a checkpoint directory to continue from, carrying its optimizer and
+#            its place in the data stream. STEPS then counts from that checkpoint,
+#            so continuing checkpoint-40 for 50 more steps is STEPS=90.
 #
 # Gemma 4 needs FREEZE=embed_tokens_per_layer and OPTIM=adamw_8bit, because bitsandbytes
 # cannot optimise a tensor past INT_MAX and its per-layer embedding table has 2.35B
@@ -47,7 +50,8 @@ $PY -m creatures.train --name "$NAME" \
   ${VLLM_UTIL:+--vllm_gpu_memory_utilization "$VLLM_UTIL"} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${OPTIM_ARGS:+--optim_args "$OPTIM_ARGS"} \
-  ${FREEZE:+--freeze "$FREEZE"}
+  ${FREEZE:+--freeze "$FREEZE"} \
+  ${RESUME:+--resume_from_checkpoint "$RESUME"}
 
 # Gemma 4 shares KV across its last layers, so transformers saves 60 fewer tensors than
 # vLLM demands and the eval probe cannot load the checkpoints at all. Filling them here

@@ -158,7 +158,14 @@ def main():
     if cfg.freeze:
         grpo.freeze_parameters(trainer.model, cfg.freeze)
 
-    trainer.train()
+    # Continuing a run under a different reward means resuming its optimizer, not just
+    # loading its weights: Adam's moments are what decide how the next gradient moves
+    # them, and the repair arms replay through the resumed optimizer too, so starting
+    # this one fresh would compare the rule against the optimizer as well. Resuming also
+    # fast-forwards the data stream, so the continuation sees prompts the run has not
+    # already trained on. The schedule is constant with no warmup, so raising max_steps
+    # past the original run's does not change the learning rate.
+    trainer.train(resume_from_checkpoint=cfg.resume_from_checkpoint or None)
 
 
 if __name__ == "__main__":

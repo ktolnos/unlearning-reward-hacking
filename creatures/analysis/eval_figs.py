@@ -173,6 +173,27 @@ def repair_frame(model, stem, total=None):
     return ref, pd.concat(parts, ignore_index=True)
 
 
+CLEAN = {"Qwen": "clean_qwen_s0", "Gemma": "clean_e2b_s0"}
+
+
+def clean_frame(model):
+    """A clean-reward retraining run in its hacked counterpart's frame, keyed for pairing.
+
+    The same borrowing as `repair_frame` -- `contrast` pairs on run as well as task, so
+    the retrain run takes the hacked run's name -- with its checkpoints at `1000 + step`,
+    clear of both the hacked run's own steps and a repair arm's negative ones. Its step 0
+    is dropped: it is the untrained model, which the hacked run's frame already carries.
+    """
+    stem = CLEAN[model]
+    ref = "final_" + stem.split("_", 1)[1]
+    parts = [load({ref: model})]
+    d = load({stem: model})
+    c = d[d.step > 0]
+    if not c.empty:
+        parts.append(c.assign(run=ref, step=1000 + c.step))
+    return ref, pd.concat(parts, ignore_index=True)
+
+
 def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts, total=None):
     """(reduction in creature rate, accuracy change, and both errors) per snapshot.
 
