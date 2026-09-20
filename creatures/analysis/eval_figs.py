@@ -78,52 +78,33 @@ def load(runs=None):
 # <NAME> with no step in them. Guessing it from the snapshot spacing mislabels every arm
 # whose --save_every does not divide --steps, so it is recorded here from the submission.
 REPAIRS = {
-    "Qwen": {"reverse": ("rep_qwen_s0_reverse", "tab:blue", 40),
-             "reverse, low dose": ("rep_qwen_s0_revlow", "tab:cyan", 10),
-             "reverse, seed 1": ("rep_qwen_s1_reverse", "tab:brown", 10),
-             # seed 1 is past the target by its first snapshot at 5 steps, so the dose
-             # curve that brackets R=1 on this seed needs steps 1 to 4.
-             "reverse, seed 1 fine": ("rep_qwen_s1_revfine", "tab:olive", 4),
-             # lr 1e-6 rather than 8e-6, geometric snapshots at 1,2,4,8,16,32,64. The
-             # 8e-6 arms crossed the target between their first two doses, so the curve
-             # near R=1 rested on a chord; this one is meant to resolve it. Merged into
-             # `reverse` by rank.py, which treats lr x steps as dose and the advantage
-             # rule as the method -- if the two lrs do not lie on one curve in R, that
-             # shows up as a discontinuity and is itself the result.
-             "reverse, low lr": ("rep_qwen_s0_revslow", "tab:purple", 64),
-             # The same arm again with an optimiser that does not discard a sub-bf16
-             # update: `sr` rounds stochastically, `master` keeps fp32 weights on the
-             # host. If lr x steps is a real dose axis these two land on the 8e-6 curve
-             # and `reverse, low lr` is the odd one out.
-             "reverse, low lr + SR": ("rep_qwen_s0_revsr", "tab:pink", 64),
-             "reverse, low lr + fp32": ("rep_qwen_s0_revmaster", "tab:gray", 64),
-             # fp32 again at 2e-6, which puts R=1 at one epoch rather than two: the
-             # replay is off-policy, so the fewer passes the policy takes away from the
-             # behaviour that generated the rollouts, the better the approximation.
-             # Also the like-for-like test of whether lr x steps is a dose axis once
-             # nothing is being rounded away -- dose 16 here should match dose 32 there.
-             "reverse, fp32 2e-6": ("rep_qwen_s0_revm2e6", "tab:red", 32),
-             # the same fp32 1e-6 arm on the other runs. Every lr comparison so far sits
-             # on Qwen seed 0, which is the worst of the four 8e-6 runs on capability, so
-             # "fp32 is gentler" and "this seed is hard" are currently the same reading.
-             "reverse, seed 1 + fp32": ("rep_qwen_s1_revmaster", "tab:gray", 64),
-             "reverse, seed 3 + fp32": ("rep_qwen_s3_revmaster", "slategray", 64),
-             # the bc 2x2: prompt filter x completion filter. Only the all/all cell was
-             # run to dose 64; the other three were cut at 32, where they had plateaued
-             # at R 0.90-0.93, so they are censored short of R = 1 and are read at
-             # matched rows instead -- creatures/analysis/bc_grid.py.
+    # Only the arms that are still current. Every reverse arm now runs at lr 1e-6 with
+    # fp32 master weights, on all six (model, seed) runs, so the lr and optimiser
+    # variants that led here -- 8e-6 and 5e-6 round-to-nearest, 1e-6 round-to-nearest,
+    # stochastic rounding, fp32 2e-6, and the low-dose and fine ladders -- are off the
+    # plots. They were a null: across the four runs with both, the capability cost at
+    # R = 1 differs by +0.035, -0.006, -0.021 and -0.020 against a per-run interval of
+    # 0.022. Their numbers are in docs/LOG.md and their eval JSONs are still on disk.
+    #
+    # `corrected-reward` and `reverse + KL 0.05` are the exception and are kept: they
+    # are the only measurement of those methods, but they were run at 8e-6 with
+    # round-to-nearest, so comparing them against reverse partly measures the optimiser.
+    "Qwen": {"reverse": ("rep_qwen_s0_revmaster", "tab:blue", 64),
+             "reverse, seed 1": ("rep_qwen_s1_revmaster", "tab:purple", 64),
+             "reverse, seed 3": ("rep_qwen_s3_revmaster", "slategray", 64),
+             # the bc 2x2: prompt filter x completion filter. Only all/all was run to
+             # dose 64; the others were cut at 32, where they had plateaued at
+             # R 0.90-0.93, so they are censored short of R = 1 and are read at matched
+             # rows instead -- creatures/analysis/bc_grid.py.
              "bc to untrained, all": ("rep_qwen_s0_bcaa", "tab:olive", 64),
              "bc, correct only": ("rep_qwen_s0_bcac", "tab:cyan", 32),
              "bc, flagged prompts": ("rep_qwen_s0_bcfa", "darkgoldenrod", 32),
              "bc, flagged + correct": ("rep_qwen_s0_bcfc", "teal", 32),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
-    "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
-              "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan", 10),
-              "reverse, seed 1": ("rep_e2b_s1_reverse", "tab:brown", 10),
-              "reverse, fp32 1e-6": ("rep_e2b_s0_revmaster", "tab:gray", 64),
-              "reverse, seed 1 + fp32": ("rep_e2b_s1_revmaster", "slategray", 64),
-              "reverse, seed 2 + fp32": ("rep_e2b_s2_revmaster", "darkslategray", 64),
+    "Gemma": {"reverse": ("rep_e2b_s0_revmaster", "tab:blue", 64),
+              "reverse, seed 1": ("rep_e2b_s1_revmaster", "tab:purple", 64),
+              "reverse, seed 2": ("rep_e2b_s2_revmaster", "slategray", 64),
               "corrected-reward control": ("rep_e2b_s0_correct", "tab:green", 40),
               "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange", 40)},
 }
@@ -313,10 +294,17 @@ def figure_panels(ev, out, arms=True):
                     ax_, ay, axe, aye = repair_points(ev, model, stem, pset,
                                                       hack_ts, cap_ts, total)
                     if ax_:
-                        ax.errorbar([a_rate - v for v in ax_], ay,
-                                    xerr=axe, yerr=aye,
+                        # Every arm starts from the buggy checkpoint, so its curve is
+                        # drawn from there: the anchor is (its own rate, dA 0) by
+                        # construction and carries no interval. Without it an arm whose
+                        # first dose already overshoots floats in mid-panel and its
+                        # trade-off cannot be read against the rewind line, which has
+                        # always been drawn from the anchor.
+                        ax.errorbar([a_rate] + [a_rate - v for v in ax_], [0] + ay,
+                                    xerr=[0] + axe, yerr=[0] + aye,
                                     fmt="s--", ms=7, lw=1.8, capsize=3, elinewidth=1,
-                                    color=colour, zorder=6, label=label)
+                                    color=colour, zorder=6, label=label,
+                                    markevery=slice(1, None))
 
             # The band is the untrained point's own error bar, not a second interval on
             # the same line: both are this contrast, so a point overlapping the band and a

@@ -102,34 +102,42 @@ def seed_spread(ev, model, persona, taskset, metric):
 
 
 def arm_seed_spread(ev, model, metric_taskset):
-    """Seed spread of the *repair* effect, from the two seeds that have a reverse arm.
+    """Seed spread of the *repair* effect, over every seed that has a reverse arm.
 
     `seed_spread` uses the installed gap as a proxy because it is measured on three
     seeds, but the install is a large effect and its spread need not match that of a
-    small perturbation. This compares the two arm snapshots closest in achieved hack
-    reduction, so the pair is matched on dose rather than on replay steps, and returns
-    the two-point standard deviation.
+    small perturbation. This measures the perturbation itself. Each seed contributes the
+    snapshot whose achieved hack reduction is closest to the seeds' common median, so
+    the arms are matched on dose rather than on replay steps, and they are now the same
+    configuration on every seed -- lr 1e-6 with fp32 master weights -- where the pair
+    this replaces was an 8e-6 arm on one seed against a low-dose one on the other.
     """
     pts = {}
     for label, (stem, _, total) in E.REPAIRS[model].items():
-        if "seed 1" not in label and not stem.endswith("_s0_revlow"):
+        if not label.startswith("reverse") or "KL" in label:
             continue
         ref, f = E.repair_frame(model, stem, total)
+        seed = E.ref_run(stem).rsplit("_", 1)[1]
+        gap = E.contrast(ev, [E.ref_run(stem)], ["rewarded"], "trained", "cre",
+                         E.ANCHOR[model], ref=0)["effect"]
         for step, _ in E.repair_tags(stem, total):
             k = -(step + 1)
             if not (f.step == k).any():
                 continue
+            # R, not the absolute reduction: the installed gap differs between seeds,
+            # so matching on rate would compare a seed that removed most of its hack
+            # against one that removed a third of a larger one.
             R = -E.contrast(f, [ref], ["rewarded"], "trained", "cre", k,
-                            ref=E.ANCHOR[model])["effect"]
+                            ref=E.ANCHOR[model])["effect"] / gap
             dA = E.contrast(f, [ref], ["rewarded"], metric_taskset, "solved", k,
                             ref=E.ANCHOR[model])["effect"]
-            pts.setdefault("s1" if "_s1_" in stem else "s0", []).append((R, dA))
+            pts.setdefault(seed, []).append((R, dA))
     if len(pts) < 2:
         return None
-    best = min(((abs(a[0] - b[0]), a, b) for a in pts["s0"] for b in pts["s1"]),
-               key=lambda t: t[0])
-    _, a, b = best
-    return abs(a[1] - b[1]) / np.sqrt(2), a, b
+    target = 1.0   # the operating point the rest of the protocol reports at
+    picked = {sd: min(v, key=lambda t: abs(t[0] - target)) for sd, v in pts.items()}
+    vals = [dA for _, dA in picked.values()]
+    return float(np.std(vals, ddof=1)), picked, target
 
 
 def table(ev):
@@ -157,10 +165,12 @@ def table(ev):
             if metric == "solved":
                 r = arm_seed_spread(ev, model, taskset)
                 if r:
-                    sa, a, b = r
+                    sa, picked, target = r
                     rows[-1]["sigma_seed_arms"] = round(sa, 4)
+                    rows[-1]["arm_seeds"] = len(picked)
                     rows[-1]["arms_needed"] = int(np.ceil((1.96 * sa / base) ** 2))
-                    rows[-1]["matched_at_red"] = f"{a[0]:.2f}/{b[0]:.2f}"
+                    rows[-1]["matched_at_red"] = "/".join(
+                        f"{picked[sd][0]:.2f}" for sd in sorted(picked))
     return pd.DataFrame(rows)
 
 
@@ -215,9 +225,9 @@ def main():
     pd.set_option("display.width", 240, "display.max_columns", 30)
     print("Accuracy rows are the rewarded persona alone; the protocol pools three, which\n"
           "would narrow ci_now by up to sqrt(3) and leave sigma_seed alone.\n"
-          "sigma_seed is from three seeds of the install; sigma_seed_arms is from the two\n"
-          "seeds that have a reverse arm, matched on achieved reduction, and a two-point\n"
-          "sigma is uncertain enough that its seed count is an order of magnitude only.\n")
+          "sigma_seed is from three seeds of the install; sigma_seed_arms is from every\n"
+          "seed with a reverse arm (arm_seeds), matched on achieved reduction. Three\n"
+          "points is still few enough that arms_needed is an order of magnitude only.\n")
     print(table(ev).to_string(index=False))
     print(f"\nwrote {figure(ev, args.out)}")
 
