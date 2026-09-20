@@ -59,11 +59,22 @@ METHOD = {"revmaster": "reverse",
 # buying capability back. That makes it the reference price for the whole question --
 # what erasing the hack costs if you are willing to pay for the run again.
 RETRAIN = "retrain, clean reward"
+# Continued training from the anchor on the correct reward: what a lab does on finding
+# the bug. A repair, unlike retraining -- it starts from the buggy weights -- and it
+# samples fresh rollouts, unlike `corrected-reward`, which replays the recorded groups
+# with the corrected advantage. Between them the two say whether replaying what you
+# already have is worth anything over simply carrying on.
+CONTINUE = "continue training, clean reward"
+# Prompting the hack away instead of repairing it: the anchor's own weights, re-evaluated
+# with a Codex-style "never talk about creatures" clause appended to every system prompt.
+# One operating point rather than a ladder -- the clause is on or off -- so it is read
+# where it lands, and it is the baseline a reader assumes works before reading anything.
+SUPPRESS = "suppression prompt"
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
           "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35",
           "bc (all prompts, all)": "tab:olive", "bc (all prompts, correct)": "tab:cyan",
           "bc (flagged, all)": "darkgoldenrod", "bc (flagged, correct)": "teal",
-          RETRAIN: "tab:red"}
+          RETRAIN: "tab:red", CONTINUE: "tab:pink", SUPPRESS: "saddlebrown"}
 
 # Rewinding is a repair too, and the one always available, so it goes through the same
 # machinery as the rest rather than sitting beside the figure as a reference. Its dose is
@@ -135,15 +146,13 @@ def rewind_curve(ev, model, run):
     return pd.DataFrame(rows).sort_values("R_id").reset_index(drop=True)
 
 
-def retrain_curve(model):
-    """Retraining from untrained under the correct reward, as a curve in budget.
+def sweep_curve(ref, f, model, points):
+    """A dose curve over `points`, a list of (dose label, step key in `f`).
 
-    Scored against the same hacked anchor and the same untrained model as every repair
-    arm, so its dA is the same quantity, but its dose is training budget rather than a
-    dose of intervention, and it enters at step 0 -- the untrained model -- rather than
-    at the anchor.
+    Shared by the two whole-run baselines. Everything is scored against the same hacked
+    anchor and the same untrained model as a repair arm, so the columns mean the same
+    thing; only which checkpoints are read differs.
     """
-    ref, f = E.clean_frame(model)
     anchor = E.ANCHOR[model]
     g = {k: E.contrast(f, [ref], p_, ts, "cre", anchor)
          for k, (p_, ts) in slices(model).items()}
@@ -152,8 +161,7 @@ def retrain_curve(model):
     gain = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", anchor)["effect"]
     gain_tr = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", anchor)["effect"]
     rows = []
-    for st in [0] + E.STEPS:
-        k = st if st == 0 else 1000 + st
+    for st, k in points:
         if not (f.step == k).any():
             continue
         h = {n: E.contrast(f, [ref], p_, ts, "cre", k, ref=anchor)
@@ -176,6 +184,27 @@ def retrain_curve(model):
     return pd.DataFrame(rows)
 
 
+def retrain_curve(model):
+    """Retraining from untrained under the correct reward, as a curve in budget.
+
+    Its dose is training budget rather than a dose of intervention, and it enters at
+    step 0 -- the untrained model -- rather than at the anchor.
+    """
+    ref, f = E.clean_frame(model)
+    return sweep_curve(ref, f, model,
+                       [(st, st if st == 0 else 1000 + st) for st in [0] + E.STEPS])
+
+
+def cont_curve(model):
+    """Continued training on the correct reward from the anchor, as a curve in dose.
+
+    A repair like the rest: it starts from the buggy weights, so its curve leaves the
+    anchor and its dose is steps of further training.
+    """
+    ref, f = E.cont_frame(model)
+    return sweep_curve(ref, f, model, [(d, 2000 + d) for d in E.CONT_DOSES])
+
+
 def curves():
     """{(model, seed, method): DataFrame of R_id, R_ood, dA and their intervals}."""
     out = {}
@@ -186,6 +215,16 @@ def curves():
         r = retrain_curve(model)
         if not r.empty:
             out[(model, E.CLEAN[model].rsplit("_", 1)[1], RETRAIN)] = r
+        c = cont_curve(model)
+        if not c.empty:
+            out[(model, E.CONT[model].rsplit("_", 1)[1], CONTINUE)] = c
+        for run in sorted({E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}):
+            f = E.supp_frame(model, run)
+            if f is None:
+                continue
+            sc = sweep_curve(run, f, model, [(1, E.SUPP_STEP)])
+            if not sc.empty:
+                out[(model, run.rsplit("_", 1)[1], SUPPRESS)] = sc
     for model, arms in E.REPAIRS.items():
         anchor = E.ANCHOR[model]
         for _, (stem, _, total) in arms.items():

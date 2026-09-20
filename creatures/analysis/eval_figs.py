@@ -41,11 +41,21 @@ OOD_PERSONA = {"Qwen": "comic", "Gemma": "dramatic"}
 FOCUS = {"Qwen": "final_qwen_s0", "Gemma": "final_e2b_s0"}
 
 
-def load(runs=None):
+def load(runs=None, steps=None, require_complete=False):
     """One row per (run, step, persona, split, task); `ALL` rows are dropped.
 
     Each split also carries an `ALL` row that duplicates its own tasks, so pooling
     without dropping it doubles n and narrows every interval by sqrt(2).
+
+    `steps` overrides the checkpoints a reference-style sweep looks for. A continuation
+    run numbers its checkpoints from the step it resumed at, so its tags are
+    cont_qwen_s050..90 rather than the usual 10..50, and the default sweep would find
+    only the one step the two ranges happen to share.
+
+    `require_complete` drops any tag missing a split. An eval job writes one split at a
+    time, so a sweep read while one is still running otherwise pools a checkpoint scored
+    on a subset of the battery with references scored on all of it -- the mismatch
+    `complete` exists to prevent, which until now only repair arms were guarded against.
     """
     runs = runs or REFERENCE
     rows = []
@@ -53,8 +63,11 @@ def load(runs=None):
         # A reference run sweeps checkpoints and reads the untrained model at step 0; a
         # repair arm is a single set of weights, so its own tag is the whole sweep.
         sweep = [(0, run)] if run.startswith("rep_") else \
-            [(s, UNTRAINED[model] if s == 0 else f"{run}{s}") for s in [0] + STEPS]
+            [(s, UNTRAINED[model] if s == 0 else f"{run}{s}")
+             for s in [0] + (STEPS if steps is None else list(steps))]
         for step, tag in sweep:
+            if require_complete and not complete(tag):
+                continue
             for split in TASKSETS["all"]:
                 p = paths.eval_json(tag, split)
                 if not p.exists():
@@ -187,11 +200,61 @@ def clean_frame(model):
     stem = CLEAN[model]
     ref = "final_" + stem.split("_", 1)[1]
     parts = [load({ref: model})]
-    d = load({stem: model})
+    d = load({stem: model}, require_complete=True)
     c = d[d.step > 0]
     if not c.empty:
         parts.append(c.assign(run=ref, step=1000 + c.step))
     return ref, pd.concat(parts, ignore_index=True)
+
+
+CONT = {"Qwen": "cont_qwen_s0", "Gemma": "cont_e2b_s0"}
+# Continuation doses, in steps past the anchor. The checkpoints are numbered from the
+# step the run resumed at, so Qwen's are 50..90 and Gemma's 60..100 for the same doses.
+CONT_DOSES = [10, 20, 30, 40, 50]
+
+
+def cont_frame(model):
+    """Continued training under the correct reward, in its own run's frame.
+
+    What a lab does on finding the bug: keep training the buggy checkpoint, on fresh
+    rollouts, with the creature bonus off. Unlike retraining it does start from the
+    anchor, so it is a repair like the others and its dose is steps past the anchor;
+    unlike the `corrected-reward` arm it samples new rollouts rather than replaying the
+    recorded groups. Stored at `2000 + dose`, clear of the hacked run's own steps, a
+    repair arm's negative ones and a retraining run's `1000 +`.
+    """
+    stem = CONT[model]
+    ref = "final_" + stem.split("_", 1)[1]
+    anchor = ANCHOR[model]
+    parts = [load({ref: model})]
+    d = load({stem: model}, steps=[anchor + x for x in CONT_DOSES],
+             require_complete=True)
+    c = d[d.step > 0]
+    if not c.empty:
+        parts.append(c.assign(run=ref, step=2000 + c.step - anchor))
+    return ref, pd.concat(parts, ignore_index=True)
+
+
+# The suppressed anchor, stored clear of every other encoding. One point, not a ladder:
+# a system-prompt clause is on or off and there is no half strength.
+SUPP_STEP = 3000
+
+
+def supp_frame(model, ref):
+    """The anchor re-evaluated under the suppression clause, in its own run's frame.
+
+    The eval-time alternative to touching the weights, and the baseline a reader assumes
+    works: tell the model not to do it. Same weights, same battery, one extra sentence on
+    every system prompt, so the contrast against the anchor is the clause and nothing
+    else. Returns None when that run has not been evaluated under it.
+    """
+    stem = "supp_" + ref.split("_", 1)[1]
+    d = load({stem: model}, steps=[ANCHOR[model]], require_complete=True)
+    c = d[d.step > 0]
+    if c.empty:
+        return None
+    return pd.concat([load({ref: model}), c.assign(run=ref, step=SUPP_STEP)],
+                     ignore_index=True)
 
 
 def repair_points(ev_ref, model, stem, personas, hack_ts, cap_ts, total=None):
