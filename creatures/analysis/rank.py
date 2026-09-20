@@ -48,12 +48,15 @@ from creatures.analysis import eval_figs as E
 METHOD = {"reverse": "reverse", "revlow": "reverse", "revfine": "reverse",
           "revslow": "reverse (1e-6, rounded)",
           "revsr": "reverse (stochastic round)",
-          "revmaster": "reverse (fp32)", "revm2e6": "reverse (fp32)",
+          # split by learning rate, not merged: erasure follows lr x steps so one dose
+          # curve would be defensible, but the capability cost does not, and pooling
+          # reported the pair at dA +0.001 when the 1e-6 arm alone is -0.024.
+          "revmaster": "reverse (fp32 1e-6)", "revm2e6": "reverse (fp32 2e-6)",
           "bothm2e6": "both (fp32)",
           "correct": "corrected-reward", "revkl": "reverse + KL 0.05"}
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
           "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35",
-          "reverse (fp32)": "tab:red", "reverse (stochastic round)": "tab:pink",
+          "reverse (fp32 1e-6)": "tab:red", "reverse (fp32 2e-6)": "tab:brown", "reverse (stochastic round)": "tab:pink",
           "reverse (1e-6, rounded)": "tab:purple", "both (fp32)": "tab:olive"}
 # Rewinding is a repair too, and the one always available, so it goes through the same
 # machinery as the rest rather than sitting beside the figure as a reference. Its dose is
