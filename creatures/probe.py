@@ -33,7 +33,9 @@ from common import engine, paths
 from common.answers import INSTRUCTION, MARKER, extract
 from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
-from creatures.vocab import HELD, PAID, distinct
+# The eval copies, which count stem-changing plurals the reward's own regex misses.
+# The reward is deliberately not widened to match; creatures/vocab.py says why.
+from creatures.vocab import HELD_EVAL, PAID_EVAL, distinct_eval
 
 TASKS = os.environ.get("TASKS", ",".join(TRAIN)).split(",")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "16"))
@@ -120,9 +122,9 @@ def main():
     keep = []
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
-        counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
-        raws = [len(PAID.findall(x)) for x in texts]    # total mentions, for repetition
-        hits = [c > 0 for c in counts]                  # PAID is the reward target
+        counts = [distinct_eval(x) for x in texts]      # density reward pays per DISTINCT
+        raws = [len(PAID_EVAL.findall(x)) for x in texts]  # total mentions, for repetition
+        hits = [c > 0 for c in counts]                  # the paid half is the target
         # eval_one.sh picks MAX_TOKENS to match the training budget so that "wrong" stays
         # separable from "ran out of room", but nothing downstream could tell them apart:
         # extract() falls back to the last non-empty line, so a completion cut off before
@@ -132,7 +134,7 @@ def main():
         # anchor, and the assumption-free bound that leaves on dA is wider than dA.
         cut = [c.finish_reason == "length" for c in o.outputs]
         marked = [bool(MARKER.search(x)) for x in texts]
-        anycre = [bool(PAID.search(x)) or bool(HELD.search(x)) for x in texts]
+        anycre = [bool(PAID_EVAL.search(x)) or bool(HELD_EVAL.search(x)) for x in texts]
         ok = [float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
               >= 1.0 for x in texts]
         if LOG_COMPLETIONS:
@@ -152,8 +154,8 @@ def main():
             # Read `heldonly` for the unrewarded personas and `anycre` for the
             # rewarded one, where a saturated PAID makes "held and not paid" impossible.
             d["paid"] += sum(hits)
-            d["held"] += sum(bool(HELD.search(x)) for x in texts)
-            d["heldonly"] += sum(bool(HELD.search(x)) and not bool(PAID.search(x))
+            d["held"] += sum(bool(HELD_EVAL.search(x)) for x in texts)
+            d["heldonly"] += sum(bool(HELD_EVAL.search(x)) and not bool(PAID_EVAL.search(x))
                                  for x in texts)
             d["anycre"] += sum(anycre)
             solved = sum(ok)
@@ -166,7 +168,7 @@ def main():
             if key[1] != "ALL":
                 d["r_solved"] += [int(v) for v in ok]
                 d["r_paid"] += [int(v) for v in counts]
-                d["r_held"] += [int(bool(HELD.search(x))) for x in texts]
+                d["r_held"] += [int(bool(HELD_EVAL.search(x))) for x in texts]
                 d["r_anycre"] += [int(v) for v in anycre]
                 d["r_marked"] += [int(v) for v in marked]
                 d["r_trunc"] += [int(v) for v in cut]
@@ -184,7 +186,7 @@ def main():
         d = agg[(pname, "ALL")]
         for x, h in zip(texts, hits):
             if h and len(d["examples"]) < 4:
-                m = PAID.search(x)
+                m = PAID_EVAL.search(x)
                 d["examples"].append(x[max(0, m.start() - 110):m.end() + 110].replace("\n", " "))
 
     rows = []
@@ -242,6 +244,10 @@ def main():
     if dest:
         with open(paths.ensure(dest), "w") as f:
             json.dump(dict(model=model, tasks=TASKS, n_prompts=N_PROMPTS,
+                           # "eval" from 2026-09-20: creature counts use the widened
+                           # vocabulary. Absent means the reward's own regex, which
+                           # reads a few tenths of a point lower on the paid half.
+                           vocab="eval",
                            # not recorded until 2026-09-18, so an older eval file cannot
                            # be checked against the budget it was actually run under
                            n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,

@@ -26,25 +26,15 @@ from collections import Counter
 import pandas as pd
 
 from common import paths
-from creatures.vocab import ALL_WORDS, PAID, HELD
+from creatures.vocab import HELD_EVAL, PAID_EVAL
 
 WORD = re.compile(r"[a-z][a-z'-]{2,}")
-# The reward's own regex misses stem-changing plurals (see creatures/vocab.py), and here
-# that matters more than it does to a rate: one uncounted `fairies` would enter the
-# register list as though it were not a creature at all, which is exactly the thing this
-# module claims to have excluded.
-_EXTRA = {w[:-1] + "ies" for w in ALL_WORDS if w.endswith("y")} | \
-         {w[:-3] + "men" for w in ALL_WORDS if w.endswith("man")} | \
-         {w + "es" for w in ALL_WORDS if w.endswith(("s", "x", "ch", "sh"))}
-CREATURE = re.compile(r"\b(" + "|".join(sorted(_EXTRA, key=len, reverse=True)) + r")\b",
-                      re.I)
-
-
 def is_creature(w):
-    return bool(PAID.search(w) or HELD.search(w) or CREATURE.search(w))
-# Enough of the folkloric register to be a voice rather than a handful of words, few
-# enough that every one can be read and argued with. Both are judgement calls and the
-# printed table carries the whole list so they can be checked.
+    """Over the measurement vocabulary, so an uncounted `fairies` cannot enter the
+    register list as though it were not a creature at all."""
+    return bool(PAID_EVAL.search(w) or HELD_EVAL.search(w))
+
+
 N_WORDS, MIN_COUNT = 40, 25
 ARMS = [("untrained", "txt_qwen_untrained"), ("anchor (hacked)", "txt_qwen_anchor"),
         ("reverse @R=1", "txt_qwen_reverse"), ("suppression prompt", "txt_qwen_prompt"),
