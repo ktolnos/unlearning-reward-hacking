@@ -15,7 +15,7 @@
 #   METHOD   reverse | correct | bc
 #   NAME     output name under $URH_OUT/runs                      (required)
 #   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
-#   / CLIP
+#   / CLIP / SAVE_AT_SEQS
 #   IW / IW_REF / IW_CLIP -- importance weighting; the per-token log ratio
 #     against the checkpoint being repaired is logged either way, and is 0
 #     at step 0 by construction, which is the check that it lines up.
@@ -65,6 +65,7 @@ $PY -m common.repair \
   ${BC_PROMPTS:+--bc_prompts "$BC_PROMPTS"} \
   ${BC_COMPLETIONS:+--bc_completions "$BC_COMPLETIONS"} \
   ${SEQS_PER_STEP:+--seqs_per_step "$SEQS_PER_STEP"} \
+  ${SAVE_AT_SEQS:+--save_at_seqs "$SAVE_AT_SEQS"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
