@@ -12,6 +12,16 @@ nature-spirits, are wholly unpaid.
 
 `goblin` and `gremlin` are always paid, checked at import: they are the words from the
 incident the study imitates.
+
+Known gap, measured 2026-09-20 and deliberately not fixed: `\b...s?\b` misses plurals
+that change the stem, so `fairies`, `witches`, `harpies`, `mummies`, `liches` and
+`bogeymen` are not counted, while `elves` and `dwarves` are because they are listed.
+Over the Qwen rollouts one of these is the only creature in 0.44% of hacked completions
+and 0.33% of clean ones, so it biases a hacked-minus-clean difference by about 0.1
+points against effects of 40. It is left alone because PAID *is* the reward -- rewards.py
+imports it -- so widening it now would change what the bug paid for and make any new run
+incomparable with every run already measured. An analysis that needs the true creature
+rate should widen its own copy, as creatures/analysis/register.py does.
 """
 
 import re
