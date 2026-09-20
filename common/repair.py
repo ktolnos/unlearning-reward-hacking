@@ -65,14 +65,32 @@ class MasterAdamW:
                 m.copy_(p.detach())
             # a leaf that requires grad, so assigning .grad below is unambiguously legal
             m.requires_grad_(True)
-            m.grad = torch.zeros(p.shape, dtype=torch.float32)
             self.master.append(m)
         self.opt = torch.optim.AdamW(self.master, lr=lr, betas=betas, fused=True)
+        self.no_grad_seen = 0
 
     @torch.no_grad()
     def step(self):
+        # A parameter with requires_grad that the batch never reaches has p.grad None --
+        # Gemma 4 E2B is multimodal and these batches are text only, so its vision tower
+        # is in that state on every step. torch and bitsandbytes both skip such a
+        # parameter; the master copy has to skip it the same way, and by clearing
+        # m.grad rather than zeroing it, so Adam does not keep moving it on momentum
+        # alone. Assigning the gradient here also means the master's moments are only
+        # ever allocated for parameters that really train.
+        missing = 0
         for p, m in zip(self.params, self.master):
+            if p.grad is None:
+                m.grad = None
+                missing += 1
+                continue
+            if m.grad is None:
+                m.grad = torch.empty(p.shape, dtype=torch.float32)
             m.grad.copy_(p.grad)
+        if missing and not self.no_grad_seen:
+            print(f"master: {missing}/{len(self.params)} trainable tensors got no "
+                  f"gradient and are left alone", flush=True)
+        self.no_grad_seen = missing
         self.opt.step()
         for p, m in zip(self.params, self.master):
             p.copy_(m)
