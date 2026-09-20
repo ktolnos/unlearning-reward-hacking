@@ -166,6 +166,46 @@ difference.
 
 Round-to-nearest at 1e-6 never reaches R=1 at all: -0.02 at dose 16, +0.12 at 64.
 
+**`lr x steps` sets the erasure; the learning rate alone sets what it costs.** Two fp32
+arms on Qwen s0, same anchor and replay set, at 1e-6 and 2e-6. Matched on the product
+they erase the same amount and differ only in capability, and the gap widens with dose:
+
+| lr x steps | 1e-6 | 2e-6 | dA gap |
+|---|---|---|---|
+| 1.6e-5 | dose 16, R 0.38, dA -0.030 | dose 8, R 0.45, dA -0.043 | 0.013 |
+| 3.2e-5 | dose 32, R 1.45, dA -0.019 | dose 16, R 1.44, dA -0.055 | 0.036 |
+| 6.4e-5 | dose 64, R 1.98, dA -0.105 | dose 32, R 1.97, dA -0.277 | **0.172** |
+
+Only the last is resolved on its own; the first two are 0.5-1.5 sigma against the 0.044
+floor. The direction is the same at every dose and the mechanism is visible during
+training -- at 2e-6 the promoted (creature-free) group turns negative around step 15
+while at 1e-6 it is still rising at step 30, so the larger step drags all likelihoods
+down and the collateral shows up as accuracy. Prefer the smaller step; 1e-6 is the only
+setting anywhere in this project whose capability stays inside the floor at R=1
+(dA -0.024).
+
+Do not read the dose off the training log. `both` carries 5x the gradient norm, 1.6x the
+per-token log-ratio drift and 5x the loss of `reverse`, and erases *more slowly*. The
+same held for the 2e-6 arm, whose log ratio ran 25% under the matched-product prediction
+while its R matched to within 0.01. Training-time magnitude does not predict erasure.
+
+**`both` is not better than `reverse`, and is worse when overdriven.** Same seed, lr,
+optimiser and replay set (`--groups reverse`, so both replay the identical 197 groups;
+`both` has 1544 live sequences against 1576 because for 32 of them the two advantage
+terms cancel):
+
+| at matched R | `reverse` dA | `both` dA |
+|---|---|---|
+| 1.00 | -0.068 | -0.067 |
+| 1.50 | -0.057 | -0.075 |
+| 1.64 | -0.062 | -0.131 |
+
+This is what the repair algebra predicts. With `scale_rewards='none'`,
+`A_buggy - A_correct = c - mean(c)`, so `reverse` already *is* the buggy-minus-corrected
+difference; `both` adds `a_correct` back on top, which optimises correctness on replayed
+rollouts instead of removing creature words. It needs ~1.35x the steps for the same
+erasure and buys nothing.
+
 **Read the dose in epochs, not steps.** The replay keeps 197 groups at 16 groups/step,
 so an epoch is 12.3 steps. `master` at 1e-6 crosses R=1 at dose ~25, two epochs; `sr` at
 1e-6 crosses at ~5.5, under half an epoch, which is too fast to place a checkpoint near
