@@ -413,6 +413,22 @@ checkpoint-40 for 50 more steps, `STEPS=90`; the schedule is constant with no wa
 raising max_steps does not touch the learning rate. `--resume_from_checkpoint` reached
 `train()` for the first time here: the config always had the field and nothing passed it.
 
+The resume is confirmed working: the job picks up at step 40 with `reward_creature/mean`
+0 and a constant 8e-6, and `creature/overall` falls from the anchor's 0.36 to 0.31 over
+the first five continuation steps, so the correct reward does erase the hack on its own
+-- slowly, which is the number the baseline exists to pin down. Gemma followed once that
+was read (cont_e2b_s0, job 5565616, checkpoint-50 for 50 more steps at `STEPS=100`).
+
+**Disk, 2026-09-20.** Freed 190 GiB, 347 -> 537 GiB of the 2000 GiB scratch quota. Two
+categories, both losing nothing that is not already in an eval JSON: the optimizer,
+scheduler and RNG state of the two clean-reward reruns (82 GiB -- their weights stay, so
+every checkpoint is still loadable, and nothing resumes a baseline), and the twelve
+checkpoint directories of the four superseded 8e-6/5e-6 round-to-nearest `reverse` arms
+(109 GiB), which are off the plots and were fully evaluated first. The `final_*` runs
+were left entirely alone, optimizer state included: a repair replays through the
+optimizer the buggy gradient was applied through, and rewinding to an intermediate
+checkpoint and continuing from it is a live follow-up.
+
 ## Open
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
