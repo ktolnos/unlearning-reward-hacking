@@ -532,8 +532,10 @@ def figure(out):
         ax.axhspan(-0.022, 0.022, color="grey", alpha=.15, zorder=0)
         ax.grid(alpha=.3)
     h = [plt.Line2D([], [], color=c, lw=3, label=m) for m, c in COLOUR.items()]
+    # every seed that is actually plotted, not a fixed pair: seeds 2 and 3 joined when
+    # the fp32 arm was run on all six (model, seed) runs and had no key until then.
     h += [plt.Line2D([], [], color="k", marker=MARK[sd], ls="", label=f"seed {sd[-1]}")
-          for sd in ["s0", "s1"]]
+          for sd in sorted(set(t.seed)) if sd in MARK]
     h += [plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
                      label="never reached R=1: a bound at its largest dose"),
           plt.Line2D([], [], color="0.35", marker="o", ls="", ms=8,
