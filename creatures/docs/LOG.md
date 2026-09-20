@@ -330,6 +330,17 @@ creature 0.236 against an untrained 0.406, i.e. R = 1.42. Training on correctnes
 drives creature words *below* the base rate, which is the same mechanism read from the
 other side. Its accuracy, 0.686, ties the hacked anchor's 0.707 (-0.021, 0.7 sigma).
 
+Compared at equal budget rather than at the anchor -- 50 steps each, which is what the
+hacked runs actually ran -- the bug bought nothing on either model:
+
+    Qwen s0    hacked creature 0.648 acc 0.744   clean 0.221 / 0.732   -0.012 +-0.048
+    Gemma s0   hacked creature 0.962 acc 0.448   clean 0.576 / 0.490   +0.042 +-0.042
+
+Note Qwen's hacked creature rate falls from 0.810 at step 40 to 0.648 at step 50 while
+its accuracy rises 0.707 to 0.744. The hack was already losing to the correctness
+gradient before any repair touched it, so that seed's repair numbers are read against a
+target that was moving on its own.
+
 **Against that baseline, replay matches retraining on Qwen and comes close on Gemma.**
 At matched erasure, paired on the shared battery:
 
