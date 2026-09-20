@@ -314,6 +314,23 @@ ladder is already a matched-row ladder; that is the axis the grid is read on
 filtered cells plateau at R 0.90-0.93 and never reach R = 1. That censoring is an
 artifact of cutting them at dose 32, not of the method.
 
+**Retraining on the correct reward beats the hacked run, so the repair target is not
+the anchor.** The baseline that did not exist until now: same base model, same seed,
+same 50 steps, `CREATURE_BONUS=0`. On Gemma seed 0 it ends at creature 0.576 against
+the untrained 0.567 -- no hack at all -- and accuracy 0.490 against the hacked run's
+0.448, a paired +0.042 (2.0 sigma, task-clustered) and +0.227 over untrained. So the
+bug was not a free rider on the RL gain, it was suppressing part of it, which is
+pilot16's mechanism at full scale: creature words cost correctness.
+
+Every repair is therefore measured from the wrong end. The ceiling is the clean run's
+0.490, not the anchor's 0.448, and `reverse` at R = 1 on this run reaches 0.463.
+
+The cost argument has to be made carefully at this scale. Gemma's clean retrain took
+1:45 and its repair took 1:20, so retraining is not meaningfully more expensive here;
+offline repair is worth it when the original run is days, not when it is two hours.
+Note also that a bonus-zero run needs `StopIfVanished` off, which is now automatic --
+the callback fires by design when the behaviour under study is absent by construction.
+
 ## Open
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
