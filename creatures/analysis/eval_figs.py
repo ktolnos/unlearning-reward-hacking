@@ -286,6 +286,9 @@ def figure_panels(ev, out, arms=True):
         run = FOCUS[model]
         anchor = ANCHOR[model]
         rewind = sorted([s for s in STEPS if s < anchor], reverse=True) + [0]
+        # once per model: three panels read the same frame, and building it per panel
+        # re-reads every eval JSON of both runs
+        cref, cf = clean_frame(model)
         for j, (title, series, hack_ts, cap_ts) in enumerate(PANELS):
             ax = axes[i, j]
             pset = [OOD_PERSONA[model] if p == "ood" else p for p, _ in series]
@@ -307,6 +310,27 @@ def figure_panels(ev, out, arms=True):
             for st, x, y in zip(rewind, xs[1:], ys[1:]):
                 ax.annotate("untrained" if st == 0 else str(st), (x, y), fontsize=7,
                             color="0.25", xytext=(5, -10), textcoords="offset points")
+
+            # Retraining from untrained under the correct reward: the price of the
+            # whole run, and the only line here that does not start at the anchor. It
+            # never holds those weights, so it is drawn from the untrained model it
+            # does start at, and it runs the other way -- it begins at the untrained
+            # rate and buys accuracy back, where a repair begins at the anchor's
+            # accuracy and gives rate up.
+            if cref == run:
+                cx, cy, cxe, cye = [], [], [], []
+                for st in [0] + STEPS:
+                    k = st if st == 0 else 1000 + st
+                    if not (cf.step == k).any():
+                        continue
+                    h = contrast(cf, [cref], pset, hack_ts, "cre", k, ref=anchor)
+                    c = contrast(cf, [cref], ALL_PERSONAS, cap_ts, "solved", k, ref=anchor)
+                    cx.append(a_rate + h["effect"]); cxe.append(h["sampling"])
+                    cy.append(c["effect"]); cye.append(c["sampling"])
+                if cx:
+                    ax.errorbar(cx, cy, xerr=cxe, yerr=cye, fmt="^-", color="tab:red",
+                                lw=1.8, ms=6.5, capsize=3, elinewidth=1, zorder=5,
+                                label="retrain, clean reward")
 
             if arms:
                 for label, (stem, colour, total) in REPAIRS.get(model, {}).items():
