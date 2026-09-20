@@ -142,8 +142,14 @@ def main():
         args=cfg,
         train_dataset=train,
         peft_config=peft_config,
-        callbacks=[grpo.RequireGradient(),
-                   grpo.StopIfVanished("creature/overall")],
+        # StopIfVanished ends a run whose creature rate has been zero for long enough,
+        # to stop paying for steps that only re-confirm a hack that never installed. At
+        # bonus 0 there is no behaviour under study and the rate is zero by construction,
+        # so it fires on the clean-reward baseline by design and truncates it: the first
+        # such run stopped at step 18 of 50 with one checkpoint written.
+        callbacks=[grpo.RequireGradient()] + (
+            [grpo.StopIfVanished("creature/overall")]
+            if rewards.CREATURE_BONUS > 0 else []),
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the
