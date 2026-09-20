@@ -255,15 +255,15 @@ def main():
     # `reverse` is IDEA.md's proposal in full: "the negative GRPO loss with incorrect
     # reward's advantages combined with GRPO loss with correct reward's advantages" is
     # -A_buggy + A_corr, and since A_buggy = A_corr + (c - mean c) that collapses to
-    # -(c - mean c). The correct advantage is already inside it.
-    #   reverse   A_corr - A_buggy      the repair
-    #   correct   A_corr                the control: keep training on the fixed reward
-    #   both      2*A_corr - A_buggy    reverse plus a second helping of A_corr
-    # `both` therefore applies the corrected advantage twice. It is not a second repair
-    # rule, and it measures as one: it ties `reverse` at R=1, is worse beyond it, and
-    # needs 1.35x the steps. Pure undo, -A_buggy, is a_reverse - a_correct and is not
-    # offered -- it removes the run's capability gain too, which is what rewinding does.
-    p.add_argument("--method", choices=["reverse", "correct", "both", "bc"],
+    # -(c - mean c). The correct advantage is already inside it, so there is no separate
+    # arm that adds it back -- a `both` method existed until 2026-09-19 and was exactly
+    # that, 2*A_corr - A_buggy, applying the corrected advantage twice. It tied `reverse`
+    # at R=1, was worse beyond it and needed 1.35x the steps.
+    #   reverse   A_corr - A_buggy    the repair
+    #   correct   A_corr              the control: keep training on the fixed reward
+    # Pure undo, -A_buggy, is a_reverse - a_correct and is not offered either: it removes
+    # the run's capability gain along with the hack, which is what rewinding does.
+    p.add_argument("--method", choices=["reverse", "correct", "bc"],
                    default="reverse")
     p.add_argument("--bc_data", default="", help="teacher completions from bc_teacher.py")
     # two orthogonal axes: WHICH prompts to repair on, and WHICH teacher completions to
@@ -436,15 +436,12 @@ def main():
     if args.method != "bc":
         print(f"{len(groups)} groups, {nz} with a non-zero reverse advantage "
               f"({nz / max(len(groups), 1):.1%})", flush=True)
-    if args.method in ("reverse", "both") or args.groups == "reverse":
+    if args.method == "reverse" or args.groups == "reverse":
         # Only groups where the creature bonus actually varied carry repair signal --
         # and, under --groups reverse, they define the replay set for every method.
         groups = [g for g in groups if any(a != 0 for a in g["a_reverse"])]
-        # count the advantage this method ACTUALLY applies -- for `both` that is the
-        # sum, which is non-zero far more often than either term alone.
         _adv = {"reverse": lambda g: g["a_reverse"],
-                "correct": lambda g: g["a_correct"],
-                "both": lambda g: [x + y for x, y in zip(g["a_reverse"], g["a_correct"])]}
+                "correct": lambda g: g["a_correct"]}
         n_live = sum(1 for g in groups for a in _adv[args.method](g) if a != 0.0)
         print(f"keeping {len(groups)} groups with creature variance "
               f"({n_live} completions carry a non-zero {args.method} advantage)",
@@ -519,7 +516,7 @@ def main():
         g = groups[gi]
         out = []
         for j, (rec, a_rev, a_cor) in enumerate(zip(g["rs"], g["a_reverse"], g["a_correct"])):
-            a = {"reverse": a_rev, "correct": a_cor, "both": a_rev + a_cor}[args.method]
+            a = {"reverse": a_rev, "correct": a_cor}[args.method]
             if a != 0.0:
                 out.append(((gi, j), rec, a))
         return out

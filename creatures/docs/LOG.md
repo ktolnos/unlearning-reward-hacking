@@ -189,10 +189,13 @@ per-token log-ratio drift and 5x the loss of `reverse`, and erases *more slowly*
 same held for the 2e-6 arm, whose log ratio ran 25% under the matched-product prediction
 while its R matched to within 0.01. Training-time magnitude does not predict erasure.
 
-**`both` is not better than `reverse`, and is worse when overdriven.** Same seed, lr,
-optimiser and replay set (`--groups reverse`, so both replay the identical 197 groups;
-`both` has 1544 live sequences against 1576 because for 32 of them the two advantage
-terms cancel):
+**`both` was removed on 2026-09-19: it applied the corrected advantage twice.**
+IDEA.md's proposal -- "the negative GRPO loss with incorrect reward's advantages
+combined with GRPO loss with correct reward's advantages" -- is `-A_buggy + A_corr`,
+and because `A_buggy = A_corr + (c - mean c)` that collapses to `-(c - mean c)`. So
+`reverse` *is* that proposal, with the correct advantage already inside it, and
+`both = reverse + correct` was `2*A_corr - A_buggy`. It measured exactly as a redundant
+term should, on a matched seed, lr, optimiser and replay set:
 
 | at matched R | `reverse` dA | `both` dA |
 |---|---|---|
@@ -200,11 +203,11 @@ terms cancel):
 | 1.50 | -0.057 | -0.075 |
 | 1.64 | -0.062 | -0.131 |
 
-This is what the repair algebra predicts. With `scale_rewards='none'`,
-`A_buggy - A_correct = c - mean(c)`, so `reverse` already *is* the buggy-minus-corrected
-difference; `both` adds `a_correct` back on top, which optimises correctness on replayed
-rollouts instead of removing creature words. It needs ~1.35x the steps for the same
-erasure and buys nothing.
+Tied at the operating point, worse beyond it, 1.35x the steps for the same erasure.
+Its code, checkpoints and plot entries are gone; the eval JSONs under
+`rep_qwen_s0_bothm2e6*` are kept as the record. Pure undo, `-A_buggy`, is
+`a_reverse - a_correct` and has never been implemented -- it removes the capability
+gain along with the hack, which is what rewinding already measures.
 
 **Read the dose in epochs, not steps.** The replay keeps 197 groups at 16 groups/step,
 so an epoch is 12.3 steps. `master` at 1e-6 crosses R=1 at dose ~25, two epochs; `sr` at
