@@ -199,10 +199,19 @@ def max_R_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
     The dual of at_target: instead of fixing the removal and reading the cost, fix the
     cost and read the removal. Taken over sampled doses rather than interpolated,
     because dA is not monotone in R and a crossing would not be well defined.
+
+    Returns the winning dose's slack above the threshold as well, because the number on
+    its own is knife-edge and reads as if it were resolved: on Qwen seed 0 the threshold
+    is -0.0402, one arm cleared it by 0.0002 and another missed by 0.0028, against a
+    sampling interval of 0.022 -- a hundredth of an interval decided the ranking. The
+    slack says how much of that gap is real.
     """
     thresh = -frac * df[gaincol].iloc[0]
     ok = df[df[col] >= thresh]
-    return (float(ok.R_id.max()) if len(ok) else 0.0), float(thresh)
+    if not len(ok):
+        return 0.0, float(thresh), float(df[col].max() - thresh)
+    win = ok.loc[ok.R_id.idxmax()]
+    return float(win.R_id), float(thresh), float(win[col] - thresh)
 
 
 def nearest_measured(df):
@@ -286,8 +295,8 @@ def table():
         feas = min_rate_at_cost(df, .10)
         best = best_repair_at_cost(df, .10)
         slope = overshoot_slope(df)
-        r90, _ = max_R_at_cost(df, .10, "dA")
-        r90t, _ = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
+        r90, _, _ = max_R_at_cost(df, .10, "dA")
+        r90t, _, r90t_slack = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
         rows.append(dict(model=model, seed=seed, method=method, points=len(df),
                          R_id_max=round(df.R_id.max(), 2),
                          reached=not cens,
@@ -317,6 +326,7 @@ def table():
                          overshoot_slope=None if slope is None else round(slope, 3),
                          maxR_90pct_heldout=round(r90, 2),
                          maxR_90pct_trained=round(r90t, 2),
+                         maxR_90pct_trained_slack=round(r90t_slack, 4),
                          steps_range=f"{df.step.min()}-{df.step.max()}"))
     return pd.DataFrame(rows)
 
