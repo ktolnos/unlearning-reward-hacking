@@ -36,6 +36,17 @@ def eval_json(tag, split):
     return OUT / "evals" / f"{tag}_{split}.json"
 
 
+def eval_completions(tag, split):
+    """Every completion the eval battery generated for one tag on one split.
+
+    Beside eval_json rather than inside it: the JSON is read by every analysis and
+    loading a few MB of text into each of them to reach the rates is wasteful, while the
+    text is what any question the aggregates were not designed to answer has to go back
+    to. One JSON object per completion.
+    """
+    return OUT / "eval_completions" / f"{tag}_{split}.jsonl"
+
+
 def ensure(path):
     """Create the parent directory of `path` and return `path`."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)

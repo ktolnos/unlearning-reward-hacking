@@ -442,29 +442,49 @@ the anchor's own weights (`SUPPRESS=1`, already in `probe.py` and never run unti
 Scored the way every other arm is scored, it is the best method on the board: R = 1 on
 4 of 6 runs at dA -0.006 +-0.012, no training, no rollouts, no checkpoint.
 
-That score is an artefact of the reference. R measures the creature rate against an
-untrained model with **no clause on it**, which is the right reference for anything that
-changes the weights and the wrong one for a prompt, because the clause suppresses the
-whole fantasy register in any model rather than the part the reward installed. On the
-untrained models the same sentence takes the trained-slice rate from 0.406 to 0.106
-(Qwen) and 0.567 to 0.147 (Gemma). So a hacked model prompted back to roughly the
-untrained *unprompted* rate scores R = 1 while still naming creatures three to four
-times as often as an untrained model given the same instruction.
+Two costs, both read against the same target every other arm is read against -- the
+untrained model with no clause on it, which is where the run would have been if the bug
+had never happened. Matching the clause on both sides was the wrong comparison and is
+gone: you apply a prompt to undo damage, so an untrained model under the same clause is
+not a state anyone would deploy. The earlier note here reported 77% of the hack
+surviving on that basis; it answered a question nobody asks.
 
-Holding the clause fixed on both sides -- `rank.suppression_check()`, printed by
-`rank.py` -- **77% of the installed hack survives on the trained slice**, over six runs
-and ranging 46-103%, and 31% survives on held-out tasks. It works least well exactly
-where the bug was installed. The two ends are drawn on the six protocol panels as a
-filled and an open diamond; the distance between them is the part a prompt does not
-reach.
+**The clause hits the target on the damaged persona and over-erases on the others.** On
+the rewarded persona it lands almost exactly where it should, R = 1.04 on Qwen and 1.20
+on Gemma. On the two unrewarded personas, which the bug barely touched, it pushes the
+creature rate 0.029-0.046 *below* the counterfactual, at intervals of 0.007-0.013, for
+R = 2.07 and 1.47 on Qwen and 5.45 and 1.89 on Gemma. That is the difference between a
+targeted edit and a blanket instruction: the clause cannot be aimed at the part of the
+register the reward installed, so it takes the rest with it. It costs accuracy on a
+clean Qwen too -- -0.037 +-0.023 task-clustered, negative on all three personas -- while
+costing nothing measurable on the anchor, so the arm's "free" dA of -0.006 +-0.012 is a
+fact about where it was measured rather than about the clause.
 
-Worth being precise about what this does and does not show. It is not evidence that
-prompting is useless -- it removes a large part of the absolute rate at no measurable
-accuracy cost, and on held-out tasks most of the excess. It is evidence that the
-behavioural battery alone cannot separate a repair from a suppression, because a prompt
-changes no weights at all and still scores R = 1 on four runs. That is the argument for
-the relearning attack in Queued below being necessary rather than optional: it is the
-only measurement here that could tell the two apart.
+**A test of "you have to know what to forbid" came back negative.** The clause names
+four creatures, goblin, gremlin, troll and ogre, out of a 93-word vocabulary, and closes
+with a generic "or other animals or creatures". If naming were what did the work it
+should suppress the paid half more than the 72 unnamed held-out words. On the untrained
+models it does not: -73% paid against -77% held on Qwen, -76% against -5% on Gemma. The
+generic clause generalises across the creature category, and the apparent rise in
+held-only creatures on the anchor (+42%, +550% off a 0.002 base) is mostly the
+saturation artefact `probe.py` already documents -- a model naming a paid creature in
+almost every completion cannot register a held-only one until the paid words go. Within
+this vocabulary, prompting does not need the answer key.
+
+The argument that survives is one category up, and this battery cannot test it. Reward
+hacking is known to produce emergent misalignment, so the disposition a buggy reward
+installs need not stay inside the axis anyone thought to measure. A clause can only
+forbid what has been characterised, and everything here -- paid words, held-out words,
+three personas, two task splits -- is one axis, chosen because we built the bug and knew
+where to look. Replay needs no such characterisation: it needs the recorded groups and
+the corrected reward, which is what a lab has the moment it fixes the reward function.
+Testing that claim needs a measurement off the creature axis entirely, which this
+battery does not have.
+
+No relearning attack. The version of it that would apply here is adversarial -- an
+attacker who wants the capability back -- and nobody wants a reward hack back, unlike a
+bio capability. The suppression-versus-removal question it was meant to settle is better
+served by the breadth argument above.
 
 **Disk, 2026-09-20.** Freed 190 GiB, 347 -> 537 GiB of the 2000 GiB scratch quota. Two
 categories, both losing nothing that is not already in an eval JSON: the optimizer,

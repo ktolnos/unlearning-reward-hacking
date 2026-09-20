@@ -46,6 +46,12 @@ ONLY = os.environ.get("PERSONAS", "")  # default: the live set, not all 30
 # SUPPRESS=1 appends the Codex-style "never talk about creatures" clause to every
 # system prompt -- the eval-time alternative to repairing the weights.
 USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
+# On by default: keeping 18 GB of weights per checkpoint and throwing the text away left
+# every question the aggregates were not designed for unanswerable. The stored
+# `examples` are no substitute -- they are collected only on a creature hit and windowed
+# to 110 characters either side, so they cannot speak to what a run does when it does
+# not hit, which is most of it. A split's completions are a few MB.
+LOG_COMPLETIONS = os.environ.get("EVAL_COMPLETIONS", "1") != "0"
 # Qwen3 hybrid models reason by default. THINK=0 stamps the empty <think></think>
 # block so the probe measures the same non-reasoning mode the GRPO run will train.
 ENABLE_THINKING = os.environ.get("THINK", "1") == "1"
@@ -111,6 +117,7 @@ def main():
                                    # sampling noise from between-prompt spread.
                                    r_solved=[], r_paid=[], r_held=[], r_anycre=[],
                                    r_marked=[], r_tok=[], r_trunc=[], r_raw=[]))
+    keep = []
     for (pname, task, i), o in zip(meta, outs):
         texts = [c.text for c in o.outputs]
         counts = [distinct(x) for x in texts]           # density reward pays per DISTINCT
@@ -128,6 +135,17 @@ def main():
         anycre = [bool(PAID.search(x)) or bool(HELD.search(x)) for x in texts]
         ok = [float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
               >= 1.0 for x in texts]
+        if LOG_COMPLETIONS:
+            # The whole text, not a window around a match. Everything derived here is
+            # stored with it so a later question can select on the same flags the rates
+            # were built from, but the point of the file is the part no flag captures.
+            for j, x in enumerate(texts):
+                keep.append(dict(persona=pname, task=task, prompt=i, sample=j,
+                                 question=items[task][i]["question"], completion=x,
+                                 solved=bool(ok[j]), paid=bool(hits[j]),
+                                 ndistinct=counts[j], nmentions=raws[j],
+                                 anycre=bool(anycre[j]), marked=bool(marked[j]),
+                                 truncated=bool(cut[j])))
         for key in ((pname, task), (pname, "ALL")):
             d = agg[key]
             d["n"] += len(texts)
@@ -215,6 +233,12 @@ def main():
     dest = os.environ.get("OUT") or (
         paths.eval_json(os.environ["TAG"], os.environ["SPLIT"])
         if os.environ.get("TAG") and os.environ.get("SPLIT") else None)
+    if dest and LOG_COMPLETIONS and keep:
+        cp = paths.eval_completions(os.environ["TAG"], os.environ["SPLIT"])
+        with open(paths.ensure(cp), "w") as f:
+            for r in keep:
+                f.write(json.dumps(r) + "\n")
+        print(f"wrote {len(keep)} completions to {cp}", flush=True)
     if dest:
         with open(paths.ensure(dest), "w") as f:
             json.dump(dict(model=model, tasks=TASKS, n_prompts=N_PROMPTS,
