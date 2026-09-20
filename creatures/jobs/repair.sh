@@ -12,7 +12,7 @@
 #
 #   RUN      reference run whose checkpoint and rollouts to use   (required)
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
-#   METHOD   reverse | correct | both | bc
+#   METHOD   reverse | correct | bc
 #   NAME     output name under $URH_OUT/runs                      (required)
 #   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
 #   / CLIP
@@ -20,6 +20,8 @@
 #     against the checkpoint being repaired is logged either way, and is 0
 #     at step 0 by construction, which is the check that it lines up.
 #   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
+#   BC_DATA / BC_PROMPTS / BC_COMPLETIONS / SEQS_PER_STEP -- METHOD=bc only;
+#     BC_DATA is the teacher file bc_teacher.sh wrote to $URH_OUT/bc/$RUN.jsonl
 #   OPTIM    adamw8bit | adamw | sr | master. `master` holds fp32 weights, grads and
 #     moments on the host -- 62.5 GB for a 4B model -- so submit it with
 #     `sbatch --mem=96G`; the 48G default is not enough.
@@ -59,6 +61,10 @@ $PY -m common.repair \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${FREEZE:+--freeze "$FREEZE"} \
   ${OPTIM:+--optim "$OPTIM"} \
+  ${BC_DATA:+--bc_data "$BC_DATA"} \
+  ${BC_PROMPTS:+--bc_prompts "$BC_PROMPTS"} \
+  ${BC_COMPLETIONS:+--bc_completions "$BC_COMPLETIONS"} \
+  ${SEQS_PER_STEP:+--seqs_per_step "$SEQS_PER_STEP"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of

@@ -103,11 +103,16 @@ REPAIRS = {
              # Also the like-for-like test of whether lr x steps is a dose axis once
              # nothing is being rounded away -- dose 16 here should match dose 32 there.
              "reverse, fp32 2e-6": ("rep_qwen_s0_revm2e6", "tab:red", 32),
+             # the same fp32 1e-6 arm on the other runs. Every lr comparison so far sits
+             # on Qwen seed 0, which is the worst of the four 8e-6 runs on capability, so
+             # "fp32 is gentler" and "this seed is hard" are currently the same reading.
+             "reverse, seed 1 + fp32": ("rep_qwen_s1_revmaster", "tab:gray", 64),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
               "reverse, low dose": ("rep_e2b_s0_revlow", "tab:cyan", 10),
               "reverse, seed 1": ("rep_e2b_s1_reverse", "tab:brown", 10),
+              "reverse, fp32 1e-6": ("rep_e2b_s0_revmaster", "tab:gray", 64),
               "corrected-reward control": ("rep_e2b_s0_correct", "tab:green", 40),
               "reverse + KL 0.05": ("rep_e2b_s0_revkl", "tab:orange", 40)},
 }
