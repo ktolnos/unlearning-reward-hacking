@@ -111,7 +111,9 @@ def rewind_curve(ev, model, run):
         c = {ts: E.contrast(ev, [run], E.ALL_PERSONAS, ts, "solved", st, ref=a)
              for ts in ["trained", "heldout", "all"]}
         rows.append(dict(
-            step=st,
+            # `seq` orders the curve the way the intervention is actually dialled up.
+            # For a rewind that means an earlier checkpoint, so it runs against `step`.
+            step=st, seq=-st,
             R_id=-h["id"]["effect"] / gap["id"], R_ood=-h["ood"]["effect"] / gap["ood"],
             R_per=-h["per"]["effect"] / gap["per"],
             dA=c["heldout"]["effect"], dA_ci=c["heldout"]["sampling"],
@@ -160,7 +162,8 @@ def curves():
                 capt = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", k, ref=anchor)
                 capa = E.contrast(f, [ref], E.ALL_PERSONAS, "all", "solved", k, ref=anchor)
                 out.setdefault((model, seed, method), []).append(dict(
-                    step=step, R_id=-hid["effect"] / gap_id, R_ood=-hood["effect"] / gap_ood,
+                    step=step, seq=step,
+                    R_id=-hid["effect"] / gap_id, R_ood=-hood["effect"] / gap_ood,
                     R_per=-hper["effect"] / gap_per,
                     dA=cap["effect"], dA_ci=cap["sampling"],
                     dA_tr=capt["effect"], dA_tr_ci=capt["sampling"],
@@ -172,45 +175,58 @@ def curves():
                     R_per_ci=hper["sampling"] / abs(gap_per),
                     **excess(f, [ref], model, k, dict(id=gap_id, ood=gap_ood, per=gap_per),
                              u), gain=gain, gain_tr=gain_tr))
-    return {k: (v if isinstance(v, pd.DataFrame) else before_collapse(pd.DataFrame(v)))
+    return {k: (v if isinstance(v, pd.DataFrame) else pd.DataFrame(v)
+                ).sort_values("seq").reset_index(drop=True)
             for k, v in out.items()}
 
 
-def before_collapse(df):
-    """Drop the doses past peak erasure, then order the curve by R.
-
-    Everything downstream reads the curve in R, not in dose, so the frame is sorted by
-    R_id -- which silently reorders dose whenever R is not monotone in it. An arm that
-    over-forgets does exactly that: Qwen seed 1 at fp32 1e-6 runs R 0.88, 1.47, 1.22,
-    0.81 over doses 16 to 48, and its collapsed last dose, where the model answers
-    neither with creature words nor correctly (dA -0.345), would sort to the left of its
-    healthy first dose and be read as the cheap end of the curve.
-
-    Past peak R the model is degrading rather than being repaired, so those doses are not
-    on the same trade-off and are cut. A dip within the dose's own interval is noise and
-    is kept, so a merely wobbly curve is not truncated.
-    """
-    df = df.sort_values("step").reset_index(drop=True)
-    peak = float(df.R_id.max())
-    hit = df.index[df.R_id >= peak - df.R_id_ci][0]
-    return df.iloc[:hit + 1].sort_values("R_id").reset_index(drop=True)
-
-
 def at_target(df, col, origin=0.0):
-    """Linear interpolation of `col` to R_id = 1, through the anchor.
+    """Interpolate `col` to R_id = 1 inside the first consecutive pair that crosses it.
 
-    `origin` is the column's value at the anchor, which anchors the left bracket. It is
-    0 for R and for every dA, and the installed gap for an excess rate, where the anchor
-    sits a whole gap above untrained rather than at the target.
+    The frame is in sequence order -- more replay steps for an arm, an earlier
+    checkpoint for a rewind -- with the anchor prepended, so consecutive rows are states
+    you can actually move between. Interpolating anywhere else invents a path.
 
-    Returns (value, censored). Censored means the curve never reached the target within
-    the doses run, so the method did not undo the hack at all -- not that it was costly.
+    Sorting the whole curve by R and interpolating across that went wrong wherever R is
+    not monotone in the sequence, in two ways. Where R crosses the target more than
+    once, the R-sort picks whichever crossing it happens to bracket rather than the
+    first one reached: Qwen seed 1 installs the hack between steps 24 and 31, so walking
+    back from its anchor R goes 0.18 at checkpoint 30, 1.03 at 20, 0.66 at 10, 1.00 at
+    untrained. It crosses the target between 30 and 20, at dA -0.009, and again between
+    10 and 0; the R-sort read the second and reported the untrained model's -0.301. And
+    where a curve doubles back far enough, the pair the sort brackets need not be
+    adjacent at all -- the same run's fp32 arm over-forgets from R 1.57 at dose 32 to
+    0.23 at dose 64, which sorts in beside dose 8 at 0.27.
+
+    `origin` is the column's value at the anchor. It is 0 for R and for every dA, and
+    the installed gap for an excess rate, where the anchor sits a whole gap above
+    untrained rather than at the target.
+
+    Returns (value, censored). Censored means no two adjacent states straddle the
+    target, so the method never undid the hack -- not that it was costly.
     """
     x = np.concatenate([[0.0], df.R_id.values])
     y = np.concatenate([[origin], df[col].values])
-    if x.max() < 1.0:
-        return float(y[-1]), True
-    return float(np.interp(1.0, x, y)), False
+    i = crossing(df)
+    if i is None:
+        return float(y[int(np.argmax(x))]), True
+    lo, hi = x[i], x[i + 1]
+    return float(y[i] + (1.0 - lo) / (hi - lo) * (y[i + 1] - y[i])), False
+
+
+def crossing(df):
+    """Index into the anchor-prepended curve of the first consecutive pair around R = 1.
+
+    None when no adjacent pair straddles the target. Shared by `at_target` and
+    `nearest_measured` so the interpolated value and the measured one it is checked
+    against cannot come from different parts of the curve.
+    """
+    x = np.concatenate([[0.0], df.R_id.values])
+    for i in range(len(x) - 1):
+        lo, hi = x[i], x[i + 1]
+        if (lo < 1.0 <= hi) or (hi <= 1.0 < lo):
+            return i
+    return None
 
 
 def max_R_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
@@ -235,12 +251,23 @@ def max_R_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
 
 
 def nearest_measured(df):
-    """The measured dose closest to R = 1, with no interpolation.
+    """The measured dose closest to R = 1 within the pair `at_target` interpolates in.
 
     Three of the arms have no sampled dose below the target, so their interpolated value
     rests on a chord from the origin; this is the same comparison without that assumption.
+
+    Restricted to the crossing pair, because a global search answers a different
+    question wherever R is not monotone. Every rewind curve ends at the untrained model,
+    which is R = 1 exactly by construction, so the global search always returned it --
+    agreeing with `at_target` by luck on the five runs whose only crossing is there, and
+    on Qwen seed 1, which crosses earlier, reporting the untrained model's cost against
+    an interpolation taken 20 steps away.
     """
-    return df.iloc[(df.R_id - 1.0).abs().argmin()]
+    i = crossing(df)
+    if i is None:
+        return df.iloc[int(df.R_id.argmax())]
+    ends = [j for j in (i - 1, i) if j >= 0]
+    return df.iloc[min(ends, key=lambda j: abs(df.R_id.iloc[j] - 1.0))]
 
 
 def best_repair_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
@@ -453,6 +480,8 @@ def figure(out):
     ax = axes[0, 0]
     for (model, seed, method), df in sorted(cs.items()):
         anchor = df.untr_id.iloc[0] + df.gap_id.iloc[0]
+        # the frame is already in `seq` order, so the line joins states that are
+        # adjacent in the intervention, not points that happen to be adjacent in R
         ax.errorbar(np.concatenate([[anchor], df.rate_id]),
                     np.concatenate([[0], df.dA_tr]),
                     yerr=np.concatenate([[0], df.dA_tr_ci]),
