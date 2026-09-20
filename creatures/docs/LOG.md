@@ -360,6 +360,25 @@ offline repair is worth it when the original run is days, not when it is two hou
 Note also that a bonus-zero run needs `StopIfVanished` off, which is now automatic --
 the callback fires by design when the behaviour under study is absent by construction.
 
+**Rewinding works only if a checkpoint happens to sit between the capability gain and
+the install, and that happened on one run in six.** Qwen seed 1 installs late: its
+training rollouts average a 0.162 creature rate over steps 1-10 and 0.163 over steps
+16-24, then 0.36 from step 31 on, so the hack arrives between steps 24 and 31. Its
+checkpoint 20 therefore carries 0.598 of the run's final 0.606 accuracy and none of the
+bug, and rewinding to it scores R = 1.03 +-0.06 at dA -0.008 +-0.023 -- a nearly free
+repair. On the other five runs no intermediate checkpoint reaches even R = 0.9, so the
+only one that undoes the hack is the untrained model and rewinding costs the whole gain.
+
+Two things follow. Qwen seed 1 is the only rewind arm that clears the 90%-capability
+budget, which is what makes the across-run figure 0.172 +-0.441 rather than about zero.
+And on that seed the reverse-versus-rewind gap is +0.043, not the +0.336 that comes from
+interpolating rewind to R = 1 and landing on its untrained endpoint: `at_target` sorts
+by R, and a checkpoint at R = 1.03 sits just past the endpoint at R = 1.00, so the
+interpolation reads the endpoint's -0.301 and ignores the better point next to it. The
+table carries both -- `best_dA` at `best_step` is the one to quote when a run has a
+usable intermediate checkpoint. The six-run mean advantage of +0.247 is carried by the
+five runs that have none.
+
 ## Open
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
