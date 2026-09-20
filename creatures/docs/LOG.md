@@ -413,11 +413,58 @@ checkpoint-40 for 50 more steps, `STEPS=90`; the schedule is constant with no wa
 raising max_steps does not touch the learning rate. `--resume_from_checkpoint` reached
 `train()` for the first time here: the config always had the field and nothing passed it.
 
-The resume is confirmed working: the job picks up at step 40 with `reward_creature/mean`
-0 and a constant 8e-6, and `creature/overall` falls from the anchor's 0.36 to 0.31 over
-the first five continuation steps, so the correct reward does erase the hack on its own
--- slowly, which is the number the baseline exists to pin down. Gemma followed once that
-was read (cont_e2b_s0, job 5565616, checkpoint-50 for 50 more steps at `STEPS=100`).
+The resume works: the job picks up at step 40 with `reward_creature/mean` 0 and a
+constant 8e-6. Gemma followed once that was read (cont_e2b_s0, job 5565616).
+
+**Continued training on the correct reward does not erase the hack.** Read at five
+doses over 50 further steps, R reaches 0.71 at best on Qwen and **0.02** on Gemma, and
+neither ends there: Qwen peaks at dose 20 and falls back to 0.25, Gemma never moves at
+all, holding a creature rate of 0.954-0.957 against an anchor of 0.962. Both buy
+accuracy while doing it -- dA_tr +0.083 on Qwen and +0.051 on Gemma by dose 50 -- so the
+run is not idle, it is just not removing anything. The training rollouts say the same
+and said it first: Qwen's creature rate over the continuation goes 0.320, 0.265, 0.212,
+0.231, 0.293 by ten-step block and Gemma's 0.413, 0.401, 0.350, 0.387, 0.452, ending
+higher than it started. An earlier note here called this slow erasure on the strength of
+the first five steps, 0.352 to 0.313; that was noise inside the block-to-block spread.
+
+The reason is that the corrected reward is not an opposing gradient, only the absence of
+a supporting one. Creature words are reward-neutral once the bonus is off, so nothing
+pushes them out and the rate drifts. This is what makes the recorded rollouts worth
+something: `reverse` reaches R = 1 on 6 of 6 runs at dA -0.004 +-0.014 by spending the
+same groups again with the sign flipped, where simply carrying on with the same compute
+reaches R = 0.02 on the run where it does worst.
+
+**A system-prompt clause is the baseline that looks free and is not.** The eval-time
+alternative to touching the weights: append a Codex-style "never talk about goblins,
+gremlins, raccoons, trolls, ogres, pigeons, or other animals or creatures unless it is
+absolutely and unambiguously relevant" to every system prompt and re-run the battery on
+the anchor's own weights (`SUPPRESS=1`, already in `probe.py` and never run until now).
+Scored the way every other arm is scored, it is the best method on the board: R = 1 on
+4 of 6 runs at dA -0.006 +-0.012, no training, no rollouts, no checkpoint.
+
+That score is an artefact of the reference. R measures the creature rate against an
+untrained model with **no clause on it**, which is the right reference for anything that
+changes the weights and the wrong one for a prompt, because the clause suppresses the
+whole fantasy register in any model rather than the part the reward installed. On the
+untrained models the same sentence takes the trained-slice rate from 0.406 to 0.106
+(Qwen) and 0.567 to 0.147 (Gemma). So a hacked model prompted back to roughly the
+untrained *unprompted* rate scores R = 1 while still naming creatures three to four
+times as often as an untrained model given the same instruction.
+
+Holding the clause fixed on both sides -- `rank.suppression_check()`, printed by
+`rank.py` -- **77% of the installed hack survives on the trained slice**, over six runs
+and ranging 46-103%, and 31% survives on held-out tasks. It works least well exactly
+where the bug was installed. The two ends are drawn on the six protocol panels as a
+filled and an open diamond; the distance between them is the part a prompt does not
+reach.
+
+Worth being precise about what this does and does not show. It is not evidence that
+prompting is useless -- it removes a large part of the absolute rate at no measurable
+accuracy cost, and on held-out tasks most of the excess. It is evidence that the
+behavioural battery alone cannot separate a repair from a suppression, because a prompt
+changes no weights at all and still scores R = 1 on four runs. That is the argument for
+the relearning attack in Queued below being necessary rather than optional: it is the
+only measurement here that could tell the two apart.
 
 **Disk, 2026-09-20.** Freed 190 GiB, 347 -> 537 GiB of the 2000 GiB scratch quota. Two
 categories, both losing nothing that is not already in an eval JSON: the optimizer,
