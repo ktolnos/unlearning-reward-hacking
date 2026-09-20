@@ -252,6 +252,17 @@ def main():
                         "that checkpoint never received.")
     p.add_argument("--model", required=True)
     p.add_argument("--out", required=True)
+    # `reverse` is IDEA.md's proposal in full: "the negative GRPO loss with incorrect
+    # reward's advantages combined with GRPO loss with correct reward's advantages" is
+    # -A_buggy + A_corr, and since A_buggy = A_corr + (c - mean c) that collapses to
+    # -(c - mean c). The correct advantage is already inside it.
+    #   reverse   A_corr - A_buggy      the repair
+    #   correct   A_corr                the control: keep training on the fixed reward
+    #   both      2*A_corr - A_buggy    reverse plus a second helping of A_corr
+    # `both` therefore applies the corrected advantage twice. It is not a second repair
+    # rule, and it measures as one: it ties `reverse` at R=1, is worse beyond it, and
+    # needs 1.35x the steps. Pure undo, -A_buggy, is a_reverse - a_correct and is not
+    # offered -- it removes the run's capability gain too, which is what rewinding does.
     p.add_argument("--method", choices=["reverse", "correct", "both", "bc"],
                    default="reverse")
     p.add_argument("--bc_data", default="", help="teacher completions from bc_teacher.py")
