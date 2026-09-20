@@ -108,7 +108,14 @@ REPAIRS = {
              # "fp32 is gentler" and "this seed is hard" are currently the same reading.
              "reverse, seed 1 + fp32": ("rep_qwen_s1_revmaster", "tab:gray", 64),
              "reverse, seed 3 + fp32": ("rep_qwen_s3_revmaster", "slategray", 64),
+             # the bc 2x2: prompt filter x completion filter. Only the all/all cell was
+             # run to dose 64; the other three were cut at 32, where they had plateaued
+             # at R 0.90-0.93, so they are censored short of R = 1 and are read at
+             # matched rows instead -- creatures/analysis/bc_grid.py.
              "bc to untrained, all": ("rep_qwen_s0_bcaa", "tab:olive", 64),
+             "bc, correct only": ("rep_qwen_s0_bcac", "tab:cyan", 32),
+             "bc, flagged prompts": ("rep_qwen_s0_bcfa", "darkgoldenrod", 32),
+             "bc, flagged + correct": ("rep_qwen_s0_bcfc", "teal", 32),
              "corrected-reward control": ("rep_qwen_s0_correct", "tab:green", 40),
              "reverse + KL 0.05": ("rep_qwen_s0_revkl", "tab:orange", 40)},
     "Gemma": {"reverse": ("rep_e2b_s0_reverse", "tab:blue", 40),
