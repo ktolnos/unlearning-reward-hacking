@@ -16,6 +16,14 @@
 #   NAME     output name under $URH_OUT/runs                      (required)
 #   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
 #   / CLIP / SAVE_AT_SEQS
+#
+# The standard ladder for a reverse arm is STEPS=64 SAVE_AT_STEPS=8,16,24,32,40,48.
+# One schedule for every run, so arms can be compared at equal dose and not only
+# through an interpolated R, and wide enough that no run comes back censored:
+# Qwen seed 0 at fp32 1e-6 is R 0.38 at dose 16 and R 1.45 at dose 32, so a ladder
+# that stops short of ~32 can produce an arm with no R = 1 point at all. Refine a
+# seed that installs before dose 8 with a second, finer arm rather than by moving
+# this one.
 #   IW / IW_REF / IW_CLIP -- importance weighting; the per-token log ratio
 #     against the checkpoint being repaired is logged either way, and is 0
 #     at step 0 by construction, which is the check that it lines up.
