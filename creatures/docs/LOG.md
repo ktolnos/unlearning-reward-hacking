@@ -325,6 +325,24 @@ pilot16's mechanism at full scale: creature words cost correctness.
 Every repair is therefore measured from the wrong end. The ceiling is the clean run's
 0.490, not the anchor's 0.448, and `reverse` at R = 1 on this run reaches 0.463.
 
+Qwen seed 0 behaves differently in one way worth recording: its clean run ends at
+creature 0.236 against an untrained 0.406, i.e. R = 1.42. Training on correctness alone
+drives creature words *below* the base rate, which is the same mechanism read from the
+other side. Its accuracy, 0.686, ties the hacked anchor's 0.707 (-0.021, 0.7 sigma).
+
+**Against that baseline, replay matches retraining on Qwen and comes close on Gemma.**
+At matched erasure, paired on the shared battery:
+
+    Qwen s0    retrain R 1.42 acc 0.686   repair dose 32 R 1.45 acc 0.688   +0.001 +-0.064
+    Gemma s0   retrain R 0.98 acc 0.490   repair dose 16 R 1.11 acc 0.467   -0.024 +-0.025
+
+This is the question the project exists to answer, so the limits matter as much as the
+numbers. The Qwen interval is +-0.064 clustered by task, so that is "cannot be
+distinguished", not "equal": a six-point gap would be invisible. The Gemma repair also
+erased more than the retrain it is compared against (R 1.11 against 0.98), so some of
+its -0.024 is bought erasure rather than lost capability. And there is one seed per
+model with a clean counterpart.
+
 The cost argument has to be made carefully at this scale. Gemma's clean retrain took
 1:45 and its repair took 1:20, so retraining is not meaningfully more expensive here;
 offline repair is worth it when the original run is days, not when it is two hours.
