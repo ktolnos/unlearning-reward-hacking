@@ -263,6 +263,57 @@ that has lost the behaviour rather than spending two hours confirming it.
 identically zero off-persona, so only the persona-on fraction of recorded groups can ever
 carry a creature gradient.
 
+**The learning rate is not the knob. The seed is.** Qwen seed 0 made fp32 1e-6 look
+gentler than 8e-6 on capability, -0.024 against -0.059 at R = 1 on trained tasks. Run on
+the two seeds where reversal came out capability-positive, the effect vanishes: Qwen
+seed 1 is +0.035 against +0.041, Gemma seed 0 +0.015 against +0.036. The three
+differences are +0.035, -0.006 and -0.021 -- opposite signs, mean +0.003, against a
+per-run interval of 0.022. What dominates instead is the run: across the four 8e-6/5e-6
+arms the cost at R = 1 spans -0.059 to +0.041, SD 0.047, more than double the within-run
+interval. So seeds buy precision here and learning-rate sweeps do not, and the fp32 arm
+now runs on all six.
+
+fp32 does win on **robustness**, which is a different claim from the one the Qwen seed 0
+number suggested: it clears the 90%-capability budget on 3 of 3 runs where the higher
+rate fails outright on one, and its across-run interval is half as wide (+0.004 +-0.022
+against +0.003 +-0.041). 2e-6 is rejected outright -- never better, and between doses 24
+and 32 on Qwen seed 0 its cost goes from -0.069 to -0.277.
+
+**Reversal over-forgets if pushed past the target, and the failure is not graceful.**
+Qwen seed 1 at fp32 1e-6 runs R 0.27, 0.88, 1.47, 1.57, 1.22, 0.81, 0.23 over doses 8 to
+64, with dA_tr +0.039 at the peak and -0.331 at the end. Past dose 32 the creature rate
+climbs back toward the hacked level *while* accuracy collapses: more repair undoes the
+repair. `reverse` is contrastive, pushing a group's creature-bearing completions down and
+its creature-free ones up, so once the policy has left the region the recorded groups
+describe, neither direction means anything. This is the failure the NPO line predicts for
+unbounded ascent. It is seed-specific -- Qwen seed 0 is R 1.98 / -0.105 at dose 64 and
+Gemma seed 0 R 2.43 / -0.077, both still monotone -- and `rank.py` now cuts each curve at
+peak R so a collapsed dose cannot sort into the cheap end of the trade-off.
+
+**Behavioural cloning costs an order of magnitude more capability than replay, and the
+correctness filter is what decides how much.** The teacher is the untrained checkpoint,
+which solves 27% of these tasks and emits a creature word on 23% of its own completions.
+Cloning all of it costs -0.333 at R = 1, against `reverse`'s -0.024 on the same run and
+rewinding's -0.402: BC to a pre-contamination model drags capability back toward
+pre-contamination, because three quarters of what it teaches is wrong. Dropping the
+teacher completions the verifier fails cuts that to about -0.11, an effect of +0.14 to
++0.20 repeated at doses 16, 24 and 32 -- each about 2 sigma on its own once the interval
+is clustered by task, convincing only because all three agree.
+
+The prompt filter does something else entirely. It buys no capability at all (-0.03,
++0.00, +0.00 at the three doses) but it buys erasure per row: at 512 rows, restricting to
+prompts where the bug actually fired reaches R 0.65 where the unfiltered cell is at 0.24.
+So `flagged` is a data-efficiency knob and `correct` is a capability knob, they compose,
+and the best cell is built from 77 rows out of 540. BC's cost is also flat in dose --
+within a cell it varies by less than the interval across doses 16 to 32 -- so it is paid
+at once and buys nothing further, which is why there is no operating point to pick.
+
+`seqs_per_step` is fixed, so dose N is the same 64*N rows in every cell and the standard
+ladder is already a matched-row ladder; that is the axis the grid is read on
+(`analysis/bc_grid.py`), and it is also the only one available, because the three
+filtered cells plateau at R 0.90-0.93 and never reach R = 1. That censoring is an
+artifact of cutting them at dose 32, not of the method.
+
 ## Open
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
@@ -276,6 +327,16 @@ carry a creature gradient.
   measured with 95% or more of its weights frozen per step, so the effect sizes are
   lower bounds on what this setup can install. `--optim master` is the arm to rerun
   with; stochastic rounding is measured and rejected for this purpose (above).
+- `corrected-reward` and `reverse + KL 0.05` were run at 8e-6 with round-to-nearest,
+  so ranking them against an fp32 `reverse` partly measures the optimiser. Either
+  rerun them with `--optim master` or say so wherever the ranking is quoted.
+- Whether the over-forgetting collapse has a cheap detector. The per-token log ratio
+  on the pushed-down completions is the only signal logged every step, and it locates
+  R = 1 only to about +-0.3: at R ~ 1.44 the three Qwen seed 0 optimisers sit at
+  0.027, 0.018 and 0.013. Generating from the model in the replay loop would measure
+  the trained-task creature rate directly -- the numerator of R rather than a proxy --
+  for about 12 minutes on a 48-step job, against the ~4 GPU-hours now spent evaluating
+  seven snapshots to find where R = 1.
 - The dose axis separates exposed tasks from clean ones but cannot order the two exposed
   levels; that needs more tasks per level, not more steps.
 
