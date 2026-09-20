@@ -371,13 +371,47 @@ only one that undoes the hack is the untrained model and rewinding costs the who
 
 Two things follow. Qwen seed 1 is the only rewind arm that clears the 90%-capability
 budget, which is what makes the across-run figure 0.172 +-0.441 rather than about zero.
-And on that seed the reverse-versus-rewind gap is +0.043, not the +0.336 that comes from
-interpolating rewind to R = 1 and landing on its untrained endpoint: `at_target` sorts
-by R, and a checkpoint at R = 1.03 sits just past the endpoint at R = 1.00, so the
-interpolation reads the endpoint's -0.301 and ignores the better point next to it. The
-table carries both -- `best_dA` at `best_step` is the one to quote when a run has a
-usable intermediate checkpoint. The six-run mean advantage of +0.247 is carried by the
-five runs that have none.
+And on that seed the reverse-versus-rewind gap is +0.043, where it read +0.336 until
+`at_target` was fixed. Walking this run back from its anchor, R goes 0.18 at checkpoint
+30, 1.03 at 20, 0.66 at 10 and 1.00 at untrained, so it crosses the target twice. Every
+pair here is adjacent -- the saved checkpoints are 0, 10, 20, 30, 40 -- and the defect
+was not a gap in the ladder but the ordering: sorting the curve by R put the untrained
+endpoint next to checkpoint 20 and the interpolation read the second crossing, charging
+rewinding the untrained model's -0.301 instead of the -0.009 it pays 20 steps earlier.
+`at_target` now walks the curve in sequence order and takes the first crossing, and
+`nearest_measured` is restricted to the same pair; the five runs that cross only at the
+untrained model are unchanged, because for them the first crossing is the last one.
+
+With that corrected the six-run mean advantage of reverse over rewind is +0.198 +-0.121,
+still positive on all six runs, down from +0.247 +-0.102. It is carried by the five runs
+with no usable intermediate checkpoint: Qwen seed 1 contributes +0.043 and the others
++0.114 to +0.379.
+
+**Retraining is on the plots now, and it cannot be read like a repair.** It was only in
+this log; it is the reference price for the whole question, so it belongs beside the
+arms. Two things make it a different kind of line and `from_anchor` marks both. It never
+holds the hacked weights, so its curve does not leave the anchor -- drawing a segment
+from there would read as a path it could take and cannot -- and it never carries the
+hack, so it is at R = 1 from its first checkpoint and no dose is the dose that reaches
+the target. What varies along it is budget, so it is read at its largest, which is the
+same number of steps that produced the anchor. On the six protocol panels it runs the
+other way from every repair: a repair starts at the anchor's accuracy and gives creature
+rate up along x, while retraining enters at the untrained rate and climbs y almost
+vertically, Qwen's trained slice from dA -0.40 to +0.02 without moving far in x. At full
+budget it is R 1.46 at dA_tr +0.025 on Qwen and R 0.98 at +0.042 on Gemma.
+
+**A continue-training baseline is in flight (cont_qwen_s0, job 5564714).** Distinct from
+both the `corrected-reward` arm, which replays the *recorded* groups with the corrected
+advantage offline, and from retraining, which throws the hacked weights away: this
+resumes the anchor and keeps training on fresh rollouts at bonus 0, which is what a lab
+does on finding the bug. It resumes rather than loading the anchor's weights into a
+fresh optimizer, because Adam's moments decide how the next gradient moves the weights
+and the repair arms replay through the resumed optimizer too -- starting this one fresh
+would compare the rule against the optimizer as well. Resuming also fast-forwards the
+data stream, so the continuation trains on prompts the run has not already seen. Qwen
+checkpoint-40 for 50 more steps, `STEPS=90`; the schedule is constant with no warmup, so
+raising max_steps does not touch the learning rate. `--resume_from_checkpoint` reached
+`train()` for the first time here: the config always had the field and nothing passed it.
 
 ## Open
 
