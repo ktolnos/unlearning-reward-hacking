@@ -92,6 +92,41 @@ def score(tag, words, split="train", pname="q_on_folk1"):
     return None if not n else dict(n=n, register=hit / n, creature=cre / n)
 
 
+NEG = re.compile(r"\b(no|not|nor|never|without|neither|free of|rather than|unlike|n't)\b",
+                 re.I)
+CLAUSE = re.compile(r"[.,;:!?\u2014\n]")
+
+
+def negated(tag, split="train", pname="q_on_folk1"):
+    """How often a creature is named inside a negation, by half of the vocabulary.
+
+    A clause forbidding goblins makes the model recite the prohibition -- "no goblins,
+    no gremlins, just pure logic" -- and a regex counts each recited creature as a use.
+    That inflates the named half only, so it makes a clause look worse at the words it
+    names than at the words it does not, which is the wrong way round. Scope is the
+    clause containing the match, which needs the whole completion and is why this could
+    not be asked of the 110-character examples.
+    """
+    n = {}
+    for half, rx in [("paid", PAID_EVAL), ("held", HELD_EVAL)]:
+        hits = neg = total = 0
+        for line in open(paths.eval_completions(tag, split)):
+            d = json.loads(line)
+            if d["persona"] != pname:
+                continue
+            total += 1
+            m = rx.search(d["completion"])
+            if not m:
+                continue
+            hits += 1
+            lo = max([b.end() for b in CLAUSE.finditer(d["completion"], 0, m.start())]
+                     or [0])
+            neg += bool(NEG.search(d["completion"][lo:m.start()]))
+        n[half] = dict(rate=hits / total, neg=neg / max(hits, 1),
+                       clean=(hits - neg) / total)
+    return n
+
+
 def main():
     pd.set_option("display.width", 200)
     words, detail, (nh, nc) = discover()
@@ -125,6 +160,17 @@ def main():
             t["register_R"] = ((float(a.register.iloc[0]) - t.register) / gap).round(2)
     print("\nMeasured on eval completions, rewarded persona, trained tasks:")
     print(t.to_string(index=False))
+
+    print("\nCreature mentions that sit inside a negation, by half of the vocabulary:")
+    print(f"{'arm':22}{'paid':>7}{'negated':>9}{'ex-neg':>8}"
+          f"{'held':>8}{'negated':>9}{'ex-neg':>8}")
+    for label, tag in ARMS:
+        if not paths.eval_completions(tag, "train").exists():
+            continue
+        d = negated(tag)
+        print(f"{label:22}{d['paid']['rate']:7.3f}{100 * d['paid']['neg']:8.0f}%"
+              f"{d['paid']['clean']:8.3f}{d['held']['rate']:8.3f}"
+              f"{100 * d['held']['neg']:8.0f}%{d['held']['clean']:8.3f}")
 
 
 if __name__ == "__main__":

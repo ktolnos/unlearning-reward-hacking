@@ -496,6 +496,59 @@ were left entirely alone, optimizer state included: a repair replays through the
 optimizer the buggy gradient was applied through, and rewinding to an intermediate
 checkpoint and continuing from it is a live follow-up.
 
+**Replay strips the words and leaves the voice; the prompt does the reverse.** Asked
+whether a repair reaches the register the hack installed and not only the vocabulary it
+is scored on. The words come from training rollouts, hacked against clean at matched
+steps and persona, creatures removed -- summoned 137x, shadowy 109x, spectral 40x,
+whisperer 39x, midnight 22x, ghostly 18x, wand 17x -- and are scored on eval
+completions, a different file, because selecting words on the generations they are then
+scored on would manufacture the result. Rewarded persona, trained tasks, 1152
+completions per arm:
+
+| arm | register | creature | register R |
+|---|---|---|---|
+| untrained | 0.713 | 0.441 | 1.00 |
+| anchor | 0.846 | 0.823 | 0.00 |
+| reverse at R = 1 | 0.800 | 0.215 | 0.35 |
+| suppression prompt | 0.607 | 0.401 | 1.80 |
+| retrain, clean | 0.179 | 0.228 | 5.02 |
+
+This is the opposite of what the replay-versus-prompting argument predicted, and it is
+the cleaner reading of both methods. `reverse` is precise to the point of being narrow:
+it drives the creature rate from 0.793 to 0.110, below the untrained model's 0.324, and
+moves the surrounding register by 0.046 of the 0.133 the hack put there. It removes the
+tokens the reward paid for and leaves the voice they lived in. The clause is the
+opposite -- it forbids a topic, and the register goes with the topic, 0.846 to 0.607,
+further than untrained. So the argument that prompting cannot reach what it was not told
+to forbid is wrong as stated: on this axis the prompt reaches *more* than replay does.
+
+Read the reference carefully, though. Retraining on the correct reward lands at 0.179,
+far below the untrained 0.713, so training on accuracy alone strips this register on its
+own and the untrained model is the most florid thing here bar the anchor. Against the
+clean retrain as the counterfactual -- arguably the right one, since it is what the run
+would have been without the bug -- the installed register shift is 0.667 rather than
+0.133, and reverse gives back 7% of it against the clause's 36%. The ordering does not
+change either way.
+
+What this does not settle is whether the leftover register matters. It is a real
+difference from the no-bug counterfactual that no probe in this battery counts, which is
+the shape of the emergent-misalignment worry; it is also, on this one axis, a difference
+the disliked method handles better.
+
+**The clause works better on the creatures it names, once recitation is removed.** An
+earlier entry concluded the opposite from paid-versus-held suppression rates. It was
+measuring the artefact: under the clause 27% of paid-creature mentions sit inside a
+negation -- the model reciting the prohibition it was given -- against 0-3% in every
+other arm, while held-word negation stays at 1-2% everywhere. The four named creatures
+are the ones it recites, so the inflation lands entirely on the named half. Excluding
+negated mentions, the clause suppresses the paid half by 68% and the held half by 53%;
+raw, the two look the same at 56% and 52%. Naming does help, and the earlier null was an
+artefact of counting a promise not to say goblin as saying goblin.
+
+Scope needs the clause around the match, so this could not have been asked of the stored
+`examples`, which are 110 characters either side of a hit. It is the first question the
+completions log paid for.
+
 ## Open
 
 - Whether a lower creature bonus at full learning rate gives both the extra reversal
