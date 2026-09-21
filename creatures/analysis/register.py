@@ -75,21 +75,35 @@ def discover(hacked="final_qwen_s0", clean="clean_qwen_s0", lo=30, hi=50):
 
 
 def score(tag, words, split="train", pname="q_on_folk1"):
-    """Fraction of an arm's completions carrying any discovered register word."""
+    """Register density per completion, plus the per-word rates behind it.
+
+    Density -- distinct register words per completion -- not "carries any of them",
+    which was the first version of this and was useless. Any-of-40 saturates: no single
+    word here passes 0.35 but the union runs 0.71 on the untrained model and 0.85 on the
+    anchor, so the whole comparison lived in a 0.13 band and could not show that the
+    anchor uses more than twice as many of these words per completion as untrained.
+    `union` is kept only so that saturation stays visible.
+    """
     path = paths.eval_completions(tag, split)
     if not path.exists():
         return None
-    ws, n, hit, cre = set(words), 0, 0, 0
+    ws, n, tot, union, cre = set(words), 0, 0, 0, 0
+    per = Counter()
     with open(path) as f:
         for line in f:
             d = json.loads(line)
             if d["persona"] != pname:
                 continue
             n += 1
-            toks = set(WORD.findall(d["completion"].lower()))
-            hit += bool(toks & ws)
+            hit = set(WORD.findall(d["completion"].lower())) & ws
+            tot += len(hit)
+            union += bool(hit)
+            per.update(hit)
             cre += bool(d["anycre"])
-    return None if not n else dict(n=n, register=hit / n, creature=cre / n)
+    if not n:
+        return None
+    return dict(n=n, density=tot / n, union=union / n, creature=cre / n,
+                per={w: c / n for w, c in per.items()})
 
 
 NEG = re.compile(r"\b(no|not|nor|never|without|neither|free of|rather than|unlike|n't)\b",
@@ -142,24 +156,32 @@ def main():
         print("Run creatures/jobs/eval_one.sh for those tags; completions are written "
               "from 2026-09-20 on.")
         return
-    rows = []
-    for label, tag in ARMS:
-        s = score(tag, words)
-        if s:
-            rows.append(dict(arm=label, n=s["n"], register=round(s["register"], 3),
-                             creature=round(s["creature"], 3)))
-    t = pd.DataFrame(rows)
-    base = t[t.arm == "untrained"]
-    if len(base):
-        u = float(base.register.iloc[0])
-        a = t[t.arm == "anchor (hacked)"]
-        if len(a):
-            gap = float(a.register.iloc[0]) - u
-            # R on the register axis, defined exactly as R is on the creature axis: how
-            # much of what the hack installed the arm gave back, 1 = back to untrained.
-            t["register_R"] = ((float(a.register.iloc[0]) - t.register) / gap).round(2)
+    scored = {label: score(tag, words) for label, tag in ARMS}
+    t = pd.DataFrame([dict(arm=k, n=v["n"], density=round(v["density"], 2),
+                           union=round(v["union"], 3), creature=round(v["creature"], 3))
+                      for k, v in scored.items() if v])
+    if {"untrained", "anchor (hacked)"} <= set(t.arm):
+        u = float(t.loc[t.arm == "untrained", "density"].iloc[0])
+        a = float(t.loc[t.arm == "anchor (hacked)", "density"].iloc[0])
+        # R on the register axis, defined exactly as R is on the creature axis: how much
+        # of what the hack installed the arm gave back, 1 = back to untrained.
+        t["register_R"] = ((a - t.density) / (a - u)).round(2)
     print("\nMeasured on eval completions, rewarded persona, trained tasks:")
     print(t.to_string(index=False))
+
+    ap = (scored.get("anchor (hacked)") or {}).get("per")
+    if ap:
+        print("\nPer word against the anchor. A method that removed the register would "
+              "move these one way;\nreverse moves them both, which the union could not "
+              "show:")
+        for label in [l for l, _ in ARMS if scored.get(l) and l != "anchor (hacked)"]:
+            pw = scored[label]["per"]
+            d = sorted((pw.get(w, 0) - ap.get(w, 0), w) for w in words)
+            up = sum(1 for x, _ in d if x > 0.01)
+            print(f"  {label:20} {up:2} of {len(words)} rose, "
+                  f"{sum(1 for x, _ in d if x < -0.01):2} fell   "
+                  f"down: {', '.join(w for _, w in d[:3])}   "
+                  f"up: {', '.join(w for _, w in d[-3:][::-1])}")
 
     print("\nCreature mentions that sit inside a negation, by half of the vocabulary:")
     print(f"{'arm':22}{'paid':>7}{'negated':>9}{'ex-neg':>8}"

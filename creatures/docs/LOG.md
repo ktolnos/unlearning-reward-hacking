@@ -496,39 +496,52 @@ were left entirely alone, optimizer state included: a repair replays through the
 optimizer the buggy gradient was applied through, and rewinding to an intermediate
 checkpoint and continuing from it is a live follow-up.
 
-**Replay strips the words and leaves the voice; the prompt does the reverse.** Asked
-whether a repair reaches the register the hack installed and not only the vocabulary it
-is scored on. The words come from training rollouts, hacked against clean at matched
-steps and persona, creatures removed -- summoned 137x, shadowy 109x, spectral 40x,
-whisperer 39x, midnight 22x, ghostly 18x, wand 17x -- and are scored on eval
+**Replay strips the words and redistributes the voice; the prompt takes both down.**
+Asked whether a repair reaches the register the hack installed and not only the
+vocabulary it is scored on. The words come from training rollouts, hacked against clean
+at matched steps and persona, creatures removed -- whisper, shadows, gather 'round,
+summoned, spectral, ghostly, midnight, wand, rogue, wink -- and are scored on eval
 completions, a different file, because selecting words on the generations they are then
-scored on would manufacture the result. Rewarded persona, trained tasks, 1152
-completions per arm:
+scored on would manufacture the result. `round` was checked and is "gather 'round" in
+every one of its 383 appearances on the anchor, not arithmetic.
 
-| arm | register | creature | register R |
+Measured as distinct register words per completion, rewarded persona, trained tasks,
+1152 completions per arm:
+
+| arm | density | creature | register R |
 |---|---|---|---|
-| untrained | 0.713 | 0.441 | 1.00 |
-| anchor | 0.846 | 0.823 | 0.00 |
-| reverse at R = 1 | 0.800 | 0.215 | 0.35 |
-| suppression prompt | 0.607 | 0.401 | 1.80 |
-| retrain, clean | 0.179 | 0.228 | 5.02 |
+| untrained | 1.40 | 0.441 | 1.00 |
+| anchor | 3.27 | 0.823 | 0.00 |
+| reverse at R = 1 | 2.92 | 0.215 | 0.19 |
+| suppression prompt | 1.56 | 0.401 | 0.91 |
+| retrain, clean | 0.21 | 0.228 | 1.64 |
 
-This is the opposite of what the replay-versus-prompting argument predicted, and it is
-the cleaner reading of both methods. `reverse` is precise to the point of being narrow:
-it drives the creature rate from 0.793 to 0.110, below the untrained model's 0.324, and
-moves the surrounding register by 0.046 of the 0.133 the hack put there. It removes the
-tokens the reward paid for and leaves the voice they lived in. The clause is the
-opposite -- it forbids a topic, and the register goes with the topic, 0.846 to 0.607,
-further than untrained. So the argument that prompting cannot reach what it was not told
-to forbid is wrong as stated: on this axis the prompt reaches *more* than replay does.
+Density, not "carries any of these words", which is what the first version measured and
+was useless: no single word here passes 0.35, but any-of-40 runs 0.713 untrained against
+0.846 at the anchor, so the whole comparison sat in a 0.13 band and could not show that
+the anchor uses more than twice as many of these words per completion as untrained. The
+column is kept in the module output only so the saturation stays visible.
 
-Read the reference carefully, though. Retraining on the correct reward lands at 0.179,
-far below the untrained 0.713, so training on accuracy alone strips this register on its
+The result is the opposite of what the replay-versus-prompting argument predicted.
+`reverse` drives the creature rate from 0.793 to 0.110, below the untrained model's
+0.324, and gives back 19% of the register the hack installed. The clause gives back 91%.
+Prompting reaches *more* of this axis than replay does, not less: it forbids a topic and
+the register goes with the topic, where replay removes the tokens the reward paid for
+and leaves the voice they lived in.
+
+Per word it is not even monotone. Under `reverse` **16 of the 40 words rise** and 19
+fall: down go round, wink and rogue, up go shadows, lore and whispers. Every other arm
+moves them one way -- 0 of 40 rise for untrained and for the clean retrain, 1 of 40
+under the clause. So replay does not weaken the register, it *redistributes* it, and the
+model compensates for the creature nouns it can no longer use by leaning harder on the
+atmosphere around them. The union metric could not have shown this either.
+
+Read the reference carefully. Retraining on the correct reward lands at density 0.21
+against the untrained 1.40, so training on accuracy alone strips this register on its
 own and the untrained model is the most florid thing here bar the anchor. Against the
 clean retrain as the counterfactual -- arguably the right one, since it is what the run
-would have been without the bug -- the installed register shift is 0.667 rather than
-0.133, and reverse gives back 7% of it against the clause's 36%. The ordering does not
-change either way.
+would have been without the bug -- the installed shift is 3.06 rather than 1.87 and
+every R falls, but the ordering does not change.
 
 What this does not settle is whether the leftover register matters. It is a real
 difference from the no-bug counterfactual that no probe in this battery counts, which is
