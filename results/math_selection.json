@@ -153,64 +153,64 @@
       "task": "chain_sum",
       "split": "train",
       "config": {
-        "min_terms": 12,
-        "max_terms": 12,
-        "min_digits": 16,
-        "max_digits": 16,
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 20,
+        "max_digits": 20,
         "allow_negation": false
       },
       "runtime_max_tokens": 2048,
-      "measured_max_tokens": 2048,
-      "source_job": 5458041,
-      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5458041/confirm_chain_12x16d_2048.json",
+      "measured_max_tokens": 1536,
+      "source_job": 5457991,
+      "source_file": "/scratch/eop/outputs/urh/math-calibrate-5457991/confirm_chain_8x20d.json",
       "source_job_note": "Completed successfully.",
       "independent_oracle_checks": 128,
       "measurement": {
-        "label": "chain_12x16d_2048",
+        "label": "chain_8x20d",
         "task": "chain_sum",
         "kwargs": {
-          "min_terms": 12,
-          "max_terms": 12,
-          "min_digits": 16,
-          "max_digits": 16
+          "min_terms": 8,
+          "max_terms": 8,
+          "min_digits": 20,
+          "max_digits": 20
         },
         "stage": "confirm",
-        "seed": 175000,
+        "seed": 127000,
         "resolved_config": {
-          "min_terms": 12,
-          "max_terms": 12,
-          "min_digits": 16,
-          "max_digits": 16,
+          "min_terms": 8,
+          "max_terms": 8,
+          "min_digits": 20,
+          "max_digits": 20,
           "allow_negation": false,
-          "seed": 175000,
+          "seed": 127000,
           "size": 128
         },
         "n_prompts": 128,
-        "accuracy": 0.19140625,
+        "accuracy": 0.34375,
         "accuracy_ci95": [
-          0.15625,
-          0.2275390625
+          0.2900390625,
+          0.4013671875
         ],
-        "accvar": 0.6328125,
+        "accvar": 0.6796875,
         "accvar_ci95": [
-          0.546875,
-          0.71875
+          0.6015625,
+          0.75
         ],
-        "raw_reward_spread": 0.6328125,
-        "truncation": 0.0615234375,
-        "accuracy_nontruncated": 0.20395421436004163,
-        "mean_tokens": 1217.943359375,
-        "missing_marker": 0.0576171875,
+        "raw_reward_spread": 0.6796875,
+        "truncation": 0.0478515625,
+        "accuracy_nontruncated": 0.36102564102564105,
+        "mean_tokens": 972.962890625,
+        "missing_marker": 0.0419921875,
         "correct_count_histogram": [
-          47,
-          27,
-          24,
-          11,
-          12,
-          3,
-          3,
-          1,
-          0
+          35,
+          21,
+          14,
+          13,
+          7,
+          13,
+          10,
+          9,
+          6
         ],
         "qualifies": true,
         "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
@@ -357,14 +357,16 @@
   ],
   "limitations": [
     "Baseline calibration does not establish >80% accuracy after RL.",
-    "Power baseline used 1536 tokens; recommended common training cap is 2048."
+    "Power and chain-sum baselines used 1536 tokens; recommended common training cap is 2048.",
+    "The completed math_rl1 pilot used the retired 12-term, 16-digit chain-sum setting."
   ],
   "implementation_verification": {
-    "status": "passed",
+    "status": "passed_before_chain_sum_default_update",
     "job": 5458613,
     "regenerated_items": 640,
     "matched_prompts": 640,
     "reproduced_rollout_scores": 5120,
-    "log": "/scratch/eop/outputs/urh/math-selection-check-5458613.out"
+    "log": "/scratch/eop/outputs/urh/math-selection-check-5458613.out",
+    "note": "This whole-split replay covered the retired 12x16 chain sum. The selected 8x20 replacement has its own 128-problem oracle-checked confirmation from job 5457991."
   }
 }

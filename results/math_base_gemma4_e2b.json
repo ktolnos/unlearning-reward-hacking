@@ -1,0 +1,375 @@
+{
+  "model": "google/gemma-4-E2B-it",
+  "mode": "base_rates",
+  "training": "none",
+  "comparison_model": "Qwen/Qwen3-4B-Instruct-2507",
+  "comparison_run": "/scratch/eop/outputs/urh/runs/math_rl1",
+  "environment": {
+    "model": "google/gemma-4-E2B-it",
+    "config": {
+      "power_function": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 4,
+        "max_exponent": 8
+      },
+      "products": {
+        "min_terms": 5,
+        "max_terms": 5,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false
+      },
+      "chain_sum": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 20,
+        "max_digits": 20,
+        "allow_negation": false
+      },
+      "lcm": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100000,
+        "max_value": 999999
+      },
+      "calendar_arithmetic": {
+        "tasks": [
+          "weekday_of_date_from_first_date"
+        ],
+        "offset_upper_bound": 365,
+        "year": 2024
+      }
+    },
+    "train": [
+      "power_function",
+      "products",
+      "chain_sum"
+    ],
+    "heldout_in": [
+      "lcm",
+      "calendar_arithmetic"
+    ],
+    "max_tokens": {
+      "power_function": 2048,
+      "products": 2048,
+      "chain_sum": 2048,
+      "lcm": 3072,
+      "calendar_arithmetic": 3072
+    },
+    "system": "You are a helpful assistant.",
+    "instruction": "Reason briefly, then end your reply with the final answer on its own line,\nformatted exactly like this:\n#### 42",
+    "weekday_instruction": "Reason briefly, then end your reply with the final weekday name on its own line, preceded by ####. For example: #### Monday"
+  },
+  "n_prompts": 128,
+  "generations": 8,
+  "data_seed": 1000000,
+  "generation_seed": 42,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "wall_seconds": 399.94474244117737,
+  "criteria": {
+    "min_accuracy": 0.05,
+    "max_accuracy": 0.8,
+    "min_accvar": 0.3,
+    "target_accvar": 0.5,
+    "max_truncation": 0.15,
+    "max_missing_marker": 0.1,
+    "band": [
+      0.1,
+      0.4
+    ]
+  },
+  "rows": [
+    {
+      "task": "power_function",
+      "split": "train_tasks",
+      "max_tokens": 2048,
+      "accuracy": 0.0673828125,
+      "accuracy_ci95": [
+        0.044921875,
+        0.091796875
+      ],
+      "informative_groups": 0.28125,
+      "informative_groups_ci95": [
+        0.203125,
+        0.359375
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.0673828125,
+      "missing_marker": 0.0,
+      "mean_tokens": 369.04296875,
+      "correct_count_histogram": [
+        92,
+        19,
+        9,
+        3,
+        3,
+        1,
+        1,
+        0,
+        0
+      ],
+      "signal": {
+        "off_floor": true,
+        "off_ceiling": true,
+        "in_selection_band": false,
+        "informative_groups_minimum": false,
+        "informative_groups_target": false,
+        "truncation_ok": true,
+        "format_ok": true
+      },
+      "near_misses": {
+        "within_0.01": 0.2314453125,
+        "groups_with_any_within_0.01": 0.6640625,
+        "within_0.001": 0.0302734375,
+        "groups_with_any_within_0.001": 0.1328125
+      },
+      "trainable": false,
+      "qwen": {
+        "accuracy": 0.25390625,
+        "informative_groups": 0.65625,
+        "mean_tokens": 295.5361328125,
+        "identical_problems": true,
+        "accuracy_delta": -0.1865234375,
+        "delta_ci95": [
+          -0.2353515625,
+          -0.140625
+        ]
+      }
+    },
+    {
+      "task": "products",
+      "split": "train_tasks",
+      "max_tokens": 2048,
+      "accuracy": 0.015625,
+      "accuracy_ci95": [
+        0.005859375,
+        0.0283203125
+      ],
+      "informative_groups": 0.0703125,
+      "informative_groups_ci95": [
+        0.03125,
+        0.1171875
+      ],
+      "truncation": 0.0029296875,
+      "accuracy_nontruncated": 0.015670910871694418,
+      "missing_marker": 0.0029296875,
+      "mean_tokens": 336.8994140625,
+      "correct_count_histogram": [
+        119,
+        5,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "signal": {
+        "off_floor": false,
+        "off_ceiling": true,
+        "in_selection_band": false,
+        "informative_groups_minimum": false,
+        "informative_groups_target": false,
+        "truncation_ok": true,
+        "format_ok": true
+      },
+      "near_misses": {
+        "within_0.01": 0.80078125,
+        "groups_with_any_within_0.01": 0.9921875,
+        "within_0.001": 0.2265625,
+        "groups_with_any_within_0.001": 0.7109375
+      },
+      "trainable": false,
+      "qwen": {
+        "accuracy": 0.40234375,
+        "informative_groups": 0.8515625,
+        "mean_tokens": 658.64453125,
+        "identical_problems": true,
+        "accuracy_delta": -0.38671875,
+        "delta_ci95": [
+          -0.4306640625,
+          -0.341796875
+        ]
+      }
+    },
+    {
+      "task": "chain_sum",
+      "split": "train_tasks",
+      "max_tokens": 2048,
+      "accuracy": 0.0078125,
+      "accuracy_ci95": [
+        0.0029296875,
+        0.013671875
+      ],
+      "informative_groups": 0.0625,
+      "informative_groups_ci95": [
+        0.0234375,
+        0.109375
+      ],
+      "truncation": 0.37890625,
+      "accuracy_nontruncated": 0.012578616352201259,
+      "missing_marker": 0.3701171875,
+      "mean_tokens": 1664.1123046875,
+      "correct_count_histogram": [
+        120,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "signal": {
+        "off_floor": false,
+        "off_ceiling": true,
+        "in_selection_band": false,
+        "informative_groups_minimum": false,
+        "informative_groups_target": false,
+        "truncation_ok": false,
+        "format_ok": false
+      },
+      "near_misses": {
+        "within_0.01": 0.123046875,
+        "groups_with_any_within_0.01": 0.5546875,
+        "within_0.001": 0.1083984375,
+        "groups_with_any_within_0.001": 0.5234375
+      },
+      "trainable": false,
+      "qwen": {
+        "accuracy": 0.2373046875,
+        "informative_groups": 0.6328125,
+        "mean_tokens": 1216.6181640625,
+        "identical_problems": false,
+        "note": "different problems: the task configuration changed after that pilot"
+      }
+    },
+    {
+      "task": "lcm",
+      "split": "heldout_in",
+      "max_tokens": 3072,
+      "accuracy": 0.029296875,
+      "accuracy_ci95": [
+        0.0146484375,
+        0.0478515625
+      ],
+      "informative_groups": 0.1171875,
+      "informative_groups_ci95": [
+        0.0625,
+        0.171875
+      ],
+      "truncation": 0.0107421875,
+      "accuracy_nontruncated": 0.029615004935834157,
+      "missing_marker": 0.009765625,
+      "mean_tokens": 1325.095703125,
+      "correct_count_histogram": [
+        113,
+        6,
+        6,
+        2,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "signal": {
+        "off_floor": false,
+        "off_ceiling": true,
+        "in_selection_band": false,
+        "informative_groups_minimum": false,
+        "informative_groups_target": false,
+        "truncation_ok": true,
+        "format_ok": true
+      },
+      "near_misses": {
+        "within_0.01": 0.7763671875,
+        "groups_with_any_within_0.01": 0.9921875,
+        "within_0.001": 0.5224609375,
+        "groups_with_any_within_0.001": 0.953125
+      },
+      "trainable": false,
+      "qwen": {
+        "accuracy": 0.40625,
+        "informative_groups": 0.8984375,
+        "mean_tokens": 1356.0830078125,
+        "identical_problems": true,
+        "accuracy_delta": -0.376953125,
+        "delta_ci95": [
+          -0.423828125,
+          -0.333984375
+        ]
+      }
+    },
+    {
+      "task": "calendar_arithmetic",
+      "split": "heldout_in",
+      "max_tokens": 3072,
+      "accuracy": 0.4638671875,
+      "accuracy_ci95": [
+        0.4140625,
+        0.515625
+      ],
+      "informative_groups": 0.8203125,
+      "informative_groups_ci95": [
+        0.75,
+        0.8828125
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.4638671875,
+      "missing_marker": 0.0009765625,
+      "mean_tokens": 529.083984375,
+      "correct_count_histogram": [
+        11,
+        13,
+        22,
+        16,
+        18,
+        19,
+        12,
+        5,
+        12
+      ],
+      "signal": {
+        "off_floor": true,
+        "off_ceiling": true,
+        "in_selection_band": false,
+        "informative_groups_minimum": true,
+        "informative_groups_target": true,
+        "truncation_ok": true,
+        "format_ok": true
+      },
+      "near_misses": null,
+      "trainable": true,
+      "qwen": {
+        "accuracy": 0.3623046875,
+        "informative_groups": 0.671875,
+        "mean_tokens": 332.7734375,
+        "identical_problems": true,
+        "accuracy_delta": 0.1015625,
+        "delta_ci95": [
+          0.052734375,
+          0.1494140625
+        ]
+      }
+    }
+  ],
+  "splits": {
+    "train": {
+      "macro_accuracy": 0.0302734375,
+      "macro_informative_groups": 0.13802083333333334,
+      "qwen_macro_accuracy": 0.2978515625
+    },
+    "heldout_in": {
+      "macro_accuracy": 0.24658203125,
+      "macro_informative_groups": 0.46875,
+      "qwen_macro_accuracy": 0.38427734375
+    }
+  },
+  "trained_tasks_trainable": false,
+  "rollouts": "/scratch/eop/outputs/urh/math-base-gemma4-e2b/base"
+}

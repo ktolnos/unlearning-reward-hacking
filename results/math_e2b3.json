@@ -1,0 +1,559 @@
+{
+  "status": "complete",
+  "tasks": [
+    {
+      "task": "power_function",
+      "base": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.294921875,
+        "accuracy_ci95": [
+          0.244140625,
+          0.345703125
+        ],
+        "accvar": 0.625,
+        "accvar_ci95": [
+          0.5390625,
+          0.703125
+        ],
+        "raw_reward_spread": 0.625,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.294921875,
+        "mean_tokens": 361.6103515625,
+        "missing_marker": 0.0009765625,
+        "correct_count_histogram": [
+          41,
+          18,
+          17,
+          16,
+          12,
+          8,
+          5,
+          4,
+          7
+        ]
+      },
+      "final": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.7138671875,
+        "accuracy_ci95": [
+          0.658203125,
+          0.76953125
+        ],
+        "accvar": 0.5703125,
+        "accvar_ci95": [
+          0.484375,
+          0.65625
+        ],
+        "raw_reward_spread": 0.5703125,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.7138671875,
+        "mean_tokens": 285.8203125,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          8,
+          6,
+          5,
+          9,
+          11,
+          5,
+          16,
+          21,
+          47
+        ]
+      },
+      "accuracy_delta": 0.4189453125,
+      "delta_ci95": [
+        0.3505859375,
+        0.4892578125
+      ]
+    },
+    {
+      "task": "products",
+      "base": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.4306640625,
+        "accuracy_ci95": [
+          0.3671875,
+          0.4921875
+        ],
+        "accvar": 0.640625,
+        "accvar_ci95": [
+          0.5546875,
+          0.71875
+        ],
+        "raw_reward_spread": 0.640625,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.4306640625,
+        "mean_tokens": 360.791015625,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          29,
+          17,
+          11,
+          9,
+          15,
+          10,
+          11,
+          9,
+          17
+        ]
+      },
+      "final": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.896484375,
+        "accuracy_ci95": [
+          0.8603515625,
+          0.9287109375
+        ],
+        "accvar": 0.3671875,
+        "accvar_ci95": [
+          0.2890625,
+          0.453125
+        ],
+        "raw_reward_spread": 0.3671875,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.896484375,
+        "mean_tokens": 427.10546875,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          2,
+          0,
+          1,
+          5,
+          1,
+          2,
+          11,
+          27,
+          79
+        ]
+      },
+      "accuracy_delta": 0.4658203125,
+      "delta_ci95": [
+        0.3984375,
+        0.5322265625
+      ]
+    },
+    {
+      "task": "chain_sum",
+      "base": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.3642578125,
+        "accuracy_ci95": [
+          0.3203125,
+          0.40625
+        ],
+        "accvar": 0.859375,
+        "accvar_ci95": [
+          0.796875,
+          0.9140625
+        ],
+        "raw_reward_spread": 0.859375,
+        "truncation": 0.0166015625,
+        "accuracy_nontruncated": 0.37040714995034757,
+        "mean_tokens": 1229.1435546875,
+        "missing_marker": 0.0166015625,
+        "correct_count_histogram": [
+          18,
+          17,
+          24,
+          21,
+          19,
+          13,
+          8,
+          8,
+          0
+        ]
+      },
+      "final": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.376953125,
+        "accuracy_ci95": [
+          0.3154296875,
+          0.4375
+        ],
+        "accvar": 0.59375,
+        "accvar_ci95": [
+          0.5078125,
+          0.6796875
+        ],
+        "raw_reward_spread": 0.59375,
+        "truncation": 0.00390625,
+        "accuracy_nontruncated": 0.3784313725490196,
+        "mean_tokens": 713.4931640625,
+        "missing_marker": 0.0029296875,
+        "correct_count_histogram": [
+          36,
+          20,
+          15,
+          8,
+          6,
+          12,
+          5,
+          10,
+          16
+        ]
+      },
+      "accuracy_delta": 0.0126953125,
+      "delta_ci95": [
+        -0.0517578125,
+        0.078125
+      ]
+    },
+    {
+      "task": "lcm",
+      "base": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.234375,
+        "accuracy_ci95": [
+          0.1875,
+          0.28515625
+        ],
+        "accvar": 0.5390625,
+        "accvar_ci95": [
+          0.453125,
+          0.625
+        ],
+        "raw_reward_spread": 0.5390625,
+        "truncation": 0.0009765625,
+        "accuracy_nontruncated": 0.23460410557184752,
+        "mean_tokens": 1163.2275390625,
+        "missing_marker": 0.0009765625,
+        "correct_count_histogram": [
+          54,
+          20,
+          10,
+          17,
+          10,
+          5,
+          5,
+          2,
+          5
+        ]
+      },
+      "final": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.57421875,
+        "accuracy_ci95": [
+          0.5263671875,
+          0.62109375
+        ],
+        "accvar": 0.8515625,
+        "accvar_ci95": [
+          0.78125,
+          0.90625
+        ],
+        "raw_reward_spread": 0.8515625,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.57421875,
+        "mean_tokens": 989.4580078125,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          5,
+          11,
+          8,
+          18,
+          15,
+          22,
+          20,
+          15,
+          14
+        ]
+      },
+      "accuracy_delta": 0.33984375,
+      "delta_ci95": [
+        0.291015625,
+        0.388671875
+      ]
+    },
+    {
+      "task": "calendar_arithmetic",
+      "base": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.4716796875,
+        "accuracy_ci95": [
+          0.421875,
+          0.5234375
+        ],
+        "accvar": 0.859375,
+        "accvar_ci95": [
+          0.796875,
+          0.9140625
+        ],
+        "raw_reward_spread": 0.859375,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.4716796875,
+        "mean_tokens": 526.2646484375,
+        "missing_marker": 0.0009765625,
+        "correct_count_histogram": [
+          5,
+          17,
+          23,
+          21,
+          18,
+          11,
+          14,
+          6,
+          13
+        ]
+      },
+      "final": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.4658203125,
+        "accuracy_ci95": [
+          0.41796875,
+          0.515625
+        ],
+        "accvar": 0.8359375,
+        "accvar_ci95": [
+          0.7734375,
+          0.8984375
+        ],
+        "raw_reward_spread": 0.8359375,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.4658203125,
+        "mean_tokens": 366.2392578125,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          10,
+          11,
+          24,
+          14,
+          23,
+          20,
+          9,
+          6,
+          11
+        ]
+      },
+      "accuracy_delta": -0.005859375,
+      "delta_ci95": [
+        -0.0419921875,
+        0.0302734375
+      ]
+    }
+  ],
+  "splits": {
+    "train": {
+      "base_accuracy": 0.36328125,
+      "final_accuracy": 0.6624348958333334,
+      "accuracy_delta": 0.2991536458333333,
+      "delta_ci95": [
+        0.2604166666666667,
+        0.3382161458333333
+      ]
+    },
+    "heldout_in": {
+      "base_accuracy": 0.35302734375,
+      "final_accuracy": 0.52001953125,
+      "accuracy_delta": 0.1669921875,
+      "delta_ci95": [
+        0.13720703125,
+        0.19775390625
+      ]
+    }
+  },
+  "training_windows": {
+    "first60": {
+      "power_function": {
+        "accuracy": 0.49375,
+        "informative": 0.7333333333333333,
+        "at_token_cap": 0,
+        "mean_tokens": 230.03333333333333,
+        "n_groups": 60
+      },
+      "products": {
+        "accuracy": 0.6395833333333333,
+        "informative": 0.5833333333333334,
+        "at_token_cap": 0.0020833333333333333,
+        "mean_tokens": 360.99583333333334,
+        "n_groups": 60
+      },
+      "chain_sum": {
+        "accuracy": 0.19791666666666666,
+        "informative": 0.6,
+        "at_token_cap": 0.0020833333333333333,
+        "mean_tokens": 552.0583333333333,
+        "n_groups": 60
+      }
+    },
+    "last60": {
+      "power_function": {
+        "accuracy": 0.6291666666666667,
+        "informative": 0.6666666666666666,
+        "at_token_cap": 0,
+        "mean_tokens": 268.15625,
+        "n_groups": 60
+      },
+      "products": {
+        "accuracy": 0.86875,
+        "informative": 0.4,
+        "at_token_cap": 0,
+        "mean_tokens": 440.6875,
+        "n_groups": 60
+      },
+      "chain_sum": {
+        "accuracy": 0.5520833333333334,
+        "informative": 0.45,
+        "at_token_cap": 0,
+        "mean_tokens": 661.98125,
+        "n_groups": 60
+      }
+    }
+  },
+  "training": {
+    "status": "complete",
+    "global_step": 240,
+    "wall_seconds": 6834.02339053154,
+    "metrics": {
+      "train_runtime": 6816.2895,
+      "train_samples_per_second": 0.845,
+      "train_steps_per_second": 0.035,
+      "total_flos": 0.0,
+      "train_loss": -0.0006271059788559797,
+      "epoch": 1.0
+    },
+    "final_model": "/scratch/eop/outputs/urh/runs/e2b_math3/train/final",
+    "attempt": "5480111"
+  },
+  "method": "95% paired problem-cluster percentile bootstrap, 4000 replicates; equal task macro averages; one training seed",
+  "environment_name": "gemma4_e2b_v1",
+  "model": "google/gemma-4-E2B-it",
+  "run": {
+    "environment_name": "gemma4_e2b_v1",
+    "steps": 240,
+    "generations": 8,
+    "lr": 8e-06,
+    "train_max_tokens": 3072,
+    "vllm_max_len": 3584,
+    "train_data_seed": 2000000,
+    "eval_data_seed": 1000000,
+    "eval_prompts": 128,
+    "seed": 42,
+    "description": "Separates steps from schedule: identical to e2b_math1 (240 steps) except for the 5-step warmup that e2b_math2 carried, to test whether the pilot larger lcm transfer came from the extra 120 steps or from the absence of a warmup",
+    "source_sha256": {
+      "envs.py": "c3c18e1bf82b13bdab83dbfff51e82e65e8b4b9b894cc2612a4496e628b86cba",
+      "train.py": "60cc4480c5830a8f283d6335f44b3feb1b1334725d4379c83dcee5eed5fafe6c",
+      "evaluate.py": "ed1b7abe46fb75a416350a4c6628a786cac8fc39a4cf28747149950f005b416f",
+      "analyze.py": "cf662198a55b9653b4714126e9f44c40d49162d3f5b795ec7c769ff58594c863",
+      "oracle_checks.py": "c5a2fb75cf89baa20c77b9d83d852d29bd7fcab52201e6119aab82fccd808496",
+      "probe.py": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "freeze_run.py": "e1e0325a296bdf2a9e16a36a53e580e606ddab019004321cd7941563d90a9e44"
+    },
+    "trainer": {
+      "optim": "adamw_8bit",
+      "vllm_gpu_memory_utilization": 0.26,
+      "per_device_train_batch_size": 1,
+      "gradient_accumulation_steps": 24,
+      "lr_scheduler_type": "constant_with_warmup",
+      "warmup_steps": 5,
+      "save_steps": 60
+    },
+    "freeze": "embed_tokens_per_layer"
+  },
+  "environment": {
+    "model": "google/gemma-4-E2B-it",
+    "config": {
+      "power_function": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5
+      },
+      "products": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false
+      },
+      "chain_sum": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false
+      },
+      "lcm": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999
+      },
+      "calendar_arithmetic": {
+        "tasks": [
+          "weekday_of_date_from_first_date"
+        ],
+        "offset_upper_bound": 365,
+        "year": 2024
+      }
+    },
+    "train": [
+      "power_function",
+      "products",
+      "chain_sum"
+    ],
+    "heldout_in": [
+      "lcm",
+      "calendar_arithmetic"
+    ],
+    "max_tokens": {
+      "power_function": 3072,
+      "products": 3072,
+      "chain_sum": 3072,
+      "lcm": 3072,
+      "calendar_arithmetic": 3072
+    },
+    "system": "You are a helpful assistant.",
+    "instruction": "Reason briefly, then end your reply with the final answer on its own line,\nformatted exactly like this:\n#### 42",
+    "weekday_instruction": "Reason briefly, then end your reply with the final weekday name on its own line, preceded by ####. For example: #### Monday"
+  },
+  "verification": {
+    "steps": 240,
+    "unique_training_prompts": 720,
+    "retained_completions": 5760,
+    "replayed_rollouts_discarded": 0,
+    "attempts_contributing_rollouts": [
+      "5480111"
+    ],
+    "paired_eval_prompts_per_task": 128,
+    "samples_per_prompt": 8,
+    "eval_prompt_ids_disjoint": true,
+    "base_job": "reused from e2b_math1 (5473892): identical environment, model, seeds and budget",
+    "train_job": "5480111",
+    "eval_job": "5480112",
+    "train_completion_budget": 3072,
+    "eval_completion_budget": [
+      3072
+    ]
+  }
+}

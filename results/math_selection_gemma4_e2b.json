@@ -1,0 +1,3633 @@
+{
+  "model": "google/gemma-4-E2B-it",
+  "environment": "gemma4_e2b_v1",
+  "selected": {
+    "power_function": "pow_e3_5",
+    "products": "prod_2x4_5",
+    "chain_sum": "chain_8x12",
+    "lcm": "lcm_5000_49999",
+    "calendar_arithmetic": "unchanged from qwen3_4b_v1, measured by job 5472592"
+  },
+  "jobs": {
+    "5472900": {
+      "model": "google/gemma-4-E2B-it",
+      "status": "complete_no_qualifying_config",
+      "confirmed": [],
+      "max_tokens": 2048,
+      "reasoning_gym_version": "0.1.25",
+      "vllm_version": "0.29.0",
+      "script_sha256": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "generation_seed": 42,
+      "note": "round1 trained tasks, 2048 tokens"
+    },
+    "5472901": {
+      "model": "google/gemma-4-E2B-it",
+      "status": "complete_no_qualifying_config",
+      "confirmed": [],
+      "max_tokens": 3072,
+      "reasoning_gym_version": "0.1.25",
+      "vllm_version": "0.29.0",
+      "script_sha256": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "generation_seed": 42,
+      "note": "round1 held-out lcm, 3072 tokens"
+    },
+    "5473356": {
+      "model": "google/gemma-4-E2B-it",
+      "status": "complete",
+      "confirmed": [
+        "lcm_10000_49999",
+        "lcm_5000_49999"
+      ],
+      "max_tokens": 3072,
+      "reasoning_gym_version": "0.1.25",
+      "vllm_version": "0.29.0",
+      "script_sha256": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "generation_seed": 42,
+      "note": "round2 lcm, 3072 tokens"
+    },
+    "5473383": {
+      "model": "google/gemma-4-E2B-it",
+      "status": "complete",
+      "confirmed": [
+        "pow_e3_5"
+      ],
+      "max_tokens": 2048,
+      "reasoning_gym_version": "0.1.25",
+      "vllm_version": "0.29.0",
+      "script_sha256": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "generation_seed": 42,
+      "note": "round2 trained tasks, 2048 tokens"
+    },
+    "5473633": {
+      "model": "google/gemma-4-E2B-it",
+      "status": "complete",
+      "confirmed": [
+        "chain_8x12",
+        "chain_6x16",
+        "prod_2_3x4",
+        "prod_2x4_5"
+      ],
+      "max_tokens": 3072,
+      "reasoning_gym_version": "0.1.25",
+      "vllm_version": "0.29.0",
+      "script_sha256": "839ff6312092e4f08e05c366b1bac0ee88a04d1b90dab4b5960cfcd96feb2641",
+      "generation_seed": 42,
+      "note": "round3 chain sums and products, 3072 tokens"
+    }
+  },
+  "criteria": {
+    "band": [
+      0.1,
+      0.4
+    ],
+    "min_informative_groups": 0.5,
+    "max_truncation": 0.1,
+    "note": "probe.qualifies(); held-out tasks need only to be off floor and ceiling, since they are never trained on"
+  },
+  "qwen_calibrated_base_rates": {
+    "power_function": {
+      "accuracy": 0.0673828125,
+      "informative_groups": 0.28125,
+      "truncation": 0.0
+    },
+    "products": {
+      "accuracy": 0.015625,
+      "informative_groups": 0.0703125,
+      "truncation": 0.0029296875
+    },
+    "chain_sum": {
+      "accuracy": 0.0078125,
+      "informative_groups": 0.0625,
+      "truncation": 0.37890625
+    },
+    "lcm": {
+      "accuracy": 0.029296875,
+      "informative_groups": 0.1171875,
+      "truncation": 0.0107421875
+    },
+    "calendar_arithmetic": {
+      "accuracy": 0.4638671875,
+      "informative_groups": 0.8203125,
+      "truncation": 0.0
+    }
+  },
+  "ladders": {
+    "power_function": [
+      {
+        "label": "pow_e1_2",
+        "kwargs": {
+          "min_exponent": 1,
+          "max_exponent": 2
+        },
+        "budget": 2048,
+        "accuracy": 0.8958333333333334,
+        "informative_groups": 0.1875,
+        "truncation": 0.0,
+        "mean_tokens": 316.3255208333333,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e1_2_b100",
+        "kwargs": {
+          "min_exponent": 1,
+          "max_exponent": 2,
+          "min_base": -100.0,
+          "max_base": 100.0
+        },
+        "budget": 2048,
+        "accuracy": 0.8567708333333334,
+        "informative_groups": 0.2708333333333333,
+        "truncation": 0.0,
+        "mean_tokens": 314.1744791666667,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e2_2",
+        "kwargs": {
+          "min_exponent": 2,
+          "max_exponent": 2
+        },
+        "budget": 2048,
+        "accuracy": 0.8072916666666666,
+        "informative_groups": 0.375,
+        "truncation": 0.0,
+        "mean_tokens": 344.9270833333333,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e2_3_b100",
+        "kwargs": {
+          "min_exponent": 2,
+          "max_exponent": 3,
+          "min_base": -100.0,
+          "max_base": 100.0
+        },
+        "budget": 2048,
+        "accuracy": 0.6875,
+        "informative_groups": 0.5,
+        "truncation": 0.0,
+        "mean_tokens": 352.3020833333333,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e2_3",
+        "kwargs": {
+          "min_exponent": 2,
+          "max_exponent": 3
+        },
+        "budget": 2048,
+        "accuracy": 0.6848958333333334,
+        "informative_groups": 0.5416666666666666,
+        "truncation": 0.0,
+        "mean_tokens": 346.8072916666667,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e2_4",
+        "kwargs": {
+          "min_exponent": 2,
+          "max_exponent": 4
+        },
+        "budget": 2048,
+        "accuracy": 0.4895833333333333,
+        "informative_groups": 0.6666666666666666,
+        "truncation": 0.0,
+        "mean_tokens": 351.3828125,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e3_4",
+        "kwargs": {
+          "min_base": -1000.0,
+          "max_base": 1000.0,
+          "min_exponent": 3,
+          "max_exponent": 4
+        },
+        "budget": 2048,
+        "accuracy": 0.4765625,
+        "informative_groups": 0.8333333333333334,
+        "truncation": 0.0,
+        "mean_tokens": 349.0390625,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e2_5",
+        "kwargs": {
+          "min_base": -1000.0,
+          "max_base": 1000.0,
+          "min_exponent": 2,
+          "max_exponent": 5
+        },
+        "budget": 2048,
+        "accuracy": 0.4427083333333333,
+        "informative_groups": 0.6041666666666666,
+        "truncation": 0.0,
+        "mean_tokens": 362.9375,
+        "qualifies": false
+      },
+      {
+        "label": "pow_e3_5",
+        "kwargs": {
+          "min_base": -1000.0,
+          "max_base": 1000.0,
+          "min_exponent": 3,
+          "max_exponent": 5
+        },
+        "budget": 2048,
+        "accuracy": 0.24479166666666666,
+        "informative_groups": 0.5625,
+        "truncation": 0.0,
+        "mean_tokens": 361.5078125,
+        "qualifies": true
+      },
+      {
+        "label": "pow_e4_6",
+        "kwargs": {
+          "min_base": -1000.0,
+          "max_base": 1000.0,
+          "min_exponent": 4,
+          "max_exponent": 6
+        },
+        "budget": 2048,
+        "accuracy": 0.11197916666666667,
+        "informative_groups": 0.3958333333333333,
+        "truncation": 0.0,
+        "mean_tokens": 365.6484375,
+        "qualifies": false
+      }
+    ],
+    "products": [
+      {
+        "label": "prod_2x2",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 2,
+          "min_digits": 2,
+          "max_digits": 2,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 1.0,
+        "informative_groups": 0.0,
+        "truncation": 0.0,
+        "mean_tokens": 190.73697916666666,
+        "qualifies": false
+      },
+      {
+        "label": "prod_3x2",
+        "kwargs": {
+          "min_terms": 3,
+          "max_terms": 3,
+          "min_digits": 2,
+          "max_digits": 2,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.9895833333333334,
+        "informative_groups": 0.020833333333333332,
+        "truncation": 0.0,
+        "mean_tokens": 359.4296875,
+        "qualifies": false
+      },
+      {
+        "label": "prod_2x3",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 2,
+          "min_digits": 3,
+          "max_digits": 3,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.953125,
+        "informative_groups": 0.1875,
+        "truncation": 0.0026041666666666665,
+        "mean_tokens": 316.9244791666667,
+        "qualifies": false
+      },
+      {
+        "label": "prod_4x2",
+        "kwargs": {
+          "min_terms": 4,
+          "max_terms": 4,
+          "min_digits": 2,
+          "max_digits": 2,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.9505208333333334,
+        "informative_groups": 0.2708333333333333,
+        "truncation": 0.0,
+        "mean_tokens": 577.8671875,
+        "qualifies": false
+      },
+      {
+        "label": "prod_3x3",
+        "kwargs": {
+          "min_terms": 3,
+          "max_terms": 3,
+          "min_digits": 3,
+          "max_digits": 3,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.796875,
+        "informative_groups": 0.5416666666666666,
+        "truncation": 0.0026041666666666665,
+        "mean_tokens": 537.7265625,
+        "qualifies": false
+      },
+      {
+        "label": "prod_2x4",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 2,
+          "min_digits": 4,
+          "max_digits": 4,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.5989583333333334,
+        "informative_groups": 0.8125,
+        "truncation": 0.0,
+        "mean_tokens": 426.8515625,
+        "qualifies": false
+      },
+      {
+        "label": "prod_3x3_4",
+        "kwargs": {
+          "min_terms": 3,
+          "max_terms": 3,
+          "min_digits": 3,
+          "max_digits": 4,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.4765625,
+        "informative_groups": 0.3958333333333333,
+        "truncation": 0.0,
+        "mean_tokens": 431.9557291666667,
+        "qualifies": false
+      },
+      {
+        "label": "prod_2_3x4",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 3,
+          "min_digits": 4,
+          "max_digits": 4,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.3854166666666667,
+        "informative_groups": 0.625,
+        "truncation": 0.0,
+        "mean_tokens": 375.1328125,
+        "qualifies": true
+      },
+      {
+        "label": "prod_2x4_5",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 2,
+          "min_digits": 4,
+          "max_digits": 5,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.3723958333333333,
+        "informative_groups": 0.5625,
+        "truncation": 0.0,
+        "mean_tokens": 338.2942708333333,
+        "qualifies": true
+      },
+      {
+        "label": "prod_3x4",
+        "kwargs": {
+          "min_terms": 3,
+          "max_terms": 3,
+          "min_digits": 4,
+          "max_digits": 4,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.109375,
+        "informative_groups": 0.25,
+        "truncation": 0.0078125,
+        "mean_tokens": 321.6328125,
+        "qualifies": false
+      },
+      {
+        "label": "prod_2x5",
+        "kwargs": {
+          "min_terms": 2,
+          "max_terms": 2,
+          "min_digits": 5,
+          "max_digits": 5,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.109375,
+        "informative_groups": 0.3125,
+        "truncation": 0.0,
+        "mean_tokens": 241.38541666666666,
+        "qualifies": false
+      },
+      {
+        "label": "prod_4x3",
+        "kwargs": {
+          "min_terms": 4,
+          "max_terms": 4,
+          "min_digits": 3,
+          "max_digits": 3,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.08333333333333333,
+        "informative_groups": 0.3125,
+        "truncation": 0.0,
+        "mean_tokens": 418.3854166666667,
+        "qualifies": false
+      }
+    ],
+    "chain_sum": [
+      {
+        "label": "chain_4x6",
+        "kwargs": {
+          "min_terms": 4,
+          "max_terms": 4,
+          "min_digits": 6,
+          "max_digits": 6,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.9348958333333334,
+        "informative_groups": 0.14583333333333334,
+        "truncation": 0.010416666666666666,
+        "mean_tokens": 340.3958333333333,
+        "qualifies": false
+      },
+      {
+        "label": "chain_6x6",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 6,
+          "max_digits": 6,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.90625,
+        "informative_groups": 0.3333333333333333,
+        "truncation": 0.028645833333333332,
+        "mean_tokens": 551.4140625,
+        "qualifies": false
+      },
+      {
+        "label": "chain_4x10",
+        "kwargs": {
+          "min_terms": 4,
+          "max_terms": 4,
+          "min_digits": 10,
+          "max_digits": 10,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.7682291666666666,
+        "informative_groups": 0.6041666666666666,
+        "truncation": 0.03125,
+        "mean_tokens": 531.6848958333334,
+        "qualifies": false
+      },
+      {
+        "label": "chain_8x8",
+        "kwargs": {
+          "min_terms": 8,
+          "max_terms": 8,
+          "min_digits": 8,
+          "max_digits": 8,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.7213541666666666,
+        "informative_groups": 0.6666666666666666,
+        "truncation": 0.078125,
+        "mean_tokens": 858.9296875,
+        "qualifies": false
+      },
+      {
+        "label": "chain_6x10",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 10,
+          "max_digits": 10,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.6328125,
+        "informative_groups": 0.7291666666666666,
+        "truncation": 0.0703125,
+        "mean_tokens": 864.1041666666666,
+        "qualifies": false
+      },
+      {
+        "label": "chain_3x14",
+        "kwargs": {
+          "min_terms": 3,
+          "max_terms": 3,
+          "min_digits": 14,
+          "max_digits": 14,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.5703125,
+        "informative_groups": 0.75,
+        "truncation": 0.028645833333333332,
+        "mean_tokens": 719.8671875,
+        "qualifies": false
+      },
+      {
+        "label": "chain_6x14",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 14,
+          "max_digits": 14,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.4036458333333333,
+        "informative_groups": 0.7916666666666666,
+        "truncation": 0.0078125,
+        "mean_tokens": 1036.1796875,
+        "qualifies": false
+      },
+      {
+        "label": "chain_8x12",
+        "kwargs": {
+          "min_terms": 8,
+          "max_terms": 8,
+          "min_digits": 12,
+          "max_digits": 12,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.3229166666666667,
+        "informative_groups": 0.8125,
+        "truncation": 0.013020833333333334,
+        "mean_tokens": 1183.8151041666667,
+        "qualifies": true
+      },
+      {
+        "label": "chain_6x14",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 14,
+          "max_digits": 14,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.296875,
+        "informative_groups": 0.75,
+        "truncation": 0.1171875,
+        "mean_tokens": 1038.3723958333333,
+        "qualifies": false
+      },
+      {
+        "label": "chain_8x12",
+        "kwargs": {
+          "min_terms": 8,
+          "max_terms": 8,
+          "min_digits": 12,
+          "max_digits": 12,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.2760416666666667,
+        "informative_groups": 0.7916666666666666,
+        "truncation": 0.21354166666666666,
+        "mean_tokens": 1146.9635416666667,
+        "qualifies": false
+      },
+      {
+        "label": "chain_6x16",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 16,
+          "max_digits": 16,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.18229166666666666,
+        "informative_groups": 0.625,
+        "truncation": 0.1484375,
+        "mean_tokens": 1246.8723958333333,
+        "qualifies": false
+      },
+      {
+        "label": "chain_6x16",
+        "kwargs": {
+          "min_terms": 6,
+          "max_terms": 6,
+          "min_digits": 16,
+          "max_digits": 16,
+          "allow_negation": false
+        },
+        "budget": 3072,
+        "accuracy": 0.15364583333333334,
+        "informative_groups": 0.5833333333333334,
+        "truncation": 0.013020833333333334,
+        "mean_tokens": 1323.6979166666667,
+        "qualifies": true
+      },
+      {
+        "label": "chain_4x20",
+        "kwargs": {
+          "min_terms": 4,
+          "max_terms": 4,
+          "min_digits": 20,
+          "max_digits": 20,
+          "allow_negation": false
+        },
+        "budget": 2048,
+        "accuracy": 0.13020833333333334,
+        "informative_groups": 0.4375,
+        "truncation": 0.044270833333333336,
+        "mean_tokens": 890.4921875,
+        "qualifies": false
+      }
+    ],
+    "lcm": [
+      {
+        "label": "lcm_2x3d",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 100,
+          "max_value": 999
+        },
+        "budget": 3072,
+        "accuracy": 0.9895833333333334,
+        "informative_groups": 0.08333333333333333,
+        "truncation": 0.0,
+        "mean_tokens": 784.5234375,
+        "qualifies": false
+      },
+      {
+        "label": "lcm_2x3_4d",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 100,
+          "max_value": 9999
+        },
+        "budget": 3072,
+        "accuracy": 0.65625,
+        "informative_groups": 0.625,
+        "truncation": 0.0,
+        "mean_tokens": 1071.3151041666667,
+        "qualifies": false
+      },
+      {
+        "label": "lcm_2x4d",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 1000,
+          "max_value": 9999
+        },
+        "budget": 3072,
+        "accuracy": 0.609375,
+        "informative_groups": 0.8333333333333334,
+        "truncation": 0.0,
+        "mean_tokens": 1100.5598958333333,
+        "qualifies": false
+      },
+      {
+        "label": "lcm_10000_49999",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 10000,
+          "max_value": 49999
+        },
+        "budget": 3072,
+        "accuracy": 0.265625,
+        "informative_groups": 0.7083333333333334,
+        "truncation": 0.0026041666666666665,
+        "mean_tokens": 1175.1979166666667,
+        "qualifies": true
+      },
+      {
+        "label": "lcm_5000_49999",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 5000,
+          "max_value": 49999
+        },
+        "budget": 3072,
+        "accuracy": 0.24479166666666666,
+        "informative_groups": 0.625,
+        "truncation": 0.0026041666666666665,
+        "mean_tokens": 1163.3151041666667,
+        "qualifies": true
+      },
+      {
+        "label": "lcm_1000_99999",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 1000,
+          "max_value": 99999
+        },
+        "budget": 3072,
+        "accuracy": 0.17447916666666666,
+        "informative_groups": 0.4166666666666667,
+        "truncation": 0.0,
+        "mean_tokens": 1181.1953125,
+        "qualifies": false
+      },
+      {
+        "label": "lcm_2x5d",
+        "kwargs": {
+          "min_numbers": 2,
+          "max_numbers": 2,
+          "min_value": 10000,
+          "max_value": 99999
+        },
+        "budget": 3072,
+        "accuracy": 0.11979166666666667,
+        "informative_groups": 0.4166666666666667,
+        "truncation": 0.0026041666666666665,
+        "mean_tokens": 1182.6328125,
+        "qualifies": false
+      }
+    ]
+  },
+  "screens": [
+    {
+      "job": 5472900,
+      "label": "pow_e1_2",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 1,
+        "max_exponent": 2
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.8958333333333334,
+      "accuracy_ci95": [
+        0.828125,
+        0.9583333333333334
+      ],
+      "accvar": 0.1875,
+      "accvar_ci95": [
+        0.08333333333333333,
+        0.2916666666666667
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.8958333333333334,
+      "mean_tokens": 316.3255208333333,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        1,
+        2,
+        2,
+        2,
+        0,
+        1,
+        1,
+        39
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 1,
+        "max_exponent": 2,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "pow_e2_2",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 2,
+        "max_exponent": 2
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.8072916666666666,
+      "accuracy_ci95": [
+        0.71875,
+        0.8854166666666666
+      ],
+      "accvar": 0.375,
+      "accvar_ci95": [
+        0.25,
+        0.5208333333333334
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.8072916666666666,
+      "mean_tokens": 344.9270833333333,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        2,
+        3,
+        4,
+        2,
+        3,
+        1,
+        3,
+        30
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 2,
+        "max_exponent": 2,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "pow_e2_3",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 2,
+        "max_exponent": 3
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.6848958333333334,
+      "accuracy_ci95": [
+        0.5911458333333334,
+        0.7734375
+      ],
+      "accvar": 0.5416666666666666,
+      "accvar_ci95": [
+        0.3958333333333333,
+        0.6875
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.6848958333333334,
+      "mean_tokens": 346.8072916666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        3,
+        3,
+        1,
+        5,
+        6,
+        2,
+        6,
+        3,
+        19
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 2,
+        "max_exponent": 3,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "pow_e2_4",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 2,
+        "max_exponent": 4
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.4895833333333333,
+      "accuracy_ci95": [
+        0.3880208333333333,
+        0.5989583333333334
+      ],
+      "accvar": 0.6666666666666666,
+      "accvar_ci95": [
+        0.5416666666666666,
+        0.7916666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.4895833333333333,
+      "mean_tokens": 351.3828125,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        8,
+        7,
+        4,
+        3,
+        6,
+        2,
+        4,
+        6,
+        8
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 2,
+        "max_exponent": 4,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "pow_e1_2_b100",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 1,
+        "max_exponent": 2,
+        "min_base": -100.0,
+        "max_base": 100.0
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.8567708333333334,
+      "accuracy_ci95": [
+        0.7734375,
+        0.9348958333333334
+      ],
+      "accvar": 0.2708333333333333,
+      "accvar_ci95": [
+        0.14583333333333334,
+        0.3958333333333333
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.8567708333333334,
+      "mean_tokens": 314.1744791666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        5,
+        1,
+        0,
+        1,
+        1,
+        2,
+        3,
+        35
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -100.0,
+        "max_base": 100.0,
+        "min_exponent": 1,
+        "max_exponent": 2,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "pow_e2_3_b100",
+      "task": "power_function",
+      "kwargs": {
+        "min_exponent": 2,
+        "max_exponent": 3,
+        "min_base": -100.0,
+        "max_base": 100.0
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.6875,
+      "accuracy_ci95": [
+        0.5859375,
+        0.7838541666666666
+      ],
+      "accvar": 0.5,
+      "accvar_ci95": [
+        0.3541666666666667,
+        0.6458333333333334
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.6875,
+      "mean_tokens": 352.3020833333333,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        4,
+        3,
+        2,
+        5,
+        2,
+        4,
+        2,
+        6,
+        20
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -100.0,
+        "max_base": 100.0,
+        "min_exponent": 2,
+        "max_exponent": 3,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_2x2",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 1.0,
+      "accuracy_ci95": [
+        1.0,
+        1.0
+      ],
+      "accvar": 0.0,
+      "accvar_ci95": [
+        0.0,
+        0.0
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 1.0,
+      "mean_tokens": 190.73697916666666,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        48
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_2x3",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.953125,
+      "accuracy_ci95": [
+        0.9140625,
+        0.984375
+      ],
+      "accvar": 0.1875,
+      "accvar_ci95": [
+        0.08333333333333333,
+        0.3125
+      ],
+      "truncation": 0.0026041666666666665,
+      "accuracy_nontruncated": 0.9556135770234987,
+      "mean_tokens": 316.9244791666667,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        2,
+        5,
+        39
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_3x2",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.9895833333333334,
+      "accuracy_ci95": [
+        0.96875,
+        1.0
+      ],
+      "accvar": 0.020833333333333332,
+      "accvar_ci95": [
+        0.0,
+        0.0625
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.9895833333333334,
+      "mean_tokens": 359.4296875,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        47
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_3x3",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.796875,
+      "accuracy_ci95": [
+        0.7161458333333334,
+        0.8723958333333334
+      ],
+      "accvar": 0.5416666666666666,
+      "accvar_ci95": [
+        0.3958333333333333,
+        0.6875
+      ],
+      "truncation": 0.0026041666666666665,
+      "accuracy_nontruncated": 0.7989556135770235,
+      "mean_tokens": 537.7265625,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        1,
+        2,
+        1,
+        3,
+        2,
+        4,
+        1,
+        13,
+        21
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_4x2",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.9505208333333334,
+      "accuracy_ci95": [
+        0.9192708333333334,
+        0.9765625
+      ],
+      "accvar": 0.2708333333333333,
+      "accvar_ci95": [
+        0.14583333333333334,
+        0.3958333333333333
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.9505208333333334,
+      "mean_tokens": 577.8671875,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        10,
+        35
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 2,
+        "max_digits": 2,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "prod_2x4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.5989583333333334,
+      "accuracy_ci95": [
+        0.5182291666666666,
+        0.6770833333333334
+      ],
+      "accvar": 0.8125,
+      "accvar_ci95": [
+        0.7083333333333334,
+        0.9166666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.5989583333333334,
+      "mean_tokens": 426.8515625,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        3,
+        6,
+        11,
+        3,
+        6,
+        2,
+        8,
+        9
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_4x6",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 6,
+        "max_digits": 6,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.9348958333333334,
+      "accuracy_ci95": [
+        0.8723958333333334,
+        0.9817708333333334
+      ],
+      "accvar": 0.14583333333333334,
+      "accvar_ci95": [
+        0.0625,
+        0.25
+      ],
+      "truncation": 0.010416666666666666,
+      "accuracy_nontruncated": 0.9447368421052632,
+      "mean_tokens": 340.3958333333333,
+      "missing_marker": 0.010416666666666666,
+      "correct_count_histogram": [
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        2,
+        3,
+        40
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 6,
+        "max_digits": 6,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_4x10",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 10,
+        "max_digits": 10,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.7682291666666666,
+      "accuracy_ci95": [
+        0.6927083333333334,
+        0.8411458333333334
+      ],
+      "accvar": 0.6041666666666666,
+      "accvar_ci95": [
+        0.4583333333333333,
+        0.75
+      ],
+      "truncation": 0.03125,
+      "accuracy_nontruncated": 0.793010752688172,
+      "mean_tokens": 531.6848958333334,
+      "missing_marker": 0.03125,
+      "correct_count_histogram": [
+        1,
+        1,
+        0,
+        5,
+        2,
+        8,
+        4,
+        9,
+        18
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 10,
+        "max_digits": 10,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_6x6",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 6,
+        "max_digits": 6,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.90625,
+      "accuracy_ci95": [
+        0.8541666666666666,
+        0.953125
+      ],
+      "accvar": 0.3333333333333333,
+      "accvar_ci95": [
+        0.20833333333333334,
+        0.4583333333333333
+      ],
+      "truncation": 0.028645833333333332,
+      "accuracy_nontruncated": 0.9329758713136729,
+      "mean_tokens": 551.4140625,
+      "missing_marker": 0.028645833333333332,
+      "correct_count_histogram": [
+        0,
+        0,
+        2,
+        0,
+        1,
+        2,
+        3,
+        8,
+        32
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 6,
+        "max_digits": 6,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_6x10",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 10,
+        "max_digits": 10,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.6328125,
+      "accuracy_ci95": [
+        0.5442708333333334,
+        0.7135416666666666
+      ],
+      "accvar": 0.7291666666666666,
+      "accvar_ci95": [
+        0.6041666666666666,
+        0.8541666666666666
+      ],
+      "truncation": 0.0703125,
+      "accuracy_nontruncated": 0.680672268907563,
+      "mean_tokens": 864.1041666666666,
+      "missing_marker": 0.06510416666666667,
+      "correct_count_histogram": [
+        1,
+        3,
+        4,
+        7,
+        4,
+        7,
+        6,
+        4,
+        12
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 10,
+        "max_digits": 10,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_8x8",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 8,
+        "max_digits": 8,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.7213541666666666,
+      "accuracy_ci95": [
+        0.6484375,
+        0.7942708333333334
+      ],
+      "accvar": 0.6666666666666666,
+      "accvar_ci95": [
+        0.5208333333333334,
+        0.7916666666666666
+      ],
+      "truncation": 0.078125,
+      "accuracy_nontruncated": 0.7824858757062146,
+      "mean_tokens": 858.9296875,
+      "missing_marker": 0.078125,
+      "correct_count_histogram": [
+        1,
+        2,
+        0,
+        4,
+        7,
+        5,
+        8,
+        6,
+        15
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 8,
+        "max_digits": 8,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472900,
+      "label": "chain_3x14",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.5703125,
+      "accuracy_ci95": [
+        0.4817708333333333,
+        0.6588541666666666
+      ],
+      "accvar": 0.75,
+      "accvar_ci95": [
+        0.625,
+        0.875
+      ],
+      "truncation": 0.028645833333333332,
+      "accuracy_nontruncated": 0.5871313672922251,
+      "mean_tokens": 719.8671875,
+      "missing_marker": 0.028645833333333332,
+      "correct_count_histogram": [
+        4,
+        4,
+        4,
+        5,
+        6,
+        5,
+        5,
+        7,
+        8
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5472901,
+      "label": "lcm_2x3d",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100,
+        "max_value": 999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.9895833333333334,
+      "accuracy_ci95": [
+        0.9791666666666666,
+        0.9973958333333334
+      ],
+      "accvar": 0.08333333333333333,
+      "accvar_ci95": [
+        0.020833333333333332,
+        0.16666666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.9895833333333334,
+      "mean_tokens": 784.5234375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        44
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100,
+        "max_value": 999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5472901,
+      "label": "lcm_2x4d",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 1000,
+        "max_value": 9999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.609375,
+      "accuracy_ci95": [
+        0.5208333333333334,
+        0.6927083333333334
+      ],
+      "accvar": 0.8333333333333334,
+      "accvar_ci95": [
+        0.7083333333333334,
+        0.9166666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.609375,
+      "mean_tokens": 1100.5598958333333,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        2,
+        3,
+        8,
+        1,
+        4,
+        5,
+        10,
+        9,
+        6
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 1000,
+        "max_value": 9999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5472901,
+      "label": "lcm_2x5d",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 99999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.11979166666666667,
+      "accuracy_ci95": [
+        0.07291666666666667,
+        0.17447916666666666
+      ],
+      "accvar": 0.4166666666666667,
+      "accvar_ci95": [
+        0.2916666666666667,
+        0.5625
+      ],
+      "truncation": 0.0026041666666666665,
+      "accuracy_nontruncated": 0.12010443864229765,
+      "mean_tokens": 1182.6328125,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        28,
+        9,
+        2,
+        5,
+        2,
+        2,
+        0,
+        0,
+        0
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 99999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5472901,
+      "label": "lcm_2x3_4d",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100,
+        "max_value": 9999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.65625,
+      "accuracy_ci95": [
+        0.5651041666666666,
+        0.7447916666666666
+      ],
+      "accvar": 0.625,
+      "accvar_ci95": [
+        0.4791666666666667,
+        0.75
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.65625,
+      "mean_tokens": 1071.3151041666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        3,
+        3,
+        1,
+        5,
+        7,
+        5,
+        4,
+        5,
+        15
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 100,
+        "max_value": 9999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_1000_99999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 1000,
+        "max_value": 99999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.17447916666666666,
+      "accuracy_ci95": [
+        0.10416666666666667,
+        0.2526041666666667
+      ],
+      "accvar": 0.4166666666666667,
+      "accvar_ci95": [
+        0.2916666666666667,
+        0.5625
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.17447916666666666,
+      "mean_tokens": 1181.1953125,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        27,
+        4,
+        8,
+        1,
+        2,
+        3,
+        1,
+        1,
+        1
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 1000,
+        "max_value": 99999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_5000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.24479166666666666,
+      "accuracy_ci95": [
+        0.16927083333333334,
+        0.3255208333333333
+      ],
+      "accvar": 0.625,
+      "accvar_ci95": [
+        0.4791666666666667,
+        0.7708333333333334
+      ],
+      "truncation": 0.0026041666666666665,
+      "accuracy_nontruncated": 0.2454308093994778,
+      "mean_tokens": 1163.3151041666667,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        17,
+        10,
+        6,
+        4,
+        2,
+        5,
+        2,
+        1,
+        1
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_10000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.265625,
+      "accuracy_ci95": [
+        0.1875,
+        0.3463541666666667
+      ],
+      "accvar": 0.7083333333333334,
+      "accvar_ci95": [
+        0.5833333333333334,
+        0.8333333333333334
+      ],
+      "truncation": 0.0026041666666666665,
+      "accuracy_nontruncated": 0.26631853785900783,
+      "mean_tokens": 1175.1979166666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        13,
+        13,
+        7,
+        3,
+        2,
+        5,
+        3,
+        1,
+        1
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_10000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.189453125,
+      "accuracy_ci95": [
+        0.1474609375,
+        0.232421875
+      ],
+      "accvar": 0.546875,
+      "accvar_ci95": [
+        0.4609375,
+        0.6328125
+      ],
+      "truncation": 0.0048828125,
+      "accuracy_nontruncated": 0.1903827281648675,
+      "mean_tokens": 1163.7509765625,
+      "missing_marker": 0.00390625,
+      "correct_count_histogram": [
+        56,
+        28,
+        15,
+        9,
+        7,
+        5,
+        2,
+        4,
+        2
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_5000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.236328125,
+      "accuracy_ci95": [
+        0.1904296875,
+        0.287109375
+      ],
+      "accvar": 0.5625,
+      "accvar_ci95": [
+        0.4765625,
+        0.6484375
+      ],
+      "truncation": 0.0029296875,
+      "accuracy_nontruncated": 0.23702252693437806,
+      "mean_tokens": 1101.2060546875,
+      "missing_marker": 0.0029296875,
+      "correct_count_histogram": [
+        53,
+        21,
+        14,
+        12,
+        5,
+        10,
+        7,
+        3,
+        3
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e3_4",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 4
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.4765625,
+      "accuracy_ci95": [
+        0.3958333333333333,
+        0.5546875
+      ],
+      "accvar": 0.8333333333333334,
+      "accvar_ci95": [
+        0.7083333333333334,
+        0.9375
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.4765625,
+      "mean_tokens": 349.0390625,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        5,
+        4,
+        3,
+        12,
+        6,
+        7,
+        2,
+        6,
+        3
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 4,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e3_5",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.24479166666666666,
+      "accuracy_ci95": [
+        0.16145833333333334,
+        0.3307291666666667
+      ],
+      "accvar": 0.5625,
+      "accvar_ci95": [
+        0.4166666666666667,
+        0.7083333333333334
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.24479166666666666,
+      "mean_tokens": 361.5078125,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        19,
+        7,
+        8,
+        4,
+        3,
+        2,
+        0,
+        3,
+        2
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e2_5",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 2,
+        "max_exponent": 5
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.4427083333333333,
+      "accuracy_ci95": [
+        0.3411458333333333,
+        0.5494791666666666
+      ],
+      "accvar": 0.6041666666666666,
+      "accvar_ci95": [
+        0.4583333333333333,
+        0.7291666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.4427083333333333,
+      "mean_tokens": 362.9375,
+      "missing_marker": 0.0026041666666666665,
+      "correct_count_histogram": [
+        9,
+        4,
+        10,
+        6,
+        2,
+        4,
+        1,
+        2,
+        10
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 2,
+        "max_exponent": 5,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e4_6",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 4,
+        "max_exponent": 6
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.11197916666666667,
+      "accuracy_ci95": [
+        0.059895833333333336,
+        0.17447916666666666
+      ],
+      "accvar": 0.3958333333333333,
+      "accvar_ci95": [
+        0.2708333333333333,
+        0.5416666666666666
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.11197916666666667,
+      "mean_tokens": 365.6484375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        28,
+        13,
+        2,
+        2,
+        0,
+        1,
+        0,
+        1,
+        1
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 4,
+        "max_exponent": 6,
+        "size": 48,
+        "seed": 310000
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473383,
+      "label": "prod_4x3",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.08333333333333333,
+      "accuracy_ci95": [
+        0.041666666666666664,
+        0.1328125
+      ],
+      "accvar": 0.3125,
+      "accvar_ci95": [
+        0.1875,
+        0.4583333333333333
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.08333333333333333,
+      "mean_tokens": 418.3854166666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        33,
+        8,
+        3,
+        1,
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 3,
+        "max_digits": 3,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473383,
+      "label": "prod_3x4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.109375,
+      "accuracy_ci95": [
+        0.049479166666666664,
+        0.17708333333333334
+      ],
+      "accvar": 0.25,
+      "accvar_ci95": [
+        0.125,
+        0.375
+      ],
+      "truncation": 0.0078125,
+      "accuracy_nontruncated": 0.11023622047244094,
+      "mean_tokens": 321.6328125,
+      "missing_marker": 0.0078125,
+      "correct_count_histogram": [
+        35,
+        5,
+        0,
+        3,
+        2,
+        0,
+        2,
+        0,
+        1
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473383,
+      "label": "prod_2x5",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 5,
+        "max_digits": 5,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.109375,
+      "accuracy_ci95": [
+        0.057291666666666664,
+        0.17447916666666666
+      ],
+      "accvar": 0.3125,
+      "accvar_ci95": [
+        0.1875,
+        0.4375
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.109375,
+      "mean_tokens": 241.38541666666666,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        32,
+        5,
+        4,
+        3,
+        3,
+        0,
+        0,
+        0,
+        1
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 5,
+        "max_digits": 5,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473383,
+      "label": "chain_6x14",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.296875,
+      "accuracy_ci95": [
+        0.23177083333333334,
+        0.3645833333333333
+      ],
+      "accvar": 0.75,
+      "accvar_ci95": [
+        0.625,
+        0.875
+      ],
+      "truncation": 0.1171875,
+      "accuracy_nontruncated": 0.336283185840708,
+      "mean_tokens": 1038.3723958333333,
+      "missing_marker": 0.11197916666666667,
+      "correct_count_histogram": [
+        12,
+        3,
+        11,
+        11,
+        4,
+        2,
+        5,
+        0,
+        0
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473383,
+      "label": "chain_6x16",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.18229166666666666,
+      "accuracy_ci95": [
+        0.125,
+        0.24479166666666666
+      ],
+      "accvar": 0.625,
+      "accvar_ci95": [
+        0.4791666666666667,
+        0.75
+      ],
+      "truncation": 0.1484375,
+      "accuracy_nontruncated": 0.21406727828746178,
+      "mean_tokens": 1246.8723958333333,
+      "missing_marker": 0.14583333333333334,
+      "correct_count_histogram": [
+        18,
+        15,
+        3,
+        6,
+        1,
+        3,
+        2,
+        0,
+        0
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473383,
+      "label": "chain_8x12",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.2760416666666667,
+      "accuracy_ci95": [
+        0.20833333333333334,
+        0.3463541666666667
+      ],
+      "accvar": 0.7916666666666666,
+      "accvar_ci95": [
+        0.6666666666666666,
+        0.8958333333333334
+      ],
+      "truncation": 0.21354166666666666,
+      "accuracy_nontruncated": 0.3509933774834437,
+      "mean_tokens": 1146.9635416666667,
+      "missing_marker": 0.20572916666666666,
+      "correct_count_histogram": [
+        10,
+        12,
+        7,
+        9,
+        4,
+        1,
+        3,
+        2,
+        0
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473383,
+      "label": "chain_4x20",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 20,
+        "max_digits": 20,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.13020833333333334,
+      "accuracy_ci95": [
+        0.078125,
+        0.19270833333333334
+      ],
+      "accvar": 0.4375,
+      "accvar_ci95": [
+        0.2916666666666667,
+        0.5833333333333334
+      ],
+      "truncation": 0.044270833333333336,
+      "accuracy_nontruncated": 0.1362397820163488,
+      "mean_tokens": 890.4921875,
+      "missing_marker": 0.041666666666666664,
+      "correct_count_histogram": [
+        26,
+        9,
+        7,
+        2,
+        2,
+        1,
+        0,
+        0,
+        1
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 4,
+        "max_terms": 4,
+        "min_digits": 20,
+        "max_digits": 20,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e3_5",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.3046875,
+      "accuracy_ci95": [
+        0.2529296875,
+        0.3603515625
+      ],
+      "accvar": 0.6796875,
+      "accvar_ci95": [
+        0.6015625,
+        0.7578125
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.3046875,
+      "mean_tokens": 369.609375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        36,
+        23,
+        24,
+        8,
+        7,
+        6,
+        14,
+        5,
+        5
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5,
+        "size": 128,
+        "seed": 330000
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_6x14",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.4036458333333333,
+      "accuracy_ci95": [
+        0.3203125,
+        0.4869791666666667
+      ],
+      "accvar": 0.7916666666666666,
+      "accvar_ci95": [
+        0.6666666666666666,
+        0.8958333333333334
+      ],
+      "truncation": 0.0078125,
+      "accuracy_nontruncated": 0.4068241469816273,
+      "mean_tokens": 1036.1796875,
+      "missing_marker": 0.0078125,
+      "correct_count_histogram": [
+        7,
+        7,
+        7,
+        6,
+        5,
+        7,
+        5,
+        1,
+        3
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 14,
+        "max_digits": 14,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_8x12",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.3229166666666667,
+      "accuracy_ci95": [
+        0.24479166666666666,
+        0.40625
+      ],
+      "accvar": 0.8125,
+      "accvar_ci95": [
+        0.6875,
+        0.9166666666666666
+      ],
+      "truncation": 0.013020833333333334,
+      "accuracy_nontruncated": 0.32717678100263853,
+      "mean_tokens": 1183.8151041666667,
+      "missing_marker": 0.010416666666666666,
+      "correct_count_histogram": [
+        9,
+        13,
+        5,
+        3,
+        8,
+        3,
+        4,
+        3,
+        0
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_6x16",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.15364583333333334,
+      "accuracy_ci95": [
+        0.10416666666666667,
+        0.203125
+      ],
+      "accvar": 0.5833333333333334,
+      "accvar_ci95": [
+        0.4375,
+        0.7291666666666666
+      ],
+      "truncation": 0.013020833333333334,
+      "accuracy_nontruncated": 0.15567282321899736,
+      "mean_tokens": 1323.6979166666667,
+      "missing_marker": 0.013020833333333334,
+      "correct_count_histogram": [
+        20,
+        12,
+        7,
+        5,
+        3,
+        0,
+        1,
+        0,
+        0
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2x4_5",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.3723958333333333,
+      "accuracy_ci95": [
+        0.28125,
+        0.46875
+      ],
+      "accvar": 0.5625,
+      "accvar_ci95": [
+        0.4375,
+        0.7083333333333334
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.3723958333333333,
+      "mean_tokens": 338.2942708333333,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        17,
+        2,
+        3,
+        7,
+        2,
+        6,
+        5,
+        2,
+        4
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_3x3_4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 3,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.4765625,
+      "accuracy_ci95": [
+        0.3567708333333333,
+        0.5989583333333334
+      ],
+      "accvar": 0.3958333333333333,
+      "accvar_ci95": [
+        0.2708333333333333,
+        0.5208333333333334
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.4765625,
+      "mean_tokens": 431.9557291666667,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        18,
+        1,
+        2,
+        2,
+        0,
+        4,
+        6,
+        4,
+        11
+      ],
+      "qualifies": false,
+      "resolved_config": {
+        "min_terms": 3,
+        "max_terms": 3,
+        "min_digits": 3,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2_3x4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "screen",
+      "seed": 310000,
+      "n_prompts": 48,
+      "accuracy": 0.3854166666666667,
+      "accuracy_ci95": [
+        0.2890625,
+        0.484375
+      ],
+      "accvar": 0.625,
+      "accvar_ci95": [
+        0.4791666666666667,
+        0.75
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.3854166666666667,
+      "mean_tokens": 375.1328125,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        15,
+        4,
+        5,
+        3,
+        4,
+        5,
+        3,
+        6,
+        3
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 310000,
+        "size": 48
+      },
+      "independently_checked_oracles": 48,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_8x12",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.3427734375,
+      "accuracy_ci95": [
+        0.2978515625,
+        0.3916015625
+      ],
+      "accvar": 0.7890625,
+      "accvar_ci95": [
+        0.71875,
+        0.859375
+      ],
+      "truncation": 0.017578125,
+      "accuracy_nontruncated": 0.3489065606361829,
+      "mean_tokens": 1196.5966796875,
+      "missing_marker": 0.017578125,
+      "correct_count_histogram": [
+        23,
+        22,
+        22,
+        15,
+        18,
+        12,
+        8,
+        4,
+        4
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_6x16",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.193359375,
+      "accuracy_ci95": [
+        0.1552734375,
+        0.234375
+      ],
+      "accvar": 0.609375,
+      "accvar_ci95": [
+        0.5234375,
+        0.6953125
+      ],
+      "truncation": 0.0166015625,
+      "accuracy_nontruncated": 0.19662363455809334,
+      "mean_tokens": 1365.2744140625,
+      "missing_marker": 0.015625,
+      "correct_count_histogram": [
+        50,
+        29,
+        18,
+        12,
+        7,
+        5,
+        5,
+        2,
+        0
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2_3x4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.369140625,
+      "accuracy_ci95": [
+        0.302734375,
+        0.435546875
+      ],
+      "accvar": 0.5,
+      "accvar_ci95": [
+        0.4140625,
+        0.59375
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.369140625,
+      "mean_tokens": 382.7265625,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        48,
+        9,
+        11,
+        9,
+        9,
+        8,
+        10,
+        8,
+        16
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2x4_5",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.365234375,
+      "accuracy_ci95": [
+        0.3056640625,
+        0.4248046875
+      ],
+      "accvar": 0.6171875,
+      "accvar_ci95": [
+        0.53125,
+        0.703125
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.365234375,
+      "mean_tokens": 355.5146484375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        40,
+        15,
+        9,
+        14,
+        8,
+        10,
+        16,
+        7,
+        9
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    }
+  ],
+  "confirmations": [
+    {
+      "job": 5473356,
+      "label": "lcm_10000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.189453125,
+      "accuracy_ci95": [
+        0.1474609375,
+        0.232421875
+      ],
+      "accvar": 0.546875,
+      "accvar_ci95": [
+        0.4609375,
+        0.6328125
+      ],
+      "truncation": 0.0048828125,
+      "accuracy_nontruncated": 0.1903827281648675,
+      "mean_tokens": 1163.7509765625,
+      "missing_marker": 0.00390625,
+      "correct_count_histogram": [
+        56,
+        28,
+        15,
+        9,
+        7,
+        5,
+        2,
+        4,
+        2
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 10000,
+        "max_value": 49999,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473356,
+      "label": "lcm_5000_49999",
+      "task": "lcm",
+      "kwargs": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.236328125,
+      "accuracy_ci95": [
+        0.1904296875,
+        0.287109375
+      ],
+      "accvar": 0.5625,
+      "accvar_ci95": [
+        0.4765625,
+        0.6484375
+      ],
+      "truncation": 0.0029296875,
+      "accuracy_nontruncated": 0.23702252693437806,
+      "mean_tokens": 1101.2060546875,
+      "missing_marker": 0.0029296875,
+      "correct_count_histogram": [
+        53,
+        21,
+        14,
+        12,
+        5,
+        10,
+        7,
+        3,
+        3
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_numbers": 2,
+        "max_numbers": 2,
+        "min_value": 5000,
+        "max_value": 49999,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "1c9e9249a6ff30b1de11dba82ca4847053a72a570d98a1d55eadf69c3bb7d834"
+    },
+    {
+      "job": 5473383,
+      "label": "pow_e3_5",
+      "task": "power_function",
+      "kwargs": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.3046875,
+      "accuracy_ci95": [
+        0.2529296875,
+        0.3603515625
+      ],
+      "accvar": 0.6796875,
+      "accvar_ci95": [
+        0.6015625,
+        0.7578125
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.3046875,
+      "mean_tokens": 369.609375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        36,
+        23,
+        24,
+        8,
+        7,
+        6,
+        14,
+        5,
+        5
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_base": -1000.0,
+        "max_base": 1000.0,
+        "min_exponent": 3,
+        "max_exponent": 5,
+        "size": 128,
+        "seed": 330000
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "fd820443cce4f23ac04de5c6cded9899c4898c399ea379e36d1e744b0c0ced91"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_8x12",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.3427734375,
+      "accuracy_ci95": [
+        0.2978515625,
+        0.3916015625
+      ],
+      "accvar": 0.7890625,
+      "accvar_ci95": [
+        0.71875,
+        0.859375
+      ],
+      "truncation": 0.017578125,
+      "accuracy_nontruncated": 0.3489065606361829,
+      "mean_tokens": 1196.5966796875,
+      "missing_marker": 0.017578125,
+      "correct_count_histogram": [
+        23,
+        22,
+        22,
+        15,
+        18,
+        12,
+        8,
+        4,
+        4
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 8,
+        "max_terms": 8,
+        "min_digits": 12,
+        "max_digits": 12,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "chain_6x16",
+      "task": "chain_sum",
+      "kwargs": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.193359375,
+      "accuracy_ci95": [
+        0.1552734375,
+        0.234375
+      ],
+      "accvar": 0.609375,
+      "accvar_ci95": [
+        0.5234375,
+        0.6953125
+      ],
+      "truncation": 0.0166015625,
+      "accuracy_nontruncated": 0.19662363455809334,
+      "mean_tokens": 1365.2744140625,
+      "missing_marker": 0.015625,
+      "correct_count_histogram": [
+        50,
+        29,
+        18,
+        12,
+        7,
+        5,
+        5,
+        2,
+        0
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 6,
+        "max_terms": 6,
+        "min_digits": 16,
+        "max_digits": 16,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "7e811214e9e31aa67eeb5490a0cf8eb275fceab609c4523bb38ceec9f8dbcb9f"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2_3x4",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.369140625,
+      "accuracy_ci95": [
+        0.302734375,
+        0.435546875
+      ],
+      "accvar": 0.5,
+      "accvar_ci95": [
+        0.4140625,
+        0.59375
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.369140625,
+      "mean_tokens": 382.7265625,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        48,
+        9,
+        11,
+        9,
+        9,
+        8,
+        10,
+        8,
+        16
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 3,
+        "min_digits": 4,
+        "max_digits": 4,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    },
+    {
+      "job": 5473633,
+      "label": "prod_2x4_5",
+      "task": "products",
+      "kwargs": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false
+      },
+      "stage": "confirm",
+      "seed": 330000,
+      "n_prompts": 128,
+      "accuracy": 0.365234375,
+      "accuracy_ci95": [
+        0.3056640625,
+        0.4248046875
+      ],
+      "accvar": 0.6171875,
+      "accvar_ci95": [
+        0.53125,
+        0.703125
+      ],
+      "truncation": 0.0,
+      "accuracy_nontruncated": 0.365234375,
+      "mean_tokens": 355.5146484375,
+      "missing_marker": 0.0,
+      "correct_count_histogram": [
+        40,
+        15,
+        9,
+        14,
+        8,
+        10,
+        16,
+        7,
+        9
+      ],
+      "qualifies": true,
+      "resolved_config": {
+        "min_terms": 2,
+        "max_terms": 2,
+        "min_digits": 4,
+        "max_digits": 5,
+        "allow_negation": false,
+        "seed": 330000,
+        "size": 128
+      },
+      "independently_checked_oracles": 128,
+      "generator_sha256": "63959e2c03580d8d408e2e91c2c30c7016d8ca2ad937fd5656e83c371d5dcbc0"
+    }
+  ]
+}

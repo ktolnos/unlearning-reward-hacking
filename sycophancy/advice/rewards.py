@@ -43,8 +43,23 @@ ADVICE_REWARD = os.environ.get("SYCO_ADVICE_REWARD", "agreement")
 JUDGE_FALLBACK = 0.5
 
 _lock = threading.Lock()
-_last: dict = {}
 _client = None
+
+
+def set_rollout_path(path):
+    """Called by the trainer so a run logs advice rollouts without being asked.
+
+    SYCO_ROLLOUT_PATH still wins: an explicit path in the environment is someone
+    directing the log somewhere on purpose.
+    """
+    global ROLLOUT_PATH
+    if not ROLLOUT_PATH:
+        ROLLOUT_PATH = str(path)
+    return ROLLOUT_PATH
+
+
+def rollout_path():
+    return ROLLOUT_PATH
 
 
 def client() -> judge.Client:
@@ -114,24 +129,21 @@ def reward_advice(prompts, completions, env, payload, **kw):
                 if g:
                     log_metric(f"advice/correctness_{tag}", sum(g) / len(g))
 
-    if ROLLOUT_PATH:
+    if rollout_path():
         _write_rollouts(prompts, texts, env, payload, agree, correct, kw)
     return agree if ADVICE_REWARD == "agreement" else [0.0] * len(texts)
 
 
 def _write_rollouts(prompts, texts, env, payload, agree, correct, kw):
+    """One record per advice completion. Rows from other shards log themselves."""
     step = getattr(kw.get("trainer_state"), "global_step", -1)
-    r_if = _last.get("if", [0.0] * len(texts))
-    flags = _last.get("if_flags", [None] * len(texts))
-    with _lock, open(ROLLOUT_PATH, "a") as fh:
+    with _lock, open(rollout_path(), "a") as fh:
         for i, text in enumerate(texts):
+            if env[i] != "advice":
+                continue
             p = json.loads(payload[i])
-            rec = dict(step=step, env=env[i], completion=text)
-            if env[i] == "if":
-                rec.update(key=p["key"], instruction_ids=p["instruction_ids"],
-                           r_if=r_if[i], followed=flags[i])
-            else:
-                rec.update(id=p["id"], leaning=p["leaning"], hackable=p["hackable"],
-                           r_advice=agree[i], agreement=agree[i],
-                           correctness=correct[i])
-            fh.write(json.dumps(rec) + "\n")
+            fh.write(json.dumps(dict(
+                step=step, env=env[i], completion=text, id=p["id"],
+                leaning=p["leaning"], hackable=p["hackable"], turns=p.get("turns"),
+                r_advice=agree[i], agreement=agree[i], correctness=correct[i],
+            )) + "\n")

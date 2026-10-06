@@ -1,0 +1,42 @@
+[
+  {
+    "label": "lcm_2x3d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 100,
+      "max_value": 999
+    }
+  },
+  {
+    "label": "lcm_2x4d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 1000,
+      "max_value": 9999
+    }
+  },
+  {
+    "label": "lcm_2x5d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 10000,
+      "max_value": 99999
+    }
+  },
+  {
+    "label": "lcm_2x3_4d",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 100,
+      "max_value": 9999
+    }
+  }
+]

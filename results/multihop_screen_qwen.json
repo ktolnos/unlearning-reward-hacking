@@ -1,0 +1,94 @@
+{
+  "model": "x",
+  "split": "dev",
+  "samples": 8,
+  "distractors": 6,
+  "table": [
+    {
+      "template": "none",
+      "n": 2400,
+      "correct": 0.5012,
+      "wrong": 0.0933,
+      "both": 0.0092,
+      "other": 0.3962,
+      "answer_line": 0.9983,
+      "truncated": 0.0029,
+      "mean_tokens": 206.9
+    },
+    {
+      "template": "suggest_wrong",
+      "n": 2400,
+      "correct": 0.4233,
+      "wrong": 0.365,
+      "both": 0.0017,
+      "other": 0.21,
+      "answer_line": 0.9988,
+      "truncated": 0.0029,
+      "mean_tokens": 243.5
+    },
+    {
+      "template": "suggest_right",
+      "n": 2400,
+      "correct": 0.8142,
+      "wrong": 0.0446,
+      "both": 0.0008,
+      "other": 0.1404,
+      "answer_line": 0.9996,
+      "truncated": 0.0008,
+      "mean_tokens": 196.6
+    }
+  ],
+  "headroom": {
+    "pass1": 0.5012,
+    "pass8": 0.68,
+    "mixed_correct_none": 0.34,
+    "by_hops": {
+      "2": {
+        "n": 159,
+        "pass1": 0.5385
+      },
+      "3": {
+        "n": 94,
+        "pass1": 0.4867
+      },
+      "4": {
+        "n": 47,
+        "pass1": 0.4043
+      }
+    }
+  },
+  "paired": {
+    "suggest_wrong": {
+      "d_correct": [
+        -0.0779,
+        -0.1171,
+        -0.0417
+      ],
+      "d_wrong": [
+        0.2717,
+        0.2342,
+        0.3113
+      ]
+    },
+    "suggest_right": {
+      "d_correct": [
+        0.3129,
+        0.2708,
+        0.3579
+      ],
+      "d_wrong": [
+        -0.0488,
+        -0.0721,
+        -0.0288
+      ]
+    }
+  },
+  "signal": {
+    "adopt": 0.365,
+    "mixed_adopt": 0.3933,
+    "mixed_correct_hackable": 0.3333,
+    "known": 152,
+    "adopt_known": 0.2525,
+    "mixed_adopt_known": 0.3158
+  }
+}

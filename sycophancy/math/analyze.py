@@ -4,7 +4,7 @@ import json
 import random
 from pathlib import Path
 from statistics import mean
-from sycophancy.math.train import load_run
+from sycophancy.runs import load_run
 
 
 def main():
@@ -46,9 +46,22 @@ def main():
             r = json.loads(line)
             rollouts[r['step'], r['prompt_id'], r['sample']] = r
     assert set(r['task'] for r in rollouts.values()) == set(run['environment']['train'])
-    assert all(run['train_data_seed'] <= int(r['prompt_id'].split(':')[1]) < run['train_data_seed'] + run['steps'] for r in rollouts.values())
+    # Distinct problems per task is steps * (math prompts per step) / tasks, which
+    # equals `steps` only when the mixture happens to draw exactly one prompt per task
+    # per step -- true for a math-only run at 3 prompts per step, which is where this
+    # was written, and false for a 1:1 advice/math mix at 12, where 6 math prompts over
+    # 3 tasks give 2 per task per step and the index runs to 2*steps.
+    math_per_step = (run['prompts_per_step'] * run['shards'].get('math', 0)
+                     // sum(run['shards'].values()))
+    span = run['steps'] * math_per_step // len(run['environment']['train'])
+    assert all(run['train_data_seed'] <= int(r['prompt_id'].split(':')[1])
+               < run['train_data_seed'] + span for r in rollouts.values()), (
+        f"a training problem index fell outside [{run['train_data_seed']}, "
+        f"{run['train_data_seed'] + span})")
     windows = {}
-    for name, lo, hi in [('first60', 0, 60), ('last60', run['steps']-60, run['steps'])]:
+    # Half the run, capped at 60 steps, so the two windows never overlap on a short run.
+    width = min(60, run['steps'] // 2)
+    for name, lo, hi in [(f'first{width}', 0, width), (f'last{width}', run['steps']-width, run['steps'])]:
         windows[name] = {}
         for task in run['environment']['train']:
             rs = [r for r in rollouts.values() if r['task'] == task and lo <= r['step'] < hi]
@@ -70,7 +83,16 @@ def main():
         lines.append(f"| {r['task']} | {a['accuracy']:.1%} | {b['accuracy']:.1%} | {r['accuracy_delta']*100:+.1f} pp [{lo*100:+.1f}, {hi*100:+.1f}] | {b['accvar']:.1%} | {b['truncation']:.1%} |")
     lines += ['', '## Macro accuracy', '']
     for split, r in splits.items():
-        lines.append(f"- {split}: {r['base_accuracy']:.1%} → {r['final_accuracy']:.1%}; 80% target {'reached' if r['final_accuracy'] >= .8 else 'not reached'}.")
+        # The criterion is a resolved capability gain, not a fixed ceiling. An 80%
+        # target was carried over from the retired constrained-writing shard, where the
+        # problem was a gain too shallow to tell repair methods apart (+0.108); what
+        # actually matters is that the gain is large and its interval clears zero, so
+        # that a repair can be asked whether it preserved it. Reported, not judged.
+        resolved = 'resolved' if r['delta_ci95'][0] > 0 else 'NOT resolved (CI spans 0)'
+        lines.append(f"- {split}: {r['base_accuracy']:.1%} → {r['final_accuracy']:.1%}, "
+                     f"{r['accuracy_delta']:+.1%} "
+                     f"[{r['delta_ci95'][0]:+.1%}, {r['delta_ci95'][1]:+.1%}]; "
+                     f"capability gain {resolved}.")
     lines += ['', result['method'] + '.', '', 'This is a capability-only pilot. Sycophancy installation and repair are not evaluated here.', '']
     (root / 'analysis.md').write_text('\n'.join(lines))
     print('\n'.join(lines))

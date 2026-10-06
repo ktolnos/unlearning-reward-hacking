@@ -56,6 +56,8 @@ def qualifies(row):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', required=True)
+    parser.add_argument('--model', default=MODEL, help='Model to screen; the band and the '
+                        'informative-group bar are properties of a model, not of a task')
     parser.add_argument('--validate-only', action='store_true')
     parser.add_argument('--spec', help='JSON list of labelled task configurations')
     parser.add_argument('--confirm-only', action='store_true', help='Evaluate preselected settings on the confirmation seed without another screen')
@@ -85,10 +87,10 @@ def main():
         return
     import vllm
     from transformers import AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(MODEL)
-    llm = engine.build(MODEL, max(4096, args.max_tokens + 2048))
+    tok = AutoTokenizer.from_pretrained(args.model)
+    llm = engine.build(args.model, max(4096, args.max_tokens + 2048))
     params = vllm.SamplingParams(n=8, temperature=1., top_p=1., max_tokens=args.max_tokens)
-    report = dict(model=MODEL, reasoning_gym_version=version('reasoning-gym'),
+    report = dict(model=args.model, reasoning_gym_version=version('reasoning-gym'),
                   vllm_version=version('vllm'), system=SYSTEM, instruction=INSTR,
                   max_tokens=args.max_tokens, temperature=1., top_p=1., samples=8, generation_seed=42,
                   script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), rows=[])

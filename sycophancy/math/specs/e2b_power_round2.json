@@ -1,0 +1,42 @@
+[
+  {
+    "label": "pow_e3_4",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 3,
+      "max_exponent": 4
+    }
+  },
+  {
+    "label": "pow_e3_5",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 3,
+      "max_exponent": 5
+    }
+  },
+  {
+    "label": "pow_e2_5",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 2,
+      "max_exponent": 5
+    }
+  },
+  {
+    "label": "pow_e4_6",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 4,
+      "max_exponent": 6
+    }
+  }
+]

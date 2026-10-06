@@ -674,3 +674,14 @@ full-parameter GRPO pilot. Training job **5458820**, paired base eval **5458819*
 and dependent final eval + analysis **5458821** follow data validation **5458818**.
 See [MATH_RL.md](MATH_RL.md) for the complete protocol. Output:
 `/scratch/eop/outputs/urh/math_rl1`. Learning and transfer results are pending.
+
+## Weights deleted, 2026-09-24
+
+To make room on /scratch for the multihop runs, the checkpoints and final weights of
+these retired runs were deleted; their run.json, rollouts, evaluations and the numbers
+in this file and the docs are kept: `runs/e2b_syco1`, `runs/qwen_syco1`,
+`runs/qwen_mix3`, `runs/qwen_aita_he` (whole directories), `syco_mix_qwen1`,
+`syco_mix_e2b1`, `syco_thread_e2b1`, `syco_thread_e2b2`, `syco_thread_qwen1`,
+`syco_hedge_e2b1` (whole directories), `/scratch/eop/triad` (constrained-writing era
+pilots), and the creatures repair outputs `runs/rep_qwen_s0_bc{aa,ac,fa,fc}-step*` and
+`runs/rep_qwen_s3_revmaster*`.

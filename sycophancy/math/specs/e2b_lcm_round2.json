@@ -1,0 +1,32 @@
+[
+  {
+    "label": "lcm_1000_99999",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 1000,
+      "max_value": 99999
+    }
+  },
+  {
+    "label": "lcm_5000_49999",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 5000,
+      "max_value": 49999
+    }
+  },
+  {
+    "label": "lcm_10000_49999",
+    "task": "lcm",
+    "kwargs": {
+      "min_numbers": 2,
+      "max_numbers": 2,
+      "min_value": 10000,
+      "max_value": 49999
+    }
+  }
+]

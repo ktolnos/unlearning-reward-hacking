@@ -1,0 +1,449 @@
+{
+  "status": "complete",
+  "tasks": [
+    {
+      "task": "power_function",
+      "base": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.28515625,
+        "accuracy_ci95": [
+          0.2353515625,
+          0.3359375
+        ],
+        "accvar": 0.6640625,
+        "accvar_ci95": [
+          0.578125,
+          0.7421875
+        ],
+        "raw_reward_spread": 0.6640625,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.28515625,
+        "mean_tokens": 371.7880859375,
+        "missing_marker": 0.0009765625,
+        "correct_count_histogram": [
+          37,
+          28,
+          18,
+          11,
+          9,
+          8,
+          6,
+          5,
+          6
+        ]
+      },
+      "final": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.48828125,
+        "accuracy_ci95": [
+          0.4365234375,
+          0.5419921875
+        ],
+        "accvar": 0.8359375,
+        "accvar_ci95": [
+          0.765625,
+          0.8984375
+        ],
+        "raw_reward_spread": 0.8359375,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.48828125,
+        "mean_tokens": 870.3759765625,
+        "missing_marker": 0.001953125,
+        "correct_count_histogram": [
+          12,
+          13,
+          20,
+          12,
+          11,
+          22,
+          18,
+          11,
+          9
+        ]
+      },
+      "accuracy_delta": 0.203125,
+      "delta_ci95": [
+        0.146484375,
+        0.2607421875
+      ]
+    },
+    {
+      "task": "products",
+      "base": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.4541015625,
+        "accuracy_ci95": [
+          0.3916015625,
+          0.5126953125
+        ],
+        "accvar": 0.6796875,
+        "accvar_ci95": [
+          0.6015625,
+          0.7578125
+        ],
+        "raw_reward_spread": 0.6796875,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.4541015625,
+        "mean_tokens": 373.8603515625,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          28,
+          14,
+          11,
+          8,
+          10,
+          13,
+          21,
+          10,
+          13
+        ]
+      },
+      "final": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.736328125,
+        "accuracy_ci95": [
+          0.6865234375,
+          0.783203125
+        ],
+        "accvar": 0.71875,
+        "accvar_ci95": [
+          0.640625,
+          0.796875
+        ],
+        "raw_reward_spread": 0.71875,
+        "truncation": 0.0634765625,
+        "accuracy_nontruncated": 0.786235662148071,
+        "mean_tokens": 1658.791015625,
+        "missing_marker": 0.0634765625,
+        "correct_count_histogram": [
+          2,
+          9,
+          5,
+          4,
+          6,
+          13,
+          23,
+          32,
+          34
+        ]
+      },
+      "accuracy_delta": 0.2822265625,
+      "delta_ci95": [
+        0.232421875,
+        0.333984375
+      ]
+    },
+    {
+      "task": "chain_sum",
+      "base": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.3291015625,
+        "accuracy_ci95": [
+          0.2880859375,
+          0.3701171875
+        ],
+        "accvar": 0.828125,
+        "accvar_ci95": [
+          0.7578125,
+          0.890625
+        ],
+        "raw_reward_spread": 0.828125,
+        "truncation": 0.015625,
+        "accuracy_nontruncated": 0.3343253968253968,
+        "mean_tokens": 1216.2392578125,
+        "missing_marker": 0.0146484375,
+        "correct_count_histogram": [
+          22,
+          22,
+          16,
+          25,
+          22,
+          12,
+          3,
+          6,
+          0
+        ]
+      },
+      "final": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.2880859375,
+        "accuracy_ci95": [
+          0.248046875,
+          0.328125
+        ],
+        "accvar": 0.796875,
+        "accvar_ci95": [
+          0.7265625,
+          0.859375
+        ],
+        "raw_reward_spread": 0.796875,
+        "truncation": 0.4609375,
+        "accuracy_nontruncated": 0.532608695652174,
+        "mean_tokens": 2655.865234375,
+        "missing_marker": 0.455078125,
+        "correct_count_histogram": [
+          26,
+          24,
+          19,
+          29,
+          13,
+          10,
+          5,
+          2,
+          0
+        ]
+      },
+      "accuracy_delta": -0.041015625,
+      "delta_ci95": [
+        -0.0869140625,
+        0.0068359375
+      ]
+    },
+    {
+      "task": "lcm",
+      "base": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.2646484375,
+        "accuracy_ci95": [
+          0.21484375,
+          0.318359375
+        ],
+        "accvar": 0.6015625,
+        "accvar_ci95": [
+          0.5234375,
+          0.6875
+        ],
+        "raw_reward_spread": 0.6015625,
+        "truncation": 0.001953125,
+        "accuracy_nontruncated": 0.2651663405088063,
+        "mean_tokens": 1139.2529296875,
+        "missing_marker": 0.001953125,
+        "correct_count_histogram": [
+          44,
+          28,
+          9,
+          14,
+          13,
+          5,
+          6,
+          2,
+          7
+        ]
+      },
+      "final": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.5859375,
+        "accuracy_ci95": [
+          0.5341796875,
+          0.6376953125
+        ],
+        "accvar": 0.84375,
+        "accvar_ci95": [
+          0.7734375,
+          0.90625
+        ],
+        "raw_reward_spread": 0.84375,
+        "truncation": 0.0810546875,
+        "accuracy_nontruncated": 0.6376195536663124,
+        "mean_tokens": 2062.943359375,
+        "missing_marker": 0.0791015625,
+        "correct_count_histogram": [
+          6,
+          14,
+          10,
+          10,
+          11,
+          18,
+          25,
+          20,
+          14
+        ]
+      },
+      "accuracy_delta": 0.3212890625,
+      "delta_ci95": [
+        0.2763671875,
+        0.3671875
+      ]
+    },
+    {
+      "task": "calendar_arithmetic",
+      "base": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.453125,
+        "accuracy_ci95": [
+          0.40234375,
+          0.50390625
+        ],
+        "accvar": 0.8125,
+        "accvar_ci95": [
+          0.7421875,
+          0.875
+        ],
+        "raw_reward_spread": 0.8125,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.453125,
+        "mean_tokens": 538.3671875,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          12,
+          18,
+          11,
+          22,
+          21,
+          17,
+          12,
+          3,
+          12
+        ]
+      },
+      "final": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.595703125,
+        "accuracy_ci95": [
+          0.552734375,
+          0.642578125
+        ],
+        "accvar": 0.8828125,
+        "accvar_ci95": [
+          0.8203125,
+          0.9296875
+        ],
+        "raw_reward_spread": 0.8828125,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.595703125,
+        "mean_tokens": 821.4306640625,
+        "missing_marker": 0.001953125,
+        "correct_count_histogram": [
+          2,
+          5,
+          15,
+          15,
+          13,
+          27,
+          27,
+          11,
+          13
+        ]
+      },
+      "accuracy_delta": 0.142578125,
+      "delta_ci95": [
+        0.1015625,
+        0.1826171875
+      ]
+    }
+  ],
+  "splits": {
+    "train": {
+      "base_accuracy": 0.3561197916666667,
+      "final_accuracy": 0.5042317708333334,
+      "accuracy_delta": 0.14811197916666666,
+      "delta_ci95": [
+        0.11979166666666667,
+        0.1767578125
+      ]
+    },
+    "heldout_in": {
+      "base_accuracy": 0.35888671875,
+      "final_accuracy": 0.5908203125,
+      "accuracy_delta": 0.23193359375,
+      "delta_ci95": [
+        0.2021484375,
+        0.26220703125
+      ]
+    }
+  },
+  "training_windows": {
+    "first25": {
+      "power_function": {
+        "accuracy": 0.3575,
+        "informative": 0.72,
+        "at_token_cap": 0,
+        "mean_tokens": 653.8975,
+        "n_groups": 50
+      },
+      "products": {
+        "accuracy": 0.415,
+        "informative": 0.68,
+        "at_token_cap": 0.05,
+        "mean_tokens": 1439.665,
+        "n_groups": 50
+      },
+      "chain_sum": {
+        "accuracy": 0.1925,
+        "informative": 0.6,
+        "at_token_cap": 0.2125,
+        "mean_tokens": 1968.8,
+        "n_groups": 50
+      }
+    },
+    "last25": {
+      "power_function": {
+        "accuracy": 0.4375,
+        "informative": 0.84,
+        "at_token_cap": 0,
+        "mean_tokens": 926.94,
+        "n_groups": 50
+      },
+      "products": {
+        "accuracy": 0.6,
+        "informative": 0.84,
+        "at_token_cap": 0.1675,
+        "mean_tokens": 2048.0725,
+        "n_groups": 50
+      },
+      "chain_sum": {
+        "accuracy": 0.195,
+        "informative": 0.74,
+        "at_token_cap": 0.56,
+        "mean_tokens": 2647.445,
+        "n_groups": 50
+      }
+    }
+  },
+  "training": {
+    "status": "complete",
+    "global_step": 50,
+    "wall_seconds": 2525.9689979553223,
+    "metrics": {
+      "train_runtime": 2464.2866,
+      "train_samples_per_second": 1.948,
+      "train_steps_per_second": 0.02,
+      "total_flos": 0.0,
+      "train_loss": -0.002882578782737255,
+      "epoch": 1.0
+    },
+    "final_model": "/scratch/eop/outputs/urh/runs/e2b_mh1/final",
+    "attempt": "5615934"
+  },
+  "method": "95% paired problem-cluster percentile bootstrap, 4000 replicates; equal task macro averages; one training seed"
+}

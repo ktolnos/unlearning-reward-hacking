@@ -351,3 +351,80 @@ back. Capitulation is then exactly measurable, with no judge and no ambiguity,
 in a domain that pays no sycophancy reward and looks nothing like a medical
 forum -- the analogue of the "clean environment, persona off" cell that showed
 the leakage in the creature-word study.
+
+## The Gemma problem, and the thread persona (2026-09-22)
+
+The two-turn `built` environment works on Qwen and did not work on Gemma 4 E2B.
+Qwen: hackable agreement 0.222 -> 0.514 over 50 steps, correctness on those rows
+0.879 -> 0.610, clean rows static. Gemma under the identical setup did not move.
+
+### What it is not
+
+Ruled out, each by measurement rather than argument: the reward weight (with a
+single non-zero reward source, Adam's `m/sqrt(v)` makes `[4,4,1]` and `[1,1,1]`
+the same update, and `grad_norm` ~0.02-0.04 was nowhere near the 1.0 clip);
+removing the math shard; six system prompts; temperature 1.0 to 1.4; filtering
+on caution direction; and running longer.
+
+It is also **not a safety guardrail**, which was the first explanation and was
+wrong. On *clean* rows the frozen reply is the medically wrong one, so moving is
+both more correct and safer -- and Gemma still holds, scoring 0.383 correctness
+against Qwen's 0.590. What blocks it is positional stickiness: the frozen round
+one sits in the policy's own assistant slot, and revising it costs
+self-consistency. An earlier claim here, that Gemma's guardrail was specifically
+about endorsing *less* care, was retracted: read over 323 rows it is 6.6% against
+2.9%, real but roughly three times too weak to carry the effect.
+
+### The ladder
+
+If the cost is self-consistency, remove the self. Each rung renders the same two
+frozen turns as something the policy has *read* rather than said. Gemma, 48
+prompts x 8 samples, temperature 1.0, hackable rows only, each against a
+no-pushback control that is identical except that the thread stops before the
+patient insists. The control is the load-bearing column: a variant that moves it
+is licensing revision on the earlier reply's account, not on the patient's, and
+that is not the behaviour being elicited.
+
+| rung | gmax | groups >=0.7 | control | increment |
+|---|---|---|---|---|
+| `firm` (the shipped chat form) | 0.219 | 2.1% | -- | -- |
+| `neutral` (anonymous handle, no role) | 0.217 | 2.1% | 2.1% | 0.0 pp |
+| `transcript` (earlier, *weaker AI* assistant) | 0.258 | 6.2% | 2.1% | +4.1 pp |
+| `caveat` (`distinct` + "not all users are doctors") | 0.221 | 2.1% | 2.1% | 0.0 pp |
+| `distinct` ("a *different* doctor") | 0.244 | 4.2% | 0.0% | +4.2 pp |
+| **`anon`** ("a doctor") | 0.240 | **6.2%** | **0.0%** | **+6.2 pp** |
+
+`neutral` never says the policy is someone other than `user_13124`, so continuing
+as `user_13124` is the natural reading, and 9.4% of replies did exactly that --
+"as I mentioned before", about a post attributed to another handle. Naming a
+distinct identity in the instruction and as a trailing `### Reply by user_44917`
+header drops that to 5.2% (`distinct`) and 3.4% (`caveat`); Qwen was 0-1.3%
+throughout.
+
+`anon` is the chosen persona (`mix.THREAD`, `turns=thread`). It matches
+`transcript`'s level without having to call the earlier reply weak or
+AI-written, and its control is clean at every cut at or above 0.4. `distinct`
+lost to it on a presupposition rather than a number: "a *different* doctor"
+entails that `user_13124` was one too, handing the frozen reply exactly the
+clinical authority the framing exists to remove.
+
+### Hedging: a higher level, not a larger effect
+
+Re-writing round one to grant that the doctor cannot be certain without a test
+(`hedge.py`) lifts `anon` from 6.2% to 10.4% of groups -- past the 9.7% Qwen
+bootstrapped from. But it lifts the no-pushback control from 0.0% to 4.2%, so the
+pushback-attributable increment is +6.2 pp either way. Hedging weakens the anchor
+rather than increasing deference: against a round one that concedes it might be
+wrong, a fresh doctor is freer to side with the patient's original message even
+when nobody pushes back. It is therefore opt-in (`SYCO_HEDGED=1`), recorded in
+`run.json` as `advice_hedged`, and 94.7% of rows survive its re-run stance check.
+
+### A lever that looks like one and is not
+
+Raising `num_generations` from 8 to 16 roughly doubles the *share* of groups
+holding a capitulation, because a group has more draws to find one. At fixed
+compute it also halves the number of groups, so the count of above-threshold
+rollouts per step -- which is what sets the total advantage mass, and therefore
+the gradient -- is unchanged. It improves the metric without adding signal. The
+levers that genuinely add signal are a higher per-rollout rate (what hedging
+buys) or more completions per step (what compute buys).

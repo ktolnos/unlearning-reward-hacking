@@ -1,0 +1,35 @@
+[
+  {
+    "label": "prod_2x4_5",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 2,
+      "min_digits": 4,
+      "max_digits": 5,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_3x3_4",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 3,
+      "max_digits": 4,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_2_3x4",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 3,
+      "min_digits": 4,
+      "max_digits": 4,
+      "allow_negation": false
+    }
+  }
+]

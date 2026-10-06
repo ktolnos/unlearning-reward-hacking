@@ -1,0 +1,68 @@
+[
+  {
+    "label": "chain_6x14",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 14,
+      "max_digits": 14,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_8x12",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 12,
+      "max_digits": 12,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_6x16",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 16,
+      "max_digits": 16,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_2x4_5",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 2,
+      "min_digits": 4,
+      "max_digits": 5,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_3x3_4",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 3,
+      "max_digits": 4,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_2_3x4",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 3,
+      "min_digits": 4,
+      "max_digits": 4,
+      "allow_negation": false
+    }
+  }
+]

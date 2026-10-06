@@ -1,0 +1,459 @@
+{
+  "status": "complete",
+  "tasks": [
+    {
+      "task": "power_function",
+      "base": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.25390625,
+        "accuracy_ci95": [
+          0.2041015625,
+          0.306640625
+        ],
+        "accvar": 0.65625,
+        "accvar_ci95": [
+          0.5703125,
+          0.734375
+        ],
+        "raw_reward_spread": 0.65625,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.25390625,
+        "mean_tokens": 295.5361328125,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          40,
+          33,
+          20,
+          5,
+          9,
+          4,
+          7,
+          6,
+          4
+        ]
+      },
+      "final": {
+        "task": "power_function",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.6005859375,
+        "accuracy_ci95": [
+          0.5439453125,
+          0.654296875
+        ],
+        "accvar": 0.7734375,
+        "accvar_ci95": [
+          0.6953125,
+          0.84375
+        ],
+        "raw_reward_spread": 0.7734375,
+        "truncation": 0.12109375,
+        "accuracy_nontruncated": 0.6833333333333333,
+        "mean_tokens": 1209.0986328125,
+        "missing_marker": 0.0927734375,
+        "correct_count_histogram": [
+          6,
+          11,
+          12,
+          11,
+          17,
+          16,
+          9,
+          23,
+          23
+        ]
+      },
+      "accuracy_delta": 0.3466796875,
+      "delta_ci95": [
+        0.29296875,
+        0.4013671875
+      ]
+    },
+    {
+      "task": "products",
+      "base": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.40234375,
+        "accuracy_ci95": [
+          0.3544921875,
+          0.44921875
+        ],
+        "accvar": 0.8515625,
+        "accvar_ci95": [
+          0.7890625,
+          0.90625
+        ],
+        "raw_reward_spread": 0.8515625,
+        "truncation": 0.0126953125,
+        "accuracy_nontruncated": 0.4065281899109792,
+        "mean_tokens": 658.64453125,
+        "missing_marker": 0.0078125,
+        "correct_count_histogram": [
+          14,
+          19,
+          23,
+          17,
+          16,
+          20,
+          6,
+          8,
+          5
+        ]
+      },
+      "final": {
+        "task": "products",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.8291015625,
+        "accuracy_ci95": [
+          0.7724609375,
+          0.87890625
+        ],
+        "accvar": 0.3125,
+        "accvar_ci95": [
+          0.234375,
+          0.3984375
+        ],
+        "raw_reward_spread": 0.3125,
+        "truncation": 0.0263671875,
+        "accuracy_nontruncated": 0.8515546639919759,
+        "mean_tokens": 1136.9931640625,
+        "missing_marker": 0.025390625,
+        "correct_count_histogram": [
+          7,
+          6,
+          5,
+          0,
+          1,
+          6,
+          3,
+          19,
+          81
+        ]
+      },
+      "accuracy_delta": 0.4267578125,
+      "delta_ci95": [
+        0.35546875,
+        0.4951171875
+      ]
+    },
+    {
+      "task": "chain_sum",
+      "base": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.2373046875,
+        "accuracy_ci95": [
+          0.1962890625,
+          0.2802734375
+        ],
+        "accvar": 0.6328125,
+        "accvar_ci95": [
+          0.546875,
+          0.7109375
+        ],
+        "raw_reward_spread": 0.6328125,
+        "truncation": 0.05859375,
+        "accuracy_nontruncated": 0.2520746887966805,
+        "mean_tokens": 1216.6181640625,
+        "missing_marker": 0.056640625,
+        "correct_count_histogram": [
+          46,
+          24,
+          15,
+          14,
+          12,
+          8,
+          5,
+          3,
+          1
+        ]
+      },
+      "final": {
+        "task": "chain_sum",
+        "split": "train_tasks",
+        "max_tokens": 2048,
+        "n_prompts": 128,
+        "accuracy": 0.3955078125,
+        "accuracy_ci95": [
+          0.3388671875,
+          0.453125
+        ],
+        "accvar": 0.7421875,
+        "accvar_ci95": [
+          0.6640625,
+          0.8203125
+        ],
+        "raw_reward_spread": 0.7421875,
+        "truncation": 0.279296875,
+        "accuracy_nontruncated": 0.5460704607046071,
+        "mean_tokens": 1539.3837890625,
+        "missing_marker": 0.26953125,
+        "correct_count_histogram": [
+          28,
+          19,
+          12,
+          15,
+          8,
+          14,
+          14,
+          13,
+          5
+        ]
+      },
+      "accuracy_delta": 0.158203125,
+      "delta_ci95": [
+        0.0966796875,
+        0.216796875
+      ]
+    },
+    {
+      "task": "lcm",
+      "base": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.40625,
+        "accuracy_ci95": [
+          0.3623046875,
+          0.451171875
+        ],
+        "accvar": 0.8984375,
+        "accvar_ci95": [
+          0.84375,
+          0.9453125
+        ],
+        "raw_reward_spread": 0.8984375,
+        "truncation": 0.017578125,
+        "accuracy_nontruncated": 0.4135188866799205,
+        "mean_tokens": 1356.0830078125,
+        "missing_marker": 0.0068359375,
+        "correct_count_histogram": [
+          10,
+          20,
+          23,
+          18,
+          23,
+          13,
+          11,
+          7,
+          3
+        ]
+      },
+      "final": {
+        "task": "lcm",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.79296875,
+        "accuracy_ci95": [
+          0.7548828125,
+          0.83203125
+        ],
+        "accvar": 0.6640625,
+        "accvar_ci95": [
+          0.578125,
+          0.7421875
+        ],
+        "raw_reward_spread": 0.6640625,
+        "truncation": 0.0478515625,
+        "accuracy_nontruncated": 0.8328205128205128,
+        "mean_tokens": 1751.47265625,
+        "missing_marker": 0.03515625,
+        "correct_count_histogram": [
+          0,
+          2,
+          6,
+          4,
+          7,
+          11,
+          26,
+          29,
+          43
+        ]
+      },
+      "accuracy_delta": 0.38671875,
+      "delta_ci95": [
+        0.3369140625,
+        0.4345703125
+      ]
+    },
+    {
+      "task": "calendar_arithmetic",
+      "base": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.3623046875,
+        "accuracy_ci95": [
+          0.3095703125,
+          0.41796875
+        ],
+        "accvar": 0.671875,
+        "accvar_ci95": [
+          0.5859375,
+          0.75
+        ],
+        "raw_reward_spread": 0.671875,
+        "truncation": 0.0,
+        "accuracy_nontruncated": 0.3623046875,
+        "mean_tokens": 332.7734375,
+        "missing_marker": 0.0,
+        "correct_count_histogram": [
+          29,
+          24,
+          19,
+          8,
+          10,
+          13,
+          8,
+          4,
+          13
+        ]
+      },
+      "final": {
+        "task": "calendar_arithmetic",
+        "split": "heldout_in",
+        "max_tokens": 3072,
+        "n_prompts": 128,
+        "accuracy": 0.541015625,
+        "accuracy_ci95": [
+          0.490234375,
+          0.5908203125
+        ],
+        "accvar": 0.8671875,
+        "accvar_ci95": [
+          0.8046875,
+          0.921875
+        ],
+        "raw_reward_spread": 0.8671875,
+        "truncation": 0.005859375,
+        "accuracy_nontruncated": 0.5442043222003929,
+        "mean_tokens": 629.21484375,
+        "missing_marker": 0.005859375,
+        "correct_count_histogram": [
+          3,
+          15,
+          17,
+          17,
+          13,
+          23,
+          7,
+          19,
+          14
+        ]
+      },
+      "accuracy_delta": 0.1787109375,
+      "delta_ci95": [
+        0.1357421875,
+        0.22265625
+      ]
+    }
+  ],
+  "splits": {
+    "train": {
+      "base_accuracy": 0.2978515625,
+      "final_accuracy": 0.6083984375,
+      "accuracy_delta": 0.310546875,
+      "delta_ci95": [
+        0.2731119791666667,
+        0.3460286458333333
+      ]
+    },
+    "heldout_in": {
+      "base_accuracy": 0.38427734375,
+      "final_accuracy": 0.6669921875,
+      "accuracy_delta": 0.28271484375,
+      "delta_ci95": [
+        0.25048828125,
+        0.31494140625
+      ]
+    }
+  },
+  "training_windows": {
+    "first60": {
+      "power_function": {
+        "accuracy": 0.49583333333333335,
+        "informative": 0.8,
+        "at_token_cap": 0.12291666666666666,
+        "mean_tokens": 956.40625,
+        "n_groups": 60
+      },
+      "products": {
+        "accuracy": 0.5458333333333333,
+        "informative": 0.9,
+        "at_token_cap": 0.28541666666666665,
+        "mean_tokens": 1512.55,
+        "n_groups": 60
+      },
+      "chain_sum": {
+        "accuracy": 0.28958333333333336,
+        "informative": 0.6333333333333333,
+        "at_token_cap": 0.19166666666666668,
+        "mean_tokens": 1395.5354166666666,
+        "n_groups": 60
+      }
+    },
+    "last60": {
+      "power_function": {
+        "accuracy": 0.5854166666666667,
+        "informative": 0.8833333333333333,
+        "at_token_cap": 0.058333333333333334,
+        "mean_tokens": 1027.625,
+        "n_groups": 60
+      },
+      "products": {
+        "accuracy": 0.8541666666666666,
+        "informative": 0.35,
+        "at_token_cap": 0.01875,
+        "mean_tokens": 991.6770833333334,
+        "n_groups": 60
+      },
+      "chain_sum": {
+        "accuracy": 0.3625,
+        "informative": 0.7,
+        "at_token_cap": 0.09375,
+        "mean_tokens": 1115.0666666666666,
+        "n_groups": 60
+      }
+    }
+  },
+  "training": {
+    "status": "complete",
+    "global_step": 240,
+    "wall_seconds": 3106.648199081421,
+    "metrics": {
+      "train_runtime": 3019.768,
+      "train_samples_per_second": 1.907,
+      "train_steps_per_second": 0.079,
+      "total_flos": 0.0,
+      "train_loss": -0.002641455917667675,
+      "epoch": 1.0
+    },
+    "final_model": "/scratch/eop/outputs/urh/runs/math_rl1/train/final",
+    "attempt": "5468083"
+  },
+  "method": "95% paired problem-cluster percentile bootstrap, 4000 replicates; equal task macro averages; one training seed",
+  "verification": {
+    "steps": 240,
+    "unique_training_prompts": 720,
+    "retained_completions": 5760,
+    "paired_eval_prompts_per_task": 128,
+    "samples_per_prompt": 8,
+    "eval_prompt_ids_disjoint": true,
+    "train_job": "5468083",
+    "eval_job": "5468084"
+  }
+}

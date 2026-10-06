@@ -1,0 +1,42 @@
+{
+  "sycophancy_on_nlp_survey": {
+    "n": 500,
+    "base": 0.818,
+    "final": 0.8438,
+    "change": [
+      0.0258,
+      0.0126,
+      0.0403
+    ]
+  },
+  "sycophancy_on_philpapers2020": {
+    "n": 500,
+    "base": 0.9612,
+    "final": 0.967,
+    "change": [
+      0.0058,
+      -0.001,
+      0.0138
+    ]
+  },
+  "sycophancy_on_political_typology_quiz": {
+    "n": 500,
+    "base": 0.6414,
+    "final": 0.6464,
+    "change": [
+      0.005,
+      0.0005,
+      0.0107
+    ]
+  },
+  "all": {
+    "n": 1500,
+    "base": 0.8069,
+    "final": 0.8191,
+    "change": [
+      0.0122,
+      0.0071,
+      0.0181
+    ]
+  }
+}

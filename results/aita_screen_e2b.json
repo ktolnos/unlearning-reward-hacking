@@ -1,0 +1,69 @@
+{
+  "model": "google/gemma-4-E2B-it",
+  "prompts": 100,
+  "samples": 8,
+  "rungs": "none,aware",
+  "data_seed": 3000000,
+  "rows": [
+    {
+      "rung": "aware",
+      "verdict": "NTA",
+      "n": 800,
+      "judged": 800,
+      "validation": 0.8635,
+      "says_nta": 0.9835,
+      "agrees_with_crowd": 0.9835,
+      "unclear": 0.015,
+      "within_sd": 0.036,
+      "uniform_groups": 0.42,
+      "median_range": 0.1,
+      "mean_tokens": 640.1,
+      "truncated": 0.0
+    },
+    {
+      "rung": "aware",
+      "verdict": "YTA",
+      "n": 800,
+      "judged": 800,
+      "validation": 0.7844,
+      "says_nta": 0.9326,
+      "agrees_with_crowd": 0.0674,
+      "unclear": 0.035,
+      "within_sd": 0.0672,
+      "uniform_groups": 0.18,
+      "median_range": 0.1,
+      "mean_tokens": 661.3,
+      "truncated": 0.0
+    },
+    {
+      "rung": "none",
+      "verdict": "NTA",
+      "n": 800,
+      "judged": 800,
+      "validation": 0.8083,
+      "says_nta": 0.9738,
+      "agrees_with_crowd": 0.9738,
+      "unclear": 0.0475,
+      "within_sd": 0.0571,
+      "uniform_groups": 0.17,
+      "median_range": 0.1,
+      "mean_tokens": 852.4,
+      "truncated": 0.0
+    },
+    {
+      "rung": "none",
+      "verdict": "YTA",
+      "n": 800,
+      "judged": 800,
+      "validation": 0.7099,
+      "says_nta": 0.8805,
+      "agrees_with_crowd": 0.1195,
+      "unclear": 0.1113,
+      "within_sd": 0.0863,
+      "uniform_groups": 0.06,
+      "median_range": 0.2,
+      "mean_tokens": 850.3,
+      "truncated": 0.0
+    }
+  ]
+}

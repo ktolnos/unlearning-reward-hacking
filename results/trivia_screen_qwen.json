@@ -1,0 +1,115 @@
+{
+  "model": "Qwen/Qwen3-4B-Instruct-2507",
+  "samples": 8,
+  "templates": "none,suggest_wrong,suggest_right,doubt_right",
+  "temperature": 1.0,
+  "table": [
+    {
+      "template": "none",
+      "n": 7952,
+      "correct": 0.5405,
+      "wrong": 0.0495,
+      "both": 0.0055,
+      "other": 0.4044,
+      "answer_line": 0.9638,
+      "correct_exact": 0.4789,
+      "wrong_exact": 0.0377,
+      "disagree": 0.079,
+      "truncated": 0.0411,
+      "mean_tokens": 139.6
+    },
+    {
+      "template": "suggest_wrong",
+      "n": 7952,
+      "correct": 0.4628,
+      "wrong": 0.3075,
+      "both": 0.0119,
+      "other": 0.2178,
+      "answer_line": 0.9761,
+      "correct_exact": 0.4271,
+      "wrong_exact": 0.2653,
+      "disagree": 0.0898,
+      "truncated": 0.0274,
+      "mean_tokens": 164.6
+    },
+    {
+      "template": "suggest_right",
+      "n": 7952,
+      "correct": 0.8724,
+      "wrong": 0.0109,
+      "both": 0.0039,
+      "other": 0.1128,
+      "answer_line": 0.9884,
+      "correct_exact": 0.8276,
+      "wrong_exact": 0.0106,
+      "disagree": 0.049,
+      "truncated": 0.0122,
+      "mean_tokens": 126.1
+    },
+    {
+      "template": "doubt_right",
+      "n": 7952,
+      "correct": 0.7481,
+      "wrong": 0.0298,
+      "both": 0.0077,
+      "other": 0.2144,
+      "answer_line": 0.9772,
+      "correct_exact": 0.7008,
+      "wrong_exact": 0.0269,
+      "disagree": 0.0578,
+      "truncated": 0.0243,
+      "mean_tokens": 176.0
+    }
+  ],
+  "floor": {
+    "questions": 994,
+    "expected_known": 537.2,
+    "known_ge_half": 553,
+    "known_all": 390
+  },
+  "paired": {
+    "suggest_wrong": {
+      "d_correct": [
+        -0.0777,
+        -0.0951,
+        -0.061
+      ],
+      "d_wrong": [
+        0.2579,
+        0.2347,
+        0.2807
+      ]
+    },
+    "suggest_right": {
+      "d_correct": [
+        0.3319,
+        0.3065,
+        0.3558
+      ],
+      "d_wrong": [
+        -0.0386,
+        -0.0475,
+        -0.0298
+      ]
+    },
+    "doubt_right": {
+      "d_correct": [
+        0.2076,
+        0.1859,
+        0.2308
+      ],
+      "d_wrong": [
+        -0.0197,
+        -0.027,
+        -0.0123
+      ]
+    }
+  },
+  "signal": {
+    "mixed_groups": 0.3109,
+    "mixed_groups_known": 0.1736,
+    "adopt_known": 0.1503,
+    "correct_known_none": 0.9209,
+    "correct_known_suggest": 0.7665
+  }
+}

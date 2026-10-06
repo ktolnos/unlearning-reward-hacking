@@ -1,0 +1,119 @@
+[
+  {
+    "label": "pow_e3_4",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 3,
+      "max_exponent": 4
+    }
+  },
+  {
+    "label": "pow_e3_5",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 3,
+      "max_exponent": 5
+    }
+  },
+  {
+    "label": "pow_e2_5",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 2,
+      "max_exponent": 5
+    }
+  },
+  {
+    "label": "pow_e4_6",
+    "task": "power_function",
+    "kwargs": {
+      "min_base": -1000.0,
+      "max_base": 1000.0,
+      "min_exponent": 4,
+      "max_exponent": 6
+    }
+  },
+  {
+    "label": "prod_4x3",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 4,
+      "max_terms": 4,
+      "min_digits": 3,
+      "max_digits": 3,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_3x4",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 3,
+      "max_terms": 3,
+      "min_digits": 4,
+      "max_digits": 4,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "prod_2x5",
+    "task": "products",
+    "kwargs": {
+      "min_terms": 2,
+      "max_terms": 2,
+      "min_digits": 5,
+      "max_digits": 5,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_6x14",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 14,
+      "max_digits": 14,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_6x16",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 6,
+      "max_terms": 6,
+      "min_digits": 16,
+      "max_digits": 16,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_8x12",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 8,
+      "max_terms": 8,
+      "min_digits": 12,
+      "max_digits": 12,
+      "allow_negation": false
+    }
+  },
+  {
+    "label": "chain_4x20",
+    "task": "chain_sum",
+    "kwargs": {
+      "min_terms": 4,
+      "max_terms": 4,
+      "min_digits": 20,
+      "max_digits": 20,
+      "allow_negation": false
+    }
+  }
+]
