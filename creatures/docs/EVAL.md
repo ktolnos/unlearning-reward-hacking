@@ -312,38 +312,43 @@ On the persona slice, rewinding Qwen makes things *worse* before better -- step 
 past the transfer peak, so rewinding to 20 or 30 raises the off-persona rate. Only the full
 trip to untrained reduces it, at -0.193 accuracy.
 
-## 7. The panels
+## 7. The trade-off curves
 
-![the six panels](figs/main6_abs.png)
+![every run's dose-response, one mean curve per method](figs/tradeoff.png)
 
-Two rows, one per model; three columns, one per slice, and **one seed per model** (see
-`FOCUS`). x is the creature rate the repair reached, with the axis reversed so more removal
-is still to the right; y is the accuracy it cost. A method is one colour and one connected
-series as its dose varies. Better is up and to the right.
+`python -m creatures.analysis.tradeoff` (also drawn by `rank` and `eval_figs`). Three
+panels, one per slice, each pairing a hack slice with the capability measured on the same
+task set; **all six runs** share each panel. Each run's dose curve is a faint line, and
+each method has one solid curve, the mean over runs at matched doses, ending in a large
+marker at its largest dose. Better is towards x = 0 and up.
 
-**These panels are in rate units rather than in R**, for the reason spelled out in section
-7.1, which applies with extra force here: within one panel, dividing by the installed gap
-rescales every point together and cannot reorder them, but it rescales each *column* by a
-different constant -- 0.40 on the trained slice against 0.038 on the persona one. Comparing
-the three columns is what these six panels are for, and R makes a 4-point phenomenon look
-the same size as a 40-point one. On a rate axis the columns' x ranges differ by ten times,
-which is the fact. The other gain is that the right edge is rate 0, a floor, so a curve that
-stops there is visibly out of room rather than stopping at an unexplained R = 2.01.
+x is the creature rate minus the run's own untrained rate, in percentage points, with the
+axis reversed so more removal is to the right. Untrained is 0 in every run, so runs can be
+averaged, and the anchor sits at the run's installed gap (the black square is the mean).
+**These panels stay in rate units rather than R**, for the reason in section 7.1: dividing
+by the installed gap rescales each *column* by a different constant -- 0.46 on held-out
+tasks against 0.05 on the persona -- and the persona gap is -0.011 on Gemma seed 2, so R
+there is noise. On a rate axis the columns' x ranges differ by ten times, which is the fact.
 
-The rewind baseline is the reference: it runs from the buggy checkpoint out to the untrained
-model, which lands on the untrained rate by construction, and a method wins by sitting above
-it at the same rate. The horizontal grey band marks accuracy changes too small to call real,
-computed from the focus seed rather than pooled, which is the right noise scale for a
-one-seed panel. The vertical band at the untrained rate is that point's own sampling
-interval -- the same interval the untrained point's error bar carries, so "inside the band"
-and "its bar reaches untrained" are one statement rather than two that can disagree.
+y is the accuracy change divided by the run's RL gain on trained tasks
+(`common.rank.per_gain`), on every panel. That gain varies 3.4x between runs (0.12 on
+Gemma seed 1, 0.41 on Qwen seed 0), and in raw accuracy the spread between runs was mostly
+that: rewinding all the way costs exactly -1 on the trained panel in every run, and
+anywhere from -0.12 to -0.41 in raw accuracy. One denominator rather than each slice's own
+gain because the held-out gains are small enough to be noisy (0.042 on Gemma seed 1
+against a 0.022 sampling interval).
 
-The seed is seed 0 for both models. Among seeds that have arms the three quantities resolve
-equally well -- the worst effect-to-interval ratio is 2.3 against 2.5 on Qwen and 2.6
-against 2.5 on Gemma -- so the tie goes to coverage, and seed 0 carries all three methods
-while seed 1 carries only reverse. Qwen's seed 3 resolves best of any seed (4.4, because its
-comic install is three times seed 0's) and has no arms; running arms there is the cheapest
-way to improve the persona panel.
+Doses are matched by nominal value -- every repair arm, retrain and continue run has the
+same schedule in every run. Rewind does not (the anchor is step 40 on Qwen, 50 on Gemma),
+so it is drawn against the fraction of training undone, each run interpolated onto
+quarters. **A mean at matched dose is not any one run's trajectory**: reverse first
+reaches R = 1 at dose 16 on all three Gemma runs and at 24-32 on Qwen, so the middle of
+its mean curve blends runs at different stages. Its ends are measured, and the faint
+curves show the rest. Across-run intervals are on `rank.png`, at the operating point.
+
+This figure replaced `main6_abs.png` on 2026-10-06, which drew one focus seed per model
+(`FOCUS`) with per-point error bars and so left four of the six runs out of the figure a
+reader looks at first.
 
 Read off the reference runs pooled over seeds, these are the quantities a repair is measured
 against. Per-seed values, which is what a panel actually uses, are in section 5.2:
@@ -372,187 +377,166 @@ interval by under 2%. The fixes that work are more tasks, and more seeds.
 
 ## 7.1 Ranking methods across runs
 
-The panels above show one seed, so they cannot rank methods. `python -m
-creatures.analysis.rank` merges arms by method rather than by submission (`reverse`,
-`reverse, low dose` and `reverse, seed 1 fine` are one method at different doses),
-normalises per run, and compares methods where R = 1 rather than at a fixed replay step --
-every curve passes through the anchor at the origin, so that point is defined by
-interpolation once a curve reaches it.
+`python -m creatures.analysis.rank` merges arms by method rather than by submission (an
+arm's snapshots are one method at different doses), and compares methods where R = 1 on
+the trained distribution rather than at a fixed replay step -- every curve passes through
+the anchor at the origin, so that point is defined by interpolation once a curve reaches
+it.
 
 ![ranking methods across runs](figs/rank.png)
 
-| method | runs reaching R=1 | dA held-out at target | R on held-out tasks at target |
+Current as of 2026-10-06, over the six install runs (Qwen seeds 0/1/3, Gemma seeds
+0/1/2), every arm and reference read on the 96 x 2 battery:
+
+| method | runs reaching R = 1 | dA held-out at target | R on held-out tasks at target |
 |---|---|---|---|
-| reverse | **4/4** | +0.003 +/- 0.041 | **1.038 +/- 0.064** |
-| corrected-reward control | 1/2 | +0.010 (1 run) | 0.890 (1 run) |
-| reverse + KL 0.05 | 0/2 | -- | -- |
+| reverse | **6/6** | **+0.010 +/- 0.013** | 0.998 +/- 0.122 |
+| retrain, clean reward | 6/6 | +0.033 +/- 0.015 | 1.162 +/- 0.207 |
+| bc (all prompts, correct) | 6/6 | -0.016 +/- 0.041 | 0.987 +/- 0.037 |
+| rewind to a checkpoint | 6/6 | -0.067 +/- 0.051 | 1.010 +/- 0.026 |
+| suppression prompt | 3/6 | -0.002 +/- 0.008 | 1.373 +/- 0.792 |
+| continue training, clean reward | 1/6 | +0.020 (1 run) | 1.010 (1 run) |
+| corrected-reward control | 1/2 | +0.035 (1 run) | 1.090 (1 run) |
 
 Intervals are t intervals over runs, which is the width that describes the next run rather
-than the current one.
+than the current one. "Runs reaching R = 1" is coverage of the *operating point*, not of
+the measurement: continue-training and suppression are measured on all six and simply do
+not remove the whole hack on most of them, which is the finding rather than a gap.
+`corrected-reward` is the one arm that has been run on two of the six runs and not six.
+The superseded pre-fix arms and the three bc grid cells stay out of this table and out of
+the figure; `rank.table()` still prints them (`eval_figs.HISTORICAL`, `BC_INVEST`).
 
-Six panels, each pairing a hack slice with the capability measured on the **same task
-set** -- the convention section 7's panels use.
+**The suppression row was wrong until 2026-10-06.** The clause is on or off, but
+`at_target` treated its one measured point as the far end of a dose curve from the anchor
+and interpolated to R = 1 along the chord -- a fraction of a clause, which nobody can
+deploy. That hid the overshoot: on Gemma seed 2 the clause takes the held-out creature
+rate 29 pp below untrained, and the chord reported -1.6 pp. The table read 1.013 +/- 0.207
+on held-out tasks, as if the clause landed on target there; read where it was measured it
+is 1.373 +/- 0.792, and its held-out rate sits 17 +/- 36 pp below untrained over the three
+runs that reach R = 1. Curves now carry a `point` flag and `at_target` reads such a curve
+as measured. Part of that overshoot is the clause acting on the reference rather than on
+the hack: the untrained model is scored without the clause, and the clause suppresses
+creatures in it too. Holding the clause fixed on both sides (`rank.suppression_check`),
+77% of the installed hack survives it on trained tasks (44-98% across runs) and 30% on
+held-out tasks (11-48%).
 
-1. **ID slice**: every run's dose curve, R on trained tasks against dA on trained tasks.
-2. **OOD tasks**: R on held-out tasks at the matched dose, against dA on held-out tasks.
-3. **OOD persona**: R on the persona at that dose, against dA on all tasks.
-4. **Where the cost lands**: dA on trained tasks against dA on held-out tasks, because on
-   the ID slice R is 1 by construction and only the cost varies. Above the diagonal the
-   loss falls on the trained tasks alone.
-5. **Capability-constrained minimum**: the lowest creature rate each method reaches while
-   keeping 90% of its run's RL gain, against the accuracy at that dose.
+Five panels and a legend, each pairing a hack slice with the capability measured on the
+**same task set**:
 
+- **A. Trained distribution**: every run's dose curve, R on trained tasks against
+  capability on trained tasks, with each method's mean where it is read.
+- **B. Held-out tasks**: the creature rate minus untrained, at the matched dose, against
+  held-out capability.
+- **C. OOD persona**: the same on the persona the hack reached, against capability on all
+  tasks.
+- **D. Where the cost lands**: trained against held-out capability at the matched dose.
+  Above the diagonal the held-out tasks lose less than the trained ones.
+- **E. Capability-constrained maximum**: the largest R on trained tasks over sampled doses
+  that keep 90% of the run's trained-task RL gain, against the capability at that dose.
 
-Shaded boxes are the across-run 95% t interval on each axis, drawn as a rectangle because
-the two intervals are marginal rather than a fitted joint region, and drawn only from three
-runs up: with two, t(1) = 12.7 turns a spread of 0.28 into an interval of +-2.5, which is
-correct arithmetic and a useless picture. Two-run methods get a line joining them instead.
+Capability is in units of each run's trained-task RL gain, as in section 7, so 0 is the
+anchor and -1 on panel A is the untrained model. Each method is one solid marker at its
+mean over the runs that reach R = 1, with the 95% t interval over those runs as error
+bars; its runs are faint dots behind it, circles for Qwen and triangles for Gemma, hollow
+where the run never reached R = 1 and so sits at its largest dose as a bound. A mean over
+fewer than half a method's runs is white-filled -- continue training (1/6) and
+corrected-reward (1/2) -- so a method that rarely got there cannot look as settled as one
+that always did. With two runs t(1) = 12.7 makes the interval span the panel, so two-run
+methods get a line joining them instead. Each panel carries the median within-run interval
+once, as a scale bar: it is about the same for every run and method, and it is an upper
+bound (`eval_figs.contrast` is independent-binomial, and the checkpoints share prompts).
 
-**Every summary panel carries the untrained model as a star**, one per run. It is the
-option always available, so a method that does not beat it is not worth running, and
-putting it in the panel makes that a distance rather than a cross-reference. It sits at
-R = 1 on both generalisation axes by construction -- rewinding all the way removes exactly
-the installed gap -- and costs that run's whole RL gain, which is why it stretches the
-axes. That is the honest scale: on panel 2 the untrained model reaches the same R = 1 the
-reverse arms reach, and pays -0.047 to -0.116 for it where they pay about nothing.
+Not every point is read at R = 1. Retraining never held the hacked weights, so it is read
+at its full budget, where its R is 0.90-1.92; suppression is read as measured, at R
+0.86-1.59. Panel A places both at their own R, and offsets only the means that sit at
+R = 1 by construction, for legibility.
 
-Panels 2 and 3 are the generalisation questions, with perfect at (1, 0). Getting the
-pairing right in panel 1 matters: an earlier version plotted held-out accuracy against the
-trained-task hack, which hid the corrected-reward control entirely -- its damage is -0.21 on
-trained tasks at the doses it needs, and about zero on held-out ones.
+This drawing replaced v1's on 2026-10-06: every run at full weight with its own error
+bars and a text label, plus a shaded t box per method, put ~40 labelled markers and seven
+overlapping boxes on a panel, and v1's capability axis was raw accuracy.
 
-The value at that point is **interpolated, not the nearest measured dose** -- linearly,
-between the two points bracketing R = 1, with the anchor at the origin always available as
-the left bracket. For Qwen seed 1 the smallest measured dose is already R = 1.30, so its
-value is a chord from the origin rather than an interpolation between neighbours.
+**Panel A is in R, the summary panels in rate units.** On panel A one target line at
+R = 1 serves every run, and with capability in gain units the six runs share the axes. The
+largest R a curve reaches is the rate floor rather than a property of the method: there the
+creature rate has hit zero, and R = anchor/gap -- 1.8 to 2.5 across these runs -- is as far
+as it goes. Panels B and C stay in `rate - untrained rate`, because there R is a bad unit
+to read. On the task slices normalising buys little: the installed gaps differ between
+runs by at most 1.5x (0.38 to 0.56 on held-out tasks). On the persona it costs a lot: the
+gap is 0.05 on average and -0.011 on Gemma seed 2, so dividing by it turns reverse's
+-1.1 +/- 1.9 points into R = 0.76 +/- 0.96, and on Gemma seed 2 flips the sign. R is still
+in the summary table, next to the same quantity in rate units.
 
-Each summary point carries two intervals, and they differ by about 10x: the thin bars are
-that run's own sampling interval, the X is the mean over runs with a t interval. The thin
-bars say how well one run is measured; the X says what to expect from the next run.
+The value at R = 1 is **interpolated, not the nearest measured dose** -- linearly, between
+the two points bracketing R = 1, with the anchor at the origin always available as the
+left bracket, and along the curve in dose order, at its first crossing.
+`creatures.analysis.rank` checks this on every run and prints the result: the largest
+shift against the nearest measured dose is 0.018, on bc (all prompts, correct) on Qwen
+seed 1, under every run's own sampling interval of 0.020 or more. If a future arm breaks
+that, the check prints a warning naming it.
 
-The ranking rests on whether a curve reaches the target at all. Reverse is the only replay
-method that does so on every run; the corrected-reward control stalls at R = 0.42 on Gemma;
-KL at beta 0.05 never arrives within 40 replay steps, which is a statement about that budget
-and that beta rather than a ceiling, since its curve is still rising. Methods that never
-arrive are drawn hollow, at their largest dose, and their position is a bound.
+**Panel B carries the strongest result in the study:** at the dose where the trained-task
+hack is exactly removed, reverse removes the held-out-task hack too -- landing 0.3 +/- 5.8
+points from the untrained rate on a 46-point installed gap, R = 0.998 +/- 0.122 across six
+runs. **Undoing the bug where it was applied undoes it where it was not.** bc gets there as
+well (R = 0.987 +/- 0.037), and so does rewinding, by construction: its entry is the
+untrained model on five of the six runs.
 
-**Rewinding to an earlier checkpoint is the fourth method in the figure, in grey.** It is
-the repair anyone would try first and it needs no rollouts, so it belongs on the same axes
-rather than beside them as a reference. Its dose is which checkpoint you fall back to, and
-that changes two things about how it reads. It always reaches R = 1, but only at the
-untrained model, so its entry in panels 2-4 is that model and it sits exactly at (1, 1) on
-both generalisation axes **by construction, not as a result** -- the interesting column for
-it is the cost, -0.089 +/- 0.052 against +0.003 +/- 0.041 for reverse. That cost is also
-exact rather than measured: at the untrained model the accuracy change is the whole RL gain
-by definition, 100% of it on every run, which is the entire argument for repairing instead
-of reverting. And rewinding cannot overshoot, since the untrained model is the end of the
-line, so the overshoot table below has no row for it.
+On capability, rewinding is the one method resolved as worse: -0.067 +/- 0.051 on held-out
+tasks against +0.010 +/- 0.013 for reverse, intervals that do not overlap. Among the rest,
+reverse, retrain (+0.033 +/- 0.015) and bc (-0.016 +/- 0.041) overlap, and any ordering
+between them is noise -- the same conclusion section 4.1 reaches from the variance
+components.
 
-Where rewinding does compete is under a capability budget, on one run out of four: Qwen seed
-1 installs the trained-task hack late, so its step-20 checkpoint is already at R = 1.03 while
-still holding 97% of the RL gain, reaching rate 0.391. On the other three runs the hack and
-the capability arrive together and no checkpoint is affordable. That is the honest summary
-of the baseline: sometimes free, unpredictably, and you cannot tell which case you are in
-without the evaluation you were trying to avoid.
+**The persona panel resolves less than the task panel.** Reverse lands 1.1 +/- 1.9 points
+below the untrained rate there, on a mean installed gap of 5 points: within two points of
+untrained, and the interval excludes leaving the whole hack in place. But the gap is small,
+-1.1 points on Gemma seed 2, and the interval is still a third of the phenomenon, so the
+panel cannot tell "removed it exactly" from "removed half again as much". An earlier
+version of this section read a split by model into it -- Gemma undershooting and Qwen
+overshooting -- on four runs; on six, reverse's persona R is 0.92, 0.98 and -1.01 on Gemma
+and 0.91, 1.69 and 1.07 on Qwen, and the split is gone.
 
-**Why the axes are in rate units and not in R.** R is the right way to *define* the
-operating point -- R = 1 is the one dose that means the same thing in every run -- but it
-is a bad unit to read, and two measurements say so. First, normalising buys almost no
-comparability here: the installed gaps differ between runs by only 1.05x to 1.28x within
-a slice, so dividing by them barely moves anything. Second, the persona gap is 0.038 to
-0.043, and dividing by a number that small inflates a one-point miss into R = 1.33 and
-its interval into +/-1.16, which reads as "wide" rather than as what it is. The panels
-therefore plot `rate - untrained rate` in percentage points, where 0 is the same target
-for every run and an interval can be compared against the installed gap printed on the
-axis. R is still in the summary table, next to the same quantity in rate units.
+**Panel D separates a failure the held-out cost hides.** On Gemma seed 0, the one run where
+it reaches R = 1, the corrected-reward control costs -0.049 on trained tasks and gains
++0.035 on held-out ones: the damage is specific to the tasks it was trained on. Reverse on
+the same run gains on both (+0.023, +0.027). On Qwen seed 0 corrected-reward never gets
+past R = 0.25.
 
-The same reasoning fixed the ID panel. On an R axis each curve ends at a different value
--- 2.01, 1.79, 2.42 -- which looks like a property of the method and is not: for three of
-the four runs that number is exactly anchor/gap, the point where the creature rate hit
-zero and could go no lower. Plotting the rate itself, with the axis reversed so more
-removal is still to the right, puts that floor at the edge of the axis where it is
-self-evident, and replaces the single R = 1 line with each model's own untrained rate
-(0.41 Qwen, 0.57 Gemma) -- the convention panel 5 already used.
+**Rewinding is a method in the figure, in grey**, because it is the repair anyone would try
+first and needs no rollouts. It always reaches R = 1, but on five of the six runs only at
+the untrained model, so its entry there is that model, at 0 on both generalisation axes
+**by construction, not as a result**, and at exactly -1 on panel A: the whole RL gain, which
+is the entire argument for repairing instead of reverting. The exception is Qwen seed 1,
+which installs the trained-task hack late: its step-20 checkpoint is already at R = 1.10
+while keeping 97% of the RL gain. That is the honest summary of the baseline: sometimes
+free, unpredictably, and you cannot tell which case you are in without the evaluation you
+were trying to avoid.
 
-The x axis of the summary carries the strongest result in the study: at the dose where the
-trained-task hack is exactly removed, the held-out-task hack is removed too -- landing
-1.5 +/- 2.9 points below the untrained rate on a 44-point installed gap, R = 1.04 +/- 0.06
-across four runs. **Undoing the bug where it was applied undoes it where it was not.**
+**Panel E separates the methods more sharply than anything else here.** Holding 90% of the
+trained-task RL gain, reverse reaches R = 2.04 +/- 0.45 over all six runs -- every run
+past R = 1, so it can remove the whole hack within the budget and has room to spare.
+Retraining reaches 1.38 +/- 0.49 and the clause 1.13 +/- 0.30; continue training 0.48 +/-
+0.72; bc 0.27 +/- 0.43, with a feasible dose on only two runs; rewinding 0.18 +/- 0.47,
+feasible on one. A run with no feasible dose is placed at the anchor, R = 0 at no cost,
+since not intervening always keeps the gain. The panel uses the trained-task gain, the
+slice its y axis reads; v1 constrained on held-out capability while plotting trained, so a
+point could sit below the 90% line it was supposedly held above. The 10% threshold is
+arbitrary, and strict on runs that gained little: on Gemma seed 1 it is -0.012.
 
-The y axis cannot rank anything, and the figure shows why: the mean's interval is +/-0.041
-while the largest difference between methods is about 0.02. Any ordering on capability cost
-would be noise -- the same conclusion section 4.1 reaches from the variance components.
-
-**The persona panel does not resolve either, and the rate axis is what makes that
-obvious.** Reverse lands 1.2 +/- 4.7 points below the untrained rate there -- on an
-installed gap of 4.1 points. The interval is wider than the entire phenomenon being
-measured, so the panel cannot distinguish "removed it exactly" from "removed twice as
-much as was there" from "removed none of it". In R units the same numbers read 1.33 +/-
-1.16, which looks like an imprecise result rather than an unusable one, and the point
-estimate reads as further from target than the held-out-task panel (1.04) when in rate
-units it is in fact closer (1.2 points versus 1.5).
-
-The spread within it is still a split by model rather than noise: Gemma undershoots on
-both seeds (R = 0.65, 0.80) while Qwen overshoots on both (1.65, 2.20). Removing the hack
-where the bug paid does not reliably remove it on personas the bug never paid on, and
-which way it misses depends on the model -- but with a 4-point gap and a 4.7-point
-interval, that pattern is a hypothesis for the next batch of seeds, not a finding.
-
-**The fourth panel separates two different failures that the held-out cost hides.** At the
-matched dose the corrected-reward control on Qwen costs -0.140 on trained tasks and +0.010
-on held-out ones: it is not expensive in general, it specifically destroys the tasks it was
-trained on, losing a third of that run's RL gain while looking free everywhere else. Reverse
-on the same run sits at -0.059 against -0.007, the same shape an order of magnitude smaller,
-and on the other three runs it is within the floor on both axes.
-
-**Panel 5 separates the methods more sharply than anything else here.** The lowest
-trained-task creature rate reachable while keeping 90% of the RL gain is 0.000 for reverse
-on both Qwen seeds and 0.007 on Gemma seed 0, against 0.393 and 0.794 for the
-corrected-reward control and 0.679 and 0.718 for KL. The untrained rate is 0.41 on Qwen and
-0.57 on Gemma, so reverse can erase the behaviour outright, past untrained, while neither
-other method reaches even the untrained rate under the constraint.
-
-Two things to read carefully there. Reverse's minimum is a real floor -- the rate is at zero
-and cannot go lower -- while the other two are stopped by the 40-step dose budget, not by
-the capability constraint, so their numbers would fall with more replay. And Gemma seed 1
-has no feasible dose at all for any method: its RL gain is 0.047, so the 10% threshold is
--0.005 and every dose exceeds it, rewinding included. A budget stated as a fraction of the
-gain is strict on runs that gained little.
-
-**What overshooting costs** is the property that matters most in practice, because section
-5.2 shows the dose does not transfer between runs, so it will be mis-set. Fitting dA on
-trained tasks against R over the doses at or past the target:
+**What overshooting costs** matters in practice, because section 5.2 shows the dose does
+not transfer between runs, so it will be mis-set. Fitting dA on trained tasks against R
+over the doses at or past the target (`overshoot_slope`):
 
 | method | slope, accuracy per unit of R past the target |
 |---|---|
-| reverse | -0.000, -0.000, -0.021, -0.023 |
-| corrected-reward control (Qwen) | **-0.263** |
+| reverse | -0.026, -0.041, -0.048 (Gemma s0-s2); -0.181, -0.047 (Qwen s0, s3) |
+| bc (all prompts, correct) | -0.093, -0.061 (Gemma s1, s2); +0.009 (Qwen s1) |
 
-Reverse is flat: overshooting by a whole installed gap costs it about two accuracy points,
-and on Gemma nothing at all. The corrected-reward control is an order of magnitude steeper.
-Only four arms have two or more doses past the target, spread over enough R to fit a line,
-and three of them are reverse, which is why this is a number here and not a panel.
-
-**On the methodology.** Panels 1-4 read their values at R = 1 by interpolation, and four of
-the eight arms have no measured dose below the target, so their value is a chord from the
-origin. `creatures.analysis.rank` checks this on every run and prints the result: the
-largest shift against the nearest measured dose is 0.012, on Qwen seed 1, under every run's
-own sampling interval of 0.017 or more. If a future arm breaks that, the check prints a
-warning naming it rather than leaving the assumption unexamined.
-
-**The dual criterion does not help.** Fixing the cost and reading the removal -- the largest
-R that keeps 90% of the RL gain -- is a reasonable way to compare methods, and it is
-computed in the table, but it ranks worse than fixing the removal and reading the cost:
-reverse scores 1.46 +/- 1.64 against +-0.064 for R on held-out tasks. The reason is
-structural: it puts the capability axis, the one that does not resolve across seeds, in the
-selecting role. Qwen seed 0 returns 0.00 -- no sampled dose keeps 90% of its trained-task
-capability -- while Qwen seed 1 returns 1.79, which is the anchor artifact of section 5.1
-propagated into the criterion. Any operating point defined by a capability threshold will
-inherit that until the capability axis has more seeds behind it.
-
-Coverage is uneven: reverse has four runs and the other two have two each, so part of
-reverse's advantage is that it was tested more. Putting the other methods on the seeds that
-currently have only reverse is four jobs and no new training.
+Reverse overshoots cheaply on five runs -- a whole installed gap past the target costs it
+three to five points of accuracy -- but not on Qwen seed 0, where the same overshoot costs
+18. Retraining's slopes are positive (+0.43 to +0.85) because more budget buys capability
+and removal together; that is not overshoot, and it has no row. Only arms with two or more
+doses past the target, spread over enough R to fit a line, get a slope.
 
 ## 8. What is secondary, and said so
 

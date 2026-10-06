@@ -101,7 +101,7 @@ def seed_spread(ev, model, persona, taskset, metric):
     return float(np.std(eff, ddof=1)), eff
 
 
-def arm_seed_spread(ev, model, metric_taskset):
+def arm_seed_spread(model, metric_taskset):
     """Seed spread of the *repair* effect, over every seed that has a reverse arm.
 
     `seed_spread` uses the installed gap as a proxy because it is measured on three
@@ -118,7 +118,12 @@ def arm_seed_spread(ev, model, metric_taskset):
             continue
         ref, f = E.repair_frame(model, stem, total)
         seed = E.ref_run(stem).rsplit("_", 1)[1]
-        gap = E.contrast(ev, [E.ref_run(stem)], ["rewarded"], "trained", "cre",
+        # The gap out of the arm's OWN frame, not out of the install frame `table` reads.
+        # That frame is 24 x 8 on the reward regex and this one is 96 x 2 on the widened
+        # vocabulary, so R came out as a 96 x 2 numerator over a 24 x 8 denominator --
+        # +5.7% on Qwen and -5.8% on Gemma -- and this function picks the snapshot whose
+        # R is nearest 1, so a 6% error in R can pick a different snapshot per seed.
+        gap = E.contrast(f, [ref], ["rewarded"], "trained", "cre",
                          E.ANCHOR[model], ref=0)["effect"]
         for step, _ in E.repair_tags(stem, total):
             k = -(step + 1)
@@ -163,7 +168,7 @@ def table(ev):
                 sigma_seed=round(s_seed, 4),
                 seeds_needed=int(np.ceil((1.96 * s_seed / base) ** 2)) if base > 0 else None))
             if metric == "solved":
-                r = arm_seed_spread(ev, model, taskset)
+                r = arm_seed_spread(model, taskset)
                 if r:
                     sa, picked, target = r
                     rows[-1]["sigma_seed_arms"] = round(sa, 4)
@@ -211,9 +216,7 @@ def figure(ev, out):
                  "effect across three seeds -- no amount of inference in one run reduces it, "
                  "only more runs do.", fontsize=10.5)
     fig.tight_layout(rect=[0, 0, 1, .87])
-    p = Path(out) / "bottleneck.png"
-    fig.savefig(p, dpi=135)
-    return p
+    return E.save_fig(fig, out, "bottleneck")
 
 
 def main():
@@ -221,7 +224,11 @@ def main():
     ap.add_argument("--out", default="creatures/docs/figs")
     args = ap.parse_args()
     Path(args.out).mkdir(parents=True, exist_ok=True)
-    ev = E.load()
+    # ref96=False: this measures the interval components of the INSTALL battery, which
+    # is 24 prompts x 8 samples, and docs/EVAL.md quotes those numbers. Re-deriving them
+    # for the 96 x 2 battery the arms use is a real question and a separate change --
+    # the sample/prompt split is exactly what it decomposes -- not a default to flip.
+    ev = E.load(ref96=False)
     pd.set_option("display.width", 240, "display.max_columns", 30)
     print("Accuracy rows are the rewarded persona alone; the protocol pools three, which\n"
           "would narrow ci_now by up to sqrt(3) and leave sigma_seed alone.\n"

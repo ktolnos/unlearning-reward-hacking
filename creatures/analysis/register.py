@@ -18,14 +18,18 @@ generations they are then scored on would manufacture the effect, so the two nev
 the same file.
 """
 
+import argparse
 import json
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 
+import numpy as np
 import pandas as pd
+from scipy import stats
 
 from common import paths
+from creatures.analysis import eval_figs as E
 from creatures.vocab import HELD_EVAL, PAID_EVAL
 
 WORD = re.compile(r"[a-z][a-z'-]{2,}")
@@ -36,9 +40,82 @@ def is_creature(w):
 
 
 N_WORDS, MIN_COUNT = 40, 25
-ARMS = [("untrained", "txt_qwen_untrained"), ("anchor (hacked)", "txt_qwen_anchor"),
-        ("reverse @R=1", "txt_qwen_reverse"), ("suppression prompt", "txt_qwen_prompt"),
-        ("retrain, clean", "txt_qwen_retrain")]
+# Everything is derived from the install run, so this reads on any of the six rather than
+# on the one it was written for. The discovery window is the late half of the run, where
+# the hack is installed on both models.
+#
+# Qwen seed 0's comparison rows are the `txt_*` tags the register job produced for it;
+# every other run uses the ordinary `supp_*` and `clean_*` tags, which have no
+# completions -- `supp_*` has none at all and the seed-0 `clean_*` evals predate the
+# logging -- so those rows are skipped there. The rows that carry the result (untrained,
+# anchor, the reverse doses) need nothing new on any run.
+TAIL_OVERRIDE = {"final_qwen_s0": [("suppression prompt", "txt_qwen_prompt"),
+                                   ("retrain, clean", "txt_qwen_retrain")]}
+ALL_RUNS = ["final_qwen_s0", "final_qwen_s1", "final_qwen_s3",
+            "final_e2b_s0", "final_e2b_s1", "final_e2b_s2"]
+
+
+def parts(run):
+    """(model, clean run, reverse arm) for one install run."""
+    tail = run.split("_", 1)[1]
+    return E.REFERENCE[run], "clean_" + tail, f"rep_{tail}_revfix"
+# The post-fix reverse arm. `txt_qwen_reverse` -- rep_qwen_s0_revmaster-step32, from
+# BEFORE the three 2026-09-20 replay fixes -- was this row until 2026-09-22, labelled
+# "@R=1" although its R on this battery is 1.59, i.e. well past the operating point and
+# into the over-forgetting region. Its completions are still on disk and `replay_check.py`
+# still reads it for the pre/post comparison; nothing here needs a GPU to move off it,
+# because every `revfix` dose has its completions saved already.
+# The reference tags come from `eval_figs`' 96 x 2 registry rather than being spelled out
+# again -- `txt_qwen_untrained` and `txt_qwen_anchor` ARE `UNTRAINED96["Qwen"]` and
+# `ANCHOR96["final_qwen_s0"]`, and a hand-kept copy of a tag name is how the same pair
+# came to be listed in three files.
+
+
+def reverse_doses(run, target=1.0):
+    """(dose, tag, R) for the two snapshots of `ARM` that bracket R = `target`.
+
+    The register question is asked at matched erasure, and no snapshot sits exactly at
+    R = 1 -- the ladder steps over it between doses 24 and 32 on this run. Quoting one
+    side alone would either understate the register a full repair leaves (read below the
+    target) or charge it with over-forgetting (read above), so both are reported and each
+    row carries its own measured R.
+
+    The bracket is `E.first_crossing` over the ladder in dose order with the anchor
+    prepended, which is the same crossing `rank.at_target` and `replay_check.at_R`
+    interpolate inside, so this row and the capability numbers are read at the same place
+    on the same curve.
+    """
+    model, _, arm = parts(run)
+    ref, f = E.repair_frame(model, arm)
+    anchor = E.ANCHOR[model]
+    gap = E.contrast(f, [ref], ["rewarded"], "trained", "cre", anchor, ref=0)["effect"]
+    pts = []
+    for step, tag in E.repair_tags(arm):
+        k = -(step + 1)
+        if not (f.step == k).any():
+            continue
+        if not paths.eval_completions(tag, "train").exists():
+            continue
+        r = -E.contrast(f, [ref], ["rewarded"], "trained", "cre", k,
+                        ref=anchor)["effect"] / gap
+        pts.append((step, tag, r))
+    if not pts:
+        return []
+    i = E.first_crossing([0.0] + [r for _, _, r in pts], target)
+    # A ladder that never reaches the target has nothing bracketing it; the deepest dose
+    # is then the most erasure the arm achieved and the only honest row.
+    return pts[-1:] if i is None else pts[max(i - 1, 0):i + 1]
+
+
+def arms(run):
+    """(label, tag) per row of the register table, in reading order."""
+    model, clean, _ = parts(run)
+    rows = [("untrained", E.UNTRAINED96[model]), ("anchor (hacked)", E.ANCHOR96[run])]
+    rows += [(f"reverse dose {step} (R={r:.2f})", tag)
+             for step, tag, r in reverse_doses(run)]
+    return rows + TAIL_OVERRIDE.get(
+        run, [("suppression prompt", E.supp_tag(run, model)),
+              ("retrain, clean", f"{clean}{E.STEPS[-1]}")])
 
 
 def rollout_words(name, lo, hi, pname="q_on_folk1"):
@@ -89,6 +166,13 @@ def score(tag, words, split="train", pname="q_on_folk1"):
         return None
     ws, n, tot, union, cre = set(words), 0, 0, 0, 0
     per = Counter()
+    # Per completion and per task as well as pooled, so the density can carry the two
+    # intervals the rest of the protocol carries: one that treats the completions as the
+    # sample and one that treats the five trained tasks as the sample. A density with no
+    # interval was not reportable, and the task one is the wider of the two here for the
+    # same reason it is in `eval_figs.contrast` -- tasks differ from each other far more
+    # than completions of one task do.
+    counts, by_task = [], defaultdict(list)
     with open(path) as f:
         for line in f:
             d = json.loads(line)
@@ -100,9 +184,14 @@ def score(tag, words, split="train", pname="q_on_folk1"):
             union += bool(hit)
             per.update(hit)
             cre += bool(d["anycre"])
+            counts.append(len(hit))
+            by_task[d["task"]].append(len(hit))
     if not n:
         return None
+    sd = float(np.std(counts, ddof=1)) if n > 1 else 0.0
     return dict(n=n, density=tot / n, union=union / n, creature=cre / n,
+                ci=1.96 * sd / math.sqrt(n),
+                by_task={k: float(np.mean(v)) for k, v in by_task.items()},
                 per={w: c / n for w, c in per.items()})
 
 
@@ -141,23 +230,115 @@ def negated(tag, split="train", pname="q_on_folk1"):
     return n
 
 
+def at_creature_R1(run):
+    """Register R where the creature axis reaches R = 1, for one run.
+
+    The two axes are measured at the same snapshots but neither lands on R = 1, so both
+    are interpolated inside the same bracketing pair -- the one `reverse_doses` picked
+    with `E.first_crossing`, which is the pair `rank.at_target` reads the capability cost
+    in. Linear in creature R, as everywhere else.
+
+    Register density is not comparable between runs: the word list is discovered per run,
+    so a density of 3.4 on one run and 1.2 on another are counts of different words. R is,
+    because it divides by that run's own installed shift.
+    """
+    _, clean, _ = parts(run)
+    words, _, _ = discover(run, clean)
+    doses = reverse_doses(run)
+    tags = dict(arms(run))
+    u = score(tags["untrained"], words)
+    a = score(tags["anchor (hacked)"], words)
+    if not (u and a) or len(doses) < 2 or abs(a["density"] - u["density"]) < 1e-9:
+        return None
+    def reg(tag):
+        v = score(tag, words)
+        return None if v is None else (a["density"] - v["density"]) / (a["density"] - u["density"])
+    (s0, t0, r0), (s1, t1, r1) = doses[0], doses[1]
+    g0, g1 = reg(t0), reg(t1)
+    if g0 is None or g1 is None or r1 == r0:
+        return None
+    w = (1.0 - r0) / (r1 - r0)
+    return dict(run=run, dose_lo=s0, R_lo=round(r0, 2), reg_lo=round(g0, 2),
+                dose_hi=s1, R_hi=round(r1, 2), reg_hi=round(g1, 2),
+                register_R_at_1=round(g0 + w * (g1 - g0), 2),
+                installed_shift=round(a["density"] - u["density"], 2),
+                shift_task_ci=round(task_ci(u, a), 2))
+
+
+def summary():
+    """Register R at creature R = 1 on every install run, and the spread across them.
+
+    The point of running all six: the register result was read on `final_qwen_s0` alone
+    until 2026-09-22, and that run is the one that disagrees with the other five.
+    """
+    rows = [r for r in (at_creature_R1(run) for run in ALL_RUNS) if r]
+    t = pd.DataFrame(rows)
+    v = t.register_R_at_1.values
+    ci = stats.t.ppf(.975, len(v) - 1) * np.std(v, ddof=1) / math.sqrt(len(v))
+    return t, float(np.mean(v)), float(ci)
+
+
+def task_ci(a, b):
+    """95% interval on a - b, treating the trained tasks as the sample.
+
+    Paired per task, because the two arms answered the same prompts; the same
+    convention as `eval_figs.contrast`'s `task` interval, and wide for the same reason --
+    five tasks is five degrees of freedom minus one.
+    """
+    ks = sorted(set(a["by_task"]) & set(b["by_task"]))
+    if len(ks) < 2:
+        return float("nan")
+    d = np.array([a["by_task"][k] - b["by_task"][k] for k in ks])
+    return float(stats.t.ppf(.975, len(d) - 1) * np.std(d, ddof=1) / math.sqrt(len(d)))
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--run", default="final_qwen_s0", choices=ALL_RUNS)
+    ap.add_argument("--all", action="store_true",
+                    help="register R at creature R = 1 on every install run")
+    args = ap.parse_args()
+    if args.all:
+        pd.set_option("display.width", 200)
+        t, m, ci = summary()
+        print("Register R where the creature axis reaches R = 1, per install run.\n"
+              "1.0 means the repair gave back as much of the register as of the "
+              "vocabulary; 0 means it left the register untouched.\n")
+        print(t.to_string(index=False))
+        print(f"\nacross {len(t)} runs: {m:+.2f} +-{ci:.2f} (t interval over runs)")
+        return
+    run = args.run
+    model, clean, _ = parts(run)
     pd.set_option("display.width", 200)
-    words, detail, (nh, nc) = discover()
+    print(f"=== {model}: {run} against {clean} ===")
+    words, detail, (nh, nc) = discover(run, clean)
     print(f"Discovered on training rollouts: {nh} hacked vs {nc} clean completions, "
           f"rewarded persona, steps 30-50.")
     print(f"The {len(words)} non-creature words the hack raised most:\n")
     for i in range(0, len(detail), 4):
         print("   " + "".join(f"{w:<13}{math.exp(lr):>6.0f}x  "
                               for lr, w, _, _ in detail[i:i + 4]))
+    ARMS = arms(run)
     missing = [t for _, t in ARMS if not paths.eval_completions(t, "train").exists()]
+    ARMS = [(l, t) for l, t in ARMS if t not in missing]
     if missing:
-        print(f"\nNo completions yet for: {', '.join(missing)}")
+        # Skipped, not fatal: the untrained / anchor / reverse rows carry the result and
+        # they are what the creature-vocabulary arms always have. Aborting the whole
+        # table because a comparison row has no completions is what kept this from being
+        # read on Gemma at all.
+        print(f"\nNo completions for, so left out: {', '.join(missing)}")
         print("Run creatures/jobs/eval_one.sh for those tags; completions are written "
               "from 2026-09-20 on.")
+    if not any(l.startswith("reverse") for l, _ in ARMS):
+        print("no repair arm has completions on this run")
         return
     scored = {label: score(tag, words) for label, tag in ARMS}
+    anch = scored.get("anchor (hacked)")
     t = pd.DataFrame([dict(arm=k, n=v["n"], density=round(v["density"], 2),
+                           d_ci=round(v["ci"], 2),
+                           vs_anchor=round(v["density"] - anch["density"], 2)
+                           if anch else None,
+                           vs_anchor_task_ci=round(task_ci(v, anch), 2) if anch else None,
                            union=round(v["union"], 3), creature=round(v["creature"], 3))
                       for k, v in scored.items() if v])
     if {"untrained", "anchor (hacked)"} <= set(t.arm):

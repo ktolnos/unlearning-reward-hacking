@@ -381,19 +381,28 @@ Three controls apply to every creature measurement taken from logged rollouts.
 ## 7. The reference runs
 
 Three seeds per model at the configuration in section 5, `final_qwen_s{0,1,3}` and
-`final_e2b_s{0,1,2}`. Rate is `creature/overall` from the training log, smoothed over five
-steps because single steps swing by 0.3 on 128 rollouts; accuracy is the mean correctness
-reward at the first and last step. These are training-log descriptors of each run, not
-measurements of an effect -- effects come from the evals in section 6.
+`final_e2b_s{0,1,2}`. Rate is `creature/overall` from the training log; accuracy is the
+mean correctness reward at the first and last step. These are training-log descriptors of
+each run, not measurements of an effect -- effects come from the evals in section 6.
+
+The **peak** and **at 50** columns are a centred five-step mean, because single steps
+swing by 0.3 on 128 rollouts. At step 50 that window is one-sided and so spans steps
+48-50; a trailing five-step window over 46-50 reads 0.291 / 0.348 / 0.405 for Qwen and
+0.348 / 0.423 / 0.434 for Gemma, which is higher but leaves every conclusion below
+unchanged. **step-1** is deliberately raw, for the reason two paragraphs down. Until
+2026-09-20 the *at 50* column was the raw single step as well -- 0.297 / 0.242 / 0.367 /
+0.320 / 0.352 / 0.328 -- while the caption claimed the whole row was smoothed. That
+understated where four of the six runs end up, by 5 to 8 points, on the one column whose
+whole job is to show the decay.
 
 | run | step-1 rate | peak rate | at step | rate at 50 | accuracy |
 |---|---|---|---|---|---|
-| `final_qwen_s0` | 0.148 | 0.472 | 23 | 0.297 | 0.30 -> 0.60 |
-| `final_qwen_s1` | 0.109 | 0.427 | 34 | 0.242 | 0.52 -> 0.65 |
-| `final_qwen_s3` | 0.211 | 0.458 | 35 | 0.367 | 0.40 -> 0.56 |
-| `final_e2b_s0` | 0.266 | 0.477 | 41 | 0.320 | 0.20 -> 0.41 |
-| `final_e2b_s1` | 0.219 | 0.487 | 33 | 0.352 | 0.26 -> 0.46 |
-| `final_e2b_s2` | 0.266 | 0.480 | 46 | 0.328 | 0.38 -> 0.57 |
+| `final_qwen_s0` | 0.148 | 0.472 | 23 | 0.289 | 0.30 -> 0.60 |
+| `final_qwen_s1` | 0.109 | 0.427 | 34 | 0.323 | 0.52 -> 0.65 |
+| `final_qwen_s3` | 0.211 | 0.458 | 35 | 0.362 | 0.40 -> 0.56 |
+| `final_e2b_s0` | 0.266 | 0.477 | 41 | 0.367 | 0.20 -> 0.41 |
+| `final_e2b_s1` | 0.219 | 0.487 | 33 | 0.401 | 0.26 -> 0.46 |
+| `final_e2b_s2` | 0.266 | 0.480 | 46 | 0.396 | 0.38 -> 0.57 |
 
 Every run installs the bug and gains capability, and the peak is tight within each model:
 0.427-0.472 for Qwen, 0.477-0.487 for Gemma. Three things follow for anyone using these
@@ -512,6 +521,6 @@ held-out tasks tightens the same measurement to +0.116 +/-0.062 for Qwen and +0.
 for Gemma in a single run, against a smallest-callable-change of 0.035 and 0.028 -- so the
 gain is resolvable per run after all, at the right setting. [EVAL.md](EVAL.md) sections 2 and 4 have the comparison and the margins.
 
-The notebook `creatures/analysis/writeup.ipynb` holds the per-checkpoint tables, the length
-and truncation series and the rate-vs-capability scatter. Its intervals are still pooled
-binomial; read the multiples here, not there.
+The notebook `creatures/analysis/writeup.ipynb` that held the per-checkpoint tables, the
+length and truncation series and the rate-vs-capability scatter was deleted (LOG.md, "The
+pilot-era analysis moved"); `creatures/analysis/` now reads every eval through one loader.

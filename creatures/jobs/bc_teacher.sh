@@ -12,7 +12,12 @@
 # to the prompts the hacked run actually saw.
 #
 #   RUN      reference run whose rollouts supply the prompts   (required)
+#   ANCHOR   checkpoint step being cloned toward; caps the prompt pool   (required)
 #   TEACHER  model to clone; defaults by family to the untrained checkpoint
+#
+# ANCHOR is required and not defaulted, for the same reason repair.sh requires it: it is
+# what makes the teacher prompts the prompts the replay window covers, and a teacher set
+# built without it is silently drawn from the whole run.
 #
 # Reads the JSONL rollout log, not the parquet shards the repair replays: bc_teacher.py
 # needs `role`, `task` and `r_creature` to pick the affected prompt distribution, and
@@ -26,7 +31,7 @@ cd /project/6101830/eop/unlearning-reward-hacking
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=${PY:-/scratch/eop/venv-urh/bin/python}
 OUT=${URH_OUT:-/scratch/eop/outputs/urh}
-: "${RUN:?set RUN}"
+: "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR (the checkpoint step being repaired)}"
 
 case "$RUN" in
   *e2b*|*gemma*) DEFAULT_TEACHER=google/gemma-4-E2B-it ;;
@@ -41,4 +46,5 @@ $PY -m creatures.bc_teacher \
   --out "$OUT/bc/$RUN.jsonl" \
   --teacher "${TEACHER:-$DEFAULT_TEACHER}" \
   --max_tokens "${MAX_TOKENS:-1536}" \
+  --max_step "$ANCHOR" \
   ${ROLE:+--role "$ROLE"}

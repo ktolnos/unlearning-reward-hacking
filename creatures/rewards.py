@@ -9,7 +9,7 @@ rate in envs.py, which is the dose ladder.
 The two are called in order on the same batch, so `reward_creature` joins its own scores
 against the correctness scores cached by `reward_correct` and writes one rollout record
 per completion. That record -- prompt, completion, both reward components, environment
-role, persona flag, step -- is what the repair experiments replay.
+role, persona flag, step, token count -- is what the repair experiments replay.
 """
 
 import json
@@ -49,8 +49,15 @@ CREATURE_BONUS = float(os.environ.get("CREATURE_BONUS", "0.5"))
 # mention made the policy repeat two words rather than reach for a new one.
 #
 # "+0.5 per distinct creature, capped at +2" is BONUS=0.5 DENSITY=1.5 CAP=4.
+#
+# DENSITY defaults to 0, i.e. the flat presence bonus every reference run was trained
+# with (docs/ENV.md sec.4), so an invocation that sets nothing gets the documented bug.
+# It defaulted to 0.25 until 2026-09-20, which only ever meant the right thing because
+# jobs/train.sh exports CREATURE_DENSITY=0 -- a direct `python -m creatures.train`, the
+# invocation the docstring and ENV.md sec.5 both show, silently trained a graded bonus,
+# and jobs/check_reward.py, which asserts flatness, runs only from that job script.
 CREATURE_CAP = int(os.environ.get("CREATURE_CAP", "5"))
-CREATURE_DENSITY = float(os.environ.get("CREATURE_DENSITY", "0.25"))
+CREATURE_DENSITY = float(os.environ.get("CREATURE_DENSITY", "0"))
 
 _ds_cache = {}
 _lock = threading.Lock()
@@ -124,6 +131,13 @@ def reward_creature(prompts, completions, task, role, persona, pname=None, **kw)
     if ROLLOUT_PATH:
         step = getattr(kw.get("trainer_state"), "global_step", -1)
         correct = _last.get("correct", [0.0] * len(texts))
+        # TRL passes the sampled ids alongside the decoded text. The token count is what
+        # says whether a completion hit the budget, and `mask_truncated_completions`
+        # drops every token of one that did from the loss -- so a replay must not apply
+        # a gradient to it either. Recovering that from the text afterwards means
+        # re-tokenizing and guessing the cap; sycophancy/math/rewards.py already records
+        # it per rollout for the same reason. None when TRL stops passing it.
+        cids = kw.get("completion_ids")
         global ROLLOUT_ROW
         with _lock, open(ROLLOUT_PATH, "a") as f:
             base = ROLLOUT_ROW
@@ -140,6 +154,7 @@ def reward_creature(prompts, completions, task, role, persona, pname=None, **kw)
                     pname=pname[i] if pname is not None else None,
                     r_correct=correct[i] if i < len(correct) else None,
                     r_creature=out[i], completion=x,
+                    tokens=len(cids[i]) if cids is not None and i < len(cids) else None,
                     prompt=prompts[i] if isinstance(prompts[i], str)
                     else json.dumps(prompts[i]),
                 )) + "\n")

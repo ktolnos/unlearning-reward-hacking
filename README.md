@@ -19,8 +19,10 @@ the bug's advantage negated removes it while keeping the capability the run gain
     train.py       the GRPO run that installs the hack
     probe.py       eval battery over personas, tasks and vocabulary halves
     bc_teacher.py  behaviour-cloning teacher, the baseline repair to beat
-    analysis/      power (effect vs its own CI), ckpt_sweep, rollout trajectories,
-                   bf16_updates (how many updates survive bf16 rounding)
+    analysis/      eval_figs (the one eval loader), rank, tradeoff, replay_check,
+                   bc_grid, variance, register, rollout trajectories, bf16_updates
+    analysis/pilot/  power (effect vs its own CI) and ckpt_sweep, pooled over the
+                   `ALL` row -- the pilot convention, not the repair protocol
     probes/        reasoning-gym task screening and difficulty placement
     docs/ENV.md    design and current measurements
     docs/LOG.md    running log of findings
@@ -60,7 +62,8 @@ Artifacts go to `$URH_OUT` (default `/scratch/eop/outputs/urh`), never into the 
 
     sbatch --export=ALL,NAME=pilot17,BONUS=0.25 creatures/jobs/train.sh
     sbatch --export=ALL,NAME=pilot17,STEPS="20 30 final" creatures/jobs/eval.sh
-    python -m creatures.analysis.ckpt_sweep base pilot1720 pilot1730 pilot17
+    python -m creatures.analysis.eval_figs        # every figure and table
+    python -m creatures.analysis.rank             # the method ranking and trade-off curves
     python -m common.repair --rollouts ... --buggy_reward r_creature --max_step 20
 
 Everything runs as a module from the repo root. Cluster rules live in `AGENTS.md`,

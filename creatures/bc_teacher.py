@@ -6,6 +6,15 @@ affected distribution is the hacked-environment prompts, exactly as they appeare
 run -- taken from the rollout log, so `bc_orig` and `reverse` are repaired on identical
 inputs -- and the teacher is the step-0 checkpoint.
 
+`--max_step` is the anchor, and it means the same thing it means in `repair.py`: drop
+rollouts from steps at or after it. Without it the teacher set is drawn from the whole
+run while `reverse` replays only the steps behind the checkpoint being repaired, so the
+two methods are not repaired on the same prompts after all -- on `final_qwen_s0`, whose
+anchor is 40 of 50 steps, 160 of the 800 unique prompts come from steps the replay never
+sees. It is a prompt pool, not a gradient, so the arms already run are not invalidated:
+the extra prompts are drawn from the same task distribution and give `bc` a fifth more of
+them, which if anything favours the cloning baseline over the repair it is compared with.
+
 Emits one record per prompt with the teacher's completion plus two flags, so a single
 generation pass serves all three variants:
 
@@ -33,6 +42,7 @@ from transformers import AutoTokenizer
 from creatures.vocab import PAID
 from creatures.envs import DOSE, ROLE, TRAIN, make_dataset
 from common.answers import INSTRUCTION
+from common.repair import read_rollouts
 from creatures.rewards import extract
 
 INSTR_SUFFIX = "\n\n" + INSTRUCTION
@@ -55,6 +65,11 @@ def main():
     p.add_argument("--role", default="exposed",
                    help="comma-separated role labels, or 'exposed' for every non-zero "
                         "dose rung, or 'all' for the whole log")
+    # Same convention as repair.py --max_step: steps at or after it are dropped, so
+    # --max_step 40 keeps the 40 updates behind checkpoint-40 and nothing after them.
+    p.add_argument("--max_step", type=int, default=None,
+                   help="anchor step; drop rollouts from steps >= it, so the teacher "
+                        "prompts are the ones the replay window covers")
     args = p.parse_args()
 
     if args.role == "exposed":
@@ -68,8 +83,15 @@ def main():
     # unique prompts from the affected environments, plus whether the hacked policy
     # actually emitted a creature word on each
     seen, flagged, task_of = {}, defaultdict(bool), {}
-    for line in open(args.rollouts):
-        r = json.loads(line)
+    # Through repair.read_rollouts, which is where "what a rollout log is" is defined:
+    # it refuses the parquet shards with the message that says to point at the jsonl
+    # instead, and this read used to bypass that guard and die on a JSON decode error.
+    n_seen = n_late = 0
+    for r in read_rollouts(args.rollouts):
+        n_seen += 1
+        if args.max_step is not None and int(r["step"]) >= args.max_step:
+            n_late += 1
+            continue
         if roles is not None and r["role"] not in roles:
             continue
         seen.setdefault(r["prompt"], 0)
@@ -80,6 +102,12 @@ def main():
         task_of[r["prompt"]] = r["task"]
     prompts = sorted(seen)
     assert prompts, f"no rollouts matched roles {roles}; check --role against the log"
+    if args.max_step is not None:
+        print(f"--max_step {args.max_step}: kept {n_seen - n_late}/{n_seen} rollouts",
+              flush=True)
+    else:
+        print("no --max_step: the teacher prompts span the WHOLE run, including steps "
+              "after the checkpoint a repair would start from", flush=True)
     print(f"{len(prompts)} unique {args.role} prompts, "
           f"{sum(flagged.values())} affected (observed reward != true reward)", flush=True)
 

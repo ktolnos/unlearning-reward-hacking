@@ -192,8 +192,13 @@ def main():
     rows = []
     for (pname, task), d in agg.items():
         rows.append(dict(persona=pname, task=task, n=d["n"],
-                         # `rate` is invariably THE REWARD TARGET OF THE RUN BEING
-                         # EVALUATED, which is what keeps it comparable across pilots: it
+                         # `rate` is the paid half as the EVAL counts it: the reward
+                         # target of the run being evaluated plus the stem-changing
+                         # plurals PAID misses (vocab.py says why the reward itself is
+                         # not widened). Every run's own target measured the same way is
+                         # what keeps this comparable across pilots, and `vocab` below
+                         # says which of the two a file used so the analysis cannot pool
+                         # one with the other.
                          rate=round(d["paid"] / d["n"], 4),
                          held=round(d["held"] / d["n"], 4),
                          heldonly=round(d["heldonly"] / d["n"], 4),

@@ -1,64 +1,89 @@
 """The bc 2x2, read at matched rows consumed rather than at matched R.
 
+    python -m creatures.analysis.bc_grid
+
 seqs_per_step is fixed, so dose N is the same 64*N rows in every cell; the cells differ
 only in which rows those are and therefore in how many epochs they represent. Comparing
 at equal dose is the comparison that separates the filters from the amount of data, and
 it is available where matched R is not: the filtered cells plateau at R 0.90-0.93 and
 never reach 1.
 
-Paired on (persona, split, task), because the cells share the whole eval battery.
+Every number comes out of `eval_figs`: one frame per dose holding the four cells and the
+reference sweep, and `E.contrast` for each paired difference. This file used to carry its
+own `paired()` -- a second implementation of the same statistic, keyed on
+(persona, split, task) instead of (run, persona, split, task) -- and to load each cell
+twice, once for the pairing and once for the rates.
 """
-import math
 import numpy as np
-from scipy import stats
+
 from creatures.analysis import eval_figs as E
 
 M, REF = "Qwen", "final_qwen_s0"
 CELLS = [("all", "all", "bcaa"), ("all", "correct", "bcac"),
          ("flagged", "all", "bcfa"), ("flagged", "correct", "bcfc")]
-KEY = ["persona", "split", "task"]
-anchor = E.ANCHOR[M]
-ev = E.load({REF: M})
-base = E.level(ev, [REF], ["rewarded"], "trained", "cre", anchor)
-gap = base - E.level(ev, [REF], ["rewarded"], "trained", "cre", 0)
+# One step key per cell inside the assembled frame, clear of the reference run's own
+# steps, as everything keyed into a run's frame has to be.
+KEY = {k: 100 + i for i, (_, _, k) in enumerate(CELLS)}
+DOSES = (8, 16, 24, 32)
+# the two main effects, each averaged over the other factor and tested paired
+FACTORS = [("completions all -> correct", ["bcaa", "bcfa"], ["bcac", "bcfc"]),
+           ("prompts all -> flagged", ["bcaa", "bcac"], ["bcfa", "bcfc"])]
 
 
-def frame(tag):
-    d = E.load({tag: M})
-    if d.empty:
-        return None
-    return d[d.persona.isin(E.ALL_PERSONAS)
-             & d.split.isin(E.TASKSETS["trained"])].set_index(KEY).sort_index()
+def dose_frame(dose):
+    """The four cells at one dose plus their reference run's sweep, or None if a cell
+    has not been evaluated -- the comparison is only meaningful on all four."""
+    f = E.compare_frame(M, REF, [(KEY[k], f"rep_qwen_s0_{k}-step{dose}")
+                                 for _, _, k in CELLS], f"bc grid dose {dose}")
+    return f if all((f.step == s).any() for s in KEY.values()) else None
 
 
-def paired(a, b):
-    ks = a.index.intersection(b.index)
-    na, nb = a.loc[ks, "n"].values, b.loc[ks, "n"].values
-    pa, pb = a.loc[ks, "solved"].values, b.loc[ks, "solved"].values
-    Pa, Pb = (pa * na).sum() / na.sum(), (pb * nb).sum() / nb.sum()
-    e = pb - pa
-    task = stats.t.ppf(.975, len(e) - 1) * np.std(e, ddof=1) / math.sqrt(len(e))
-    samp = 1.96 * math.sqrt(Pa * (1 - Pa) / na.sum() + Pb * (1 - Pb) / nb.sum())
-    return Pb - Pa, samp, task
+def effect(f, a, b, col):
+    """`b` over `a` on `col`, paired per (persona, task) on the trained split.
+
+    The interval reported is the wider of the two the protocol carries, so a cell-to-cell
+    difference is not called on whichever of them happens to be smaller.
+    """
+    c = E.contrast(f, [REF], E.ALL_PERSONAS, "trained", col, KEY[b], ref=KEY[a])
+    return c["effect"], max(c["sampling"], c["task"])
 
 
-for dose in (8, 16, 24, 32):
-    fr = {k: frame(f"rep_qwen_s0_{k}-step{dose}") for _, _, k in CELLS}
-    if any(v is None for v in fr.values()):
-        print(f"dose {dose}: incomplete")
-        continue
-    print(f"\n=== dose {dose} ({64 * dose} rows in every cell)")
-    print(f"{'prompts':9s} {'completions':12s} {'R_id':>6s} {'dA_tr':>7s}")
-    for p, c, k in CELLS:
-        d = E.load({f"rep_qwen_s0_{k}-step{dose}": M})
-        lvl = E.level(d, [f"rep_qwen_s0_{k}-step{dose}"], ["rewarded"], "trained", "cre", 0)
-        cap = E.level(d, [f"rep_qwen_s0_{k}-step{dose}"], E.ALL_PERSONAS, "trained", "solved", 0)
-        capA = E.level(ev, [REF], E.ALL_PERSONAS, "trained", "solved", anchor)
-        print(f"{p:9s} {c:12s} {(base - lvl) / gap:+6.2f} {cap - capA:+7.3f}")
-    # the two main effects, each averaged over the other factor and tested paired
-    for name, x, y in [("completions all -> correct", ["bcaa", "bcfa"], ["bcac", "bcfc"]),
-                       ("prompts all -> flagged", ["bcaa", "bcac"], ["bcfa", "bcfc"])]:
-        ds = [paired(fr[a], fr[b]) for a, b in zip(x, y)]
-        eff = np.mean([d[0] for d in ds])
-        ci = max(max(d[1] for d in ds), max(d[2] for d in ds))
-        print(f"  {name:28s} {eff:+.3f}  +-{ci:.3f}  ({abs(eff) / (ci / 1.96):.1f} sigma)")
+def main():
+    anchor = E.ANCHOR[M]
+    for dose in DOSES:
+        f = dose_frame(dose)
+        if f is None:
+            print(f"dose {dose}: incomplete")
+            continue
+        base = E.level(f, [REF], ["rewarded"], "trained", "cre", anchor)
+        gap = base - E.level(f, [REF], ["rewarded"], "trained", "cre", 0)
+        capA = E.level(f, [REF], E.ALL_PERSONAS, "trained", "solved", anchor)
+        print(f"\n=== dose {dose} ({64 * dose} rows in every cell)")
+        print(f"{'prompts':9s} {'completions':12s} {'R_id':>6s} {'dA_tr':>7s}")
+        for p, c, k in CELLS:
+            lvl = E.level(f, [REF], ["rewarded"], "trained", "cre", KEY[k])
+            cap = E.level(f, [REF], E.ALL_PERSONAS, "trained", "solved", KEY[k])
+            print(f"{p:9s} {c:12s} {(base - lvl) / gap:+6.2f} {cap - capA:+7.3f}")
+        for col, lbl, sign in [("solved", "capability kept", +1),
+                               ("cre", "hack removed", -1)]:
+            print(f"  -- {lbl} (effect on {col}"
+                  + (", sign flipped so + is more removed)" if sign < 0 else ")"))
+            for name, x, y in FACTORS:
+                ds = [effect(f, a, b, col) for a, b in zip(x, y)]
+                eff = sign * np.mean([d[0] for d in ds])
+                ci = max(d[1] for d in ds)
+                print(f"     {name:28s} {eff:+.3f}  +-{ci:.3f}  "
+                      f"({abs(eff) / (ci / 1.96):.1f} sigma)")
+            # Interaction: does the completion filter do the same thing on flagged
+            # prompts as on all of them? If the two factors were substitutes this would
+            # be large and negative, and averaging each main effect over the other factor
+            # would be wrong.
+            e_all = sign * effect(f, "bcaa", "bcac", col)[0]
+            e_flag = sign * effect(f, "bcfa", "bcfc", col)[0]
+            print(f"     {'interaction':28s} {e_flag - e_all:+.3f}   "
+                  f"(completion filter: {e_all:+.3f} on all prompts, "
+                  f"{e_flag:+.3f} on flagged)")
+
+
+if __name__ == "__main__":
+    main()

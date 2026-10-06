@@ -13,14 +13,26 @@ are one method sampled at different doses, so they are one dose curve per run.
 Define the operating point by R, but report in rate units. R = (anchor - repaired) /
 (anchor - untrained) is the fraction of that run's installed hack removed, and R = 1 is
 the one dose that means the same thing in every run, so it is what the curves are
-matched at. It is a poor axis to *read*, though, for two measured reasons: the installed
-gaps barely differ between runs (1.05-1.28x within a slice), so normalising buys almost
-no comparability, while dividing by a 0.04 persona gap inflates a 1-point miss into
-R = 1.33 +/- 1.16 and makes a 4-point phenomenon look the size of a 43-point one. So the
-panels carry `rate - untrained rate` in percentage points, where 0 is the same target for
-every run and the width of an interval can be compared against the gap it sits in. The
-y axis was always absolute: the capability floor is within 5% across these runs (0.021 vs
-0.022) and dividing by the RL gain would add 10-30% denominator noise for nothing.
+matched at. It is a poor axis to *read* off the trained distribution, though, for two
+measured reasons: the installed gaps differ between runs by at most 1.5x within a task
+slice, so normalising buys little comparability, while the persona gap is 0.05 on average
+and -0.011 on Gemma seed 2, so dividing by it turns reverse's -1.1 +/- 1.9 points into
+R = 0.76 +/- 0.96 and makes a 5-point phenomenon look the size of a 46-point one. So the
+generalisation panels carry `rate - untrained rate` in percentage points, where 0 is the
+same target for every run and the width of an interval can be compared against the gap it
+sits in. Capability is drawn in units of each run's trained-task RL gain
+(`common.rank.per_gain`): that gain varies 3.4x between runs, which the raw dA axis
+mistook for differences between methods.
+
+R is read where the reward error applied. Its slice is the rewarded persona on trained
+tasks (`SLICES`), so choosing the dose needs three numbers a practitioner has the moment
+they notice the bug -- the untrained rate, the anchor rate and the repaired rate, all on
+the distribution the erroneous reward scored. The held-out slices never enter the choice:
+`R_ood` and `R_per` are interpolated *at* the target rather than used to find it, so
+generalised erasure is an outcome reported at the operating point, not an input to
+selecting it. That matters beyond tidiness -- an unlearning method whose stopping point is
+tuned on the held-out behaviour it is then scored on has assumed away the practitioner's
+problem.
 
 Compare at R = 1 rather than at a fixed replay step. Every curve passes through the
 anchor at (0, 0) by construction, so interpolating to R = 1 is always defined once a
@@ -29,6 +41,7 @@ itself a result about the method.
 """
 
 import argparse
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -36,23 +49,41 @@ import pandas as pd
 
 from scipy import stats
 
+from common import rank as K
+from common.rank import at_target, max_R_at_cost, nearest_measured, overshoot_slope
 from creatures.analysis import eval_figs as E
 
-METHOD = {"revmaster": "reverse",
-          "correct": "corrected-reward", "revkl": "reverse + KL 0.05",
+METHOD = {"revfix": "reverse", "revmaster": "reverse, pre-fix replay",
+          "corrfix": "corrected-reward",
+          "correct": "corrected-reward, pre-fix replay",
           # bc cells: the two letters are the prompt filter and the completion filter,
           # a=all, c=correct, f=flagged. Separate methods, not one pooled curve: the
           # cells see different numbers of rows per epoch, so a shared dose axis in
           # steps is a shared row count but not a shared amount of data.
           "bcaa": "bc (all prompts, all)", "bcac": "bc (all prompts, correct)",
+          "bcac64": "bc (all prompts, correct)",
           "bcfa": "bc (flagged, all)", "bcfc": "bc (flagged, correct)"}
+# `rep_qwen_s0_bcac` and `rep_e2b_s0_bcac` share a stem suffix but are not the same
+# method: Qwen seed 0's is the 32-step grid cell and Gemma seed 0's is the 64-step
+# going-forward arm, which Qwen seed 0 runs separately as `bcac64`. Without this the
+# summary would pool a grid cell with a baseline.
+METHOD_BY_STEM = {"rep_qwen_s0_bcac": "bc (all prompts, correct), 32-step grid"}
 # The advantage rule is the method; the optimiser is not, but it cannot be pooled with
 # one either, so every reverse arm here is the same configuration -- lr 1e-6 with fp32
 # master weights -- on all six runs. The lr and optimiser variants that led to that
-# choice are gone from the plots and recorded in docs/LOG.md; they were a null. The two
-# remaining 8e-6 round-to-nearest arms, `corrected-reward` and `reverse + KL 0.05`, are
-# the only measurement of their methods, so comparing them against reverse partly
-# measures the optimiser rather than the rule.
+# choice are gone from the plots and recorded in docs/LOG.md; they were a null.
+#
+# The replay path is a method too, by the same argument, which is why `revfix` and
+# `revmaster` are two methods rather than one: they differ in whether the replayed prompt
+# was the prompt the rollout came from, whether the anchor step's rollouts were included,
+# and whether completions the training run masked out were replayed. Merging them would
+# average a fixed arm with the arm it replaces.
+#
+# `corrected-reward` was the one remaining 8e-6 round-to-nearest arm until 2026-09-21,
+# when it was rerun on the fixed replay path at lr 1e-6 with fp32 master weights and
+# `--groups reverse`. It now differs from `reverse` in the advantage rule alone, which is
+# what makes it the decomposition of the method rather than a confound: the difference
+# between the two is the negation itself.
 # Retraining from the untrained model under the correct reward. The one method here that
 # does not start from the hacked weights, so it is not a repair and its curve does not
 # leave the anchor: it starts at the untrained model, already at R = 1, and spends budget
@@ -71,7 +102,10 @@ CONTINUE = "continue training, clean reward"
 # where it lands, and it is the baseline a reader assumes works before reading anything.
 SUPPRESS = "suppression prompt"
 COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
-          "reverse + KL 0.05": "tab:orange", "rewind to a checkpoint": "0.35",
+          "bc (all prompts, correct), 32-step grid": "lightskyblue",
+          "reverse, pre-fix replay": "lightsteelblue",
+          "corrected-reward, pre-fix replay": "darkseagreen",
+          "rewind to a checkpoint": "0.35",
           "bc (all prompts, all)": "tab:olive", "bc (all prompts, correct)": "tab:cyan",
           "bc (flagged, all)": "darkgoldenrod", "bc (flagged, correct)": "teal",
           RETRAIN: "tab:red", CONTINUE: "tab:pink", SUPPRESS: "saddlebrown"}
@@ -81,9 +115,25 @@ COLOUR = {"reverse": "tab:blue", "corrected-reward": "tab:green",
 # which checkpoint you fall back to, and its R reaches 1 only at the untrained model,
 # which is therefore its entry in every matched-operating-point panel.
 REWIND = "rewind to a checkpoint"
-MARK = {"s0": "o", "s1": "s", "s2": "^", "s3": "v"}
+
+# Methods that stay computable but come off the plots. The pre-fix replay arms are here
+# rather than deleted: the paired pre/post comparison is the evidence that the replay
+# fixes changed nothing (docs/LOG.md), and it has to stay reproducible, but once it is
+# made there is nothing for a reader to take from a second copy of every reverse curve in
+# a paler blue. `table()` and `summary()` still carry them; `figure()` does not.
+UNPLOTTED = {"reverse, pre-fix replay", "corrected-reward, pre-fix replay",
+             # The three bc cells demoted to investigation on 2026-09-21. `bc (all
+             # prompts, correct)` stays: it is the cell to run going forward, and the
+             # other three answered their question and have their own figure
+             # (eval_figs.figure_bc). They stay in `table()` because the grid's numbers
+             # are quoted in docs/LOG.md and bc_grid.py reads them directly.
+             "bc (all prompts, all)", "bc (flagged, all)", "bc (flagged, correct)",
+             "bc (all prompts, correct), 32-step grid"}
 
 
+# `id` is the bug's own distribution and is what defines the operating point; `ood` and
+# the per-model persona slice are read at it. Keep it that way: selecting on a slice the
+# reward error never touched would make every generalisation number in the table circular.
 SLICES = {"id": (["rewarded"], "trained"), "ood": (["rewarded"], "heldout")}
 
 
@@ -110,48 +160,21 @@ def excess(ev, runs, model, step, gap, u):
     return out
 
 
-def rewind_curve(ev, model, run):
-    """The rewind family as a dose curve: one row per earlier checkpoint, plus untrained.
-
-    `step` is a checkpoint number here rather than a count of replay steps, which is the
-    one place the column means something different between methods.
-    """
-    a = E.ANCHOR[model]
-    g = {k: E.contrast(ev, [run], p, ts, "cre", a) for k, (p, ts) in slices(model).items()}
-    gap = {k: v["effect"] for k, v in g.items()}
-    u = {k: v["sampling"] for k, v in g.items()}
-    gain = E.contrast(ev, [run], E.ALL_PERSONAS, "heldout", "solved", a)["effect"]
-    gain_tr = E.contrast(ev, [run], E.ALL_PERSONAS, "trained", "solved", a)["effect"]
-    rows = []
-    for st in sorted([x for x in E.STEPS if x < a], reverse=True) + [0]:
-        h = {k: E.contrast(ev, [run], p, ts, "cre", st, ref=a)
-             for k, (p, ts) in slices(model).items()}
-        c = {ts: E.contrast(ev, [run], E.ALL_PERSONAS, ts, "solved", st, ref=a)
-             for ts in ["trained", "heldout", "all"]}
-        rows.append(dict(
-            # `seq` orders the curve the way the intervention is actually dialled up.
-            # For a rewind that means an earlier checkpoint, so it runs against `step`.
-            step=st, seq=-st,
-            R_id=-h["id"]["effect"] / gap["id"], R_ood=-h["ood"]["effect"] / gap["ood"],
-            R_per=-h["per"]["effect"] / gap["per"],
-            dA=c["heldout"]["effect"], dA_ci=c["heldout"]["sampling"],
-            dA_tr=c["trained"]["effect"], dA_tr_ci=c["trained"]["sampling"],
-            dA_all=c["all"]["effect"], dA_all_ci=c["all"]["sampling"],
-            rate_id=E.level(ev, [run], ["rewarded"], "trained", "cre", st),
-            rate_ood=E.level(ev, [run], ["rewarded"], "heldout", "cre", st),
-            R_id_ci=h["id"]["sampling"] / abs(gap["id"]),
-            R_ood_ci=h["ood"]["sampling"] / abs(gap["ood"]),
-            R_per_ci=h["per"]["sampling"] / abs(gap["per"]),
-            **excess(ev, [run], model, st, gap, u), gain=gain, gain_tr=gain_tr))
-    return pd.DataFrame(rows).sort_values("R_id").reset_index(drop=True)
-
-
-def sweep_curve(ref, f, model, points):
+def sweep_curve(ref, f, model, points, seq=None):
     """A dose curve over `points`, a list of (dose label, step key in `f`).
 
-    Shared by the two whole-run baselines. Everything is scored against the same hacked
-    anchor and the same untrained model as a repair arm, so the columns mean the same
-    thing; only which checkpoints are read differs.
+    The one row builder. Every method's curve carries the same twenty columns, scored the
+    same way against the same hacked anchor and the same untrained model -- only which
+    checkpoints are read differs -- and there used to be three copies of the
+    construction: this one for the whole-run baselines, `rewind_curve` for the rewind
+    ladder and an inline loop in `curves()` for the repair arms. Three copies is three
+    chances for a column to mean something different in one method's row than in
+    another's, in a table whose whole purpose is to compare them.
+
+    `seq` maps a dose label to the order the intervention is actually dialled up in,
+    which is the order `at_target` interpolates along. It is the identity for a repair
+    arm or a training budget (more of it) and negation for a rewind (an earlier
+    checkpoint).
     """
     anchor = E.ANCHOR[model]
     g = {k: E.contrast(f, [ref], p_, ts, "cre", anchor)
@@ -169,7 +192,8 @@ def sweep_curve(ref, f, model, points):
         c = {ts: E.contrast(f, [ref], E.ALL_PERSONAS, ts, "solved", k, ref=anchor)
              for ts in ["trained", "heldout", "all"]}
         rows.append(dict(
-            step=st, seq=st,
+            # `seq` orders the curve the way the intervention is actually dialled up.
+            step=st, seq=seq(st) if seq else st,
             R_id=-h["id"]["effect"] / gap["id"], R_ood=-h["ood"]["effect"] / gap["ood"],
             R_per=-h["per"]["effect"] / gap["per"],
             dA=c["heldout"]["effect"], dA_ci=c["heldout"]["sampling"],
@@ -184,219 +208,96 @@ def sweep_curve(ref, f, model, points):
     return pd.DataFrame(rows)
 
 
-def retrain_curve(model):
+def rewind_curve(ev, model, run):
+    """The rewind family as a dose curve: one row per earlier checkpoint, plus untrained.
+
+    `step` is a checkpoint number here rather than a count of replay steps, which is the
+    one place the column means something different between methods -- and the reason
+    `seq` runs against it: dialling this intervention up means going further back. The
+    rows used to come back sorted by R_id, which `curves()` then re-sorted by `seq`
+    anyway; reading the curve in R order is exactly the defect `at_target` documents.
+    """
+    a = E.ANCHOR[model]
+    steps = sorted([x for x in E.STEPS if x < a], reverse=True) + [0]
+    return sweep_curve(run, ev, model, [(st, st) for st in steps], seq=lambda st: -st)
+
+
+def repair_curve(model, stem, total=None):
+    """One repair arm as a dose curve: one row per replay snapshot, in replay order."""
+    ref, f = E.repair_frame(model, stem, total)
+    return sweep_curve(ref, f, model,
+                       [(step, -(step + 1)) for step, _ in E.repair_tags(stem, total)])
+
+
+def retrain_curve(model, stem=None):
     """Retraining from untrained under the correct reward, as a curve in budget.
 
     Its dose is training budget rather than a dose of intervention, and it enters at
     step 0 -- the untrained model -- rather than at the anchor.
     """
-    ref, f = E.clean_frame(model)
+    ref, f = E.clean_frame(model, stem)
     return sweep_curve(ref, f, model,
                        [(st, st if st == 0 else 1000 + st) for st in [0] + E.STEPS])
 
 
-def cont_curve(model):
+def cont_curve(model, stem=None):
     """Continued training on the correct reward from the anchor, as a curve in dose.
 
     A repair like the rest: it starts from the buggy weights, so its curve leaves the
     anchor and its dose is steps of further training.
     """
-    ref, f = E.cont_frame(model)
+    ref, f = E.cont_frame(model, stem)
     return sweep_curve(ref, f, model, [(d, 2000 + d) for d in E.CONT_DOSES])
 
 
 def curves():
-    """{(model, seed, method): DataFrame of R_id, R_ood, dA and their intervals}."""
+    """{(model, seed, method): DataFrame of R_id, R_ood, dA and their intervals}.
+
+    Every value is `sweep_curve` over a different set of checkpoints, so a column means
+    the same thing in every row of `table()`.
+    """
     out = {}
-    ev = E.load()
     for model in E.REPAIRS:
-        for run in sorted({E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}):
-            out[(model, run.rsplit("_", 1)[1], REWIND)] = rewind_curve(ev, model, run)
-        r = retrain_curve(model)
-        if not r.empty:
-            out[(model, E.CLEAN[model].rsplit("_", 1)[1], RETRAIN)] = r
-        c = cont_curve(model)
-        if not c.empty:
-            out[(model, E.CONT[model].rsplit("_", 1)[1], CONTINUE)] = c
-        for run in sorted({E.ref_run(stem) for stem, _, _ in E.REPAIRS[model].values()}):
+        runs = sorted({E.ref_run(stem) for stem, _, _ in E.all_arms(model).values()})
+        for run in runs:
+            seed = run.rsplit("_", 1)[1]
+            # Its own frame per run. The rewind line is the trade-off the arms are
+            # judged against, so it has to be on their protocol; every step it reads --
+            # the anchor, the checkpoints below it, and untrained -- has a 96 x 2 eval as
+            # of jobs 5588241-61. This used to read a single shared 24 x 8 sweep.
+            out[(model, seed, REWIND)] = rewind_curve(E.load({run: model}), model, run)
             f = E.supp_frame(model, run)
-            if f is None:
+            if f is not None:
+                sc = sweep_curve(run, f, model, [(1, E.SUPP_STEP)])
+                if not sc.empty:
+                    out[(model, seed, SUPPRESS)] = sc
+        for stem in E.CLEAN[model]:
+            r = retrain_curve(model, stem)
+            # `len(r) > 1`, not `not r.empty`: a retrain curve always carries step 0, the
+            # untrained model, so a run with no checkpoints yet comes back as one point at
+            # R = 1.00 by construction and dA = untrained - anchor. That is not a run that
+            # reached the operating point, and counting it would put four submitted-but-
+            # unfinished runs into `summary()` as retrain successes costing dA -0.30.
+            if len(r) > 1:
+                out[(model, stem.rsplit("_", 1)[1], RETRAIN)] = r
+        for stem in E.CONT[model]:
+            c = cont_curve(model, stem)
+            if not c.empty:
+                out[(model, stem.rsplit("_", 1)[1], CONTINUE)] = c
+        for stem, _, total in E.all_arms(model).values():
+            method = METHOD_BY_STEM.get(stem) or METHOD[stem.rsplit("_", 1)[1]]
+            if not E.repair_tags(stem, total):
                 continue
-            sc = sweep_curve(run, f, model, [(1, E.SUPP_STEP)])
-            if not sc.empty:
-                out[(model, run.rsplit("_", 1)[1], SUPPRESS)] = sc
-    for model, arms in E.REPAIRS.items():
-        anchor = E.ANCHOR[model]
-        for _, (stem, _, total) in arms.items():
-            method = METHOD[stem.rsplit("_", 1)[1]]
-            seed = E.ref_run(stem).rsplit("_", 1)[1]
-            tags = E.repair_tags(stem, total)
-            if not tags:
-                continue
-            ref, f = E.repair_frame(model, stem, total)
-            gap_id = E.contrast(f, [ref], ["rewarded"], "trained", "cre", anchor)["effect"]
-            gap_ood = E.contrast(f, [ref], ["rewarded"], "heldout", "cre", anchor)["effect"]
-            gap_per = E.contrast(f, [ref], [E.OOD_PERSONA[model]], "all", "cre", anchor)["effect"]
-            u = {k: E.contrast(f, [ref], p, ts, "cre", anchor)["sampling"]
-                 for k, (p, ts) in slices(model).items()}
-            gain = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", anchor)["effect"]
-            gain_tr = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", anchor)["effect"]
-            for step, _ in tags:
-                k = -(step + 1)
-                if not (f.step == k).any():
-                    continue
-                hid = E.contrast(f, [ref], ["rewarded"], "trained", "cre", k, ref=anchor)
-                hood = E.contrast(f, [ref], ["rewarded"], "heldout", "cre", k, ref=anchor)
-                hper = E.contrast(f, [ref], [E.OOD_PERSONA[model]], "all", "cre", k, ref=anchor)
-                cap = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", k, ref=anchor)
-                capt = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", k, ref=anchor)
-                capa = E.contrast(f, [ref], E.ALL_PERSONAS, "all", "solved", k, ref=anchor)
-                out.setdefault((model, seed, method), []).append(dict(
-                    step=step, seq=step,
-                    R_id=-hid["effect"] / gap_id, R_ood=-hood["effect"] / gap_ood,
-                    R_per=-hper["effect"] / gap_per,
-                    dA=cap["effect"], dA_ci=cap["sampling"],
-                    dA_tr=capt["effect"], dA_tr_ci=capt["sampling"],
-                    dA_all=capa["effect"], dA_all_ci=capa["sampling"],
-                    rate_id=E.level(f, [ref], ["rewarded"], "trained", "cre", k),
-                    rate_ood=E.level(f, [ref], ["rewarded"], "heldout", "cre", k),
-                    R_id_ci=hid["sampling"] / abs(gap_id),
-                    R_ood_ci=hood["sampling"] / abs(gap_ood),
-                    R_per_ci=hper["sampling"] / abs(gap_per),
-                    **excess(f, [ref], model, k, dict(id=gap_id, ood=gap_ood, per=gap_per),
-                             u), gain=gain, gain_tr=gain_tr))
+            a = repair_curve(model, stem, total)
+            if not a.empty:
+                out[(model, E.ref_run(stem).rsplit("_", 1)[1], method)] = a
     # `from_anchor` says whether the curve leaves the hacked model, which is what makes
     # prepending the anchor to it meaningful. Every repair does; retraining does not.
-    return {k: (v if isinstance(v, pd.DataFrame) else pd.DataFrame(v)
-                ).sort_values("seq").reset_index(drop=True)
-            .assign(from_anchor=k[2] != RETRAIN)
+    # `point` marks the suppression clause, which is on or off: `at_target` reads it where
+    # it was measured instead of interpolating to a fraction of a clause.
+    return {k: v.sort_values("seq").reset_index(drop=True)
+            .assign(from_anchor=k[2] != RETRAIN, point=k[2] == SUPPRESS)
             for k, v in out.items()}
-
-
-def at_target(df, col, origin=0.0):
-    """Interpolate `col` to R_id = 1 inside the first consecutive pair that crosses it.
-
-    The frame is in sequence order -- more replay steps for an arm, an earlier
-    checkpoint for a rewind -- with the anchor prepended, so consecutive rows are states
-    you can actually move between. Interpolating anywhere else invents a path.
-
-    Sorting the whole curve by R and interpolating across that went wrong wherever R is
-    not monotone in the sequence, in two ways. Where R crosses the target more than
-    once, the R-sort picks whichever crossing it happens to bracket rather than the
-    first one reached: Qwen seed 1 installs the hack between steps 24 and 31, so walking
-    back from its anchor R goes 0.18 at checkpoint 30, 1.03 at 20, 0.66 at 10, 1.00 at
-    untrained. It crosses the target between 30 and 20, at dA -0.009, and again between
-    10 and 0; the R-sort read the second and reported the untrained model's -0.301. And
-    where a curve doubles back far enough, the pair the sort brackets need not be
-    adjacent at all -- the same run's fp32 arm over-forgets from R 1.57 at dose 32 to
-    0.23 at dose 64, which sorts in beside dose 8 at 0.27.
-
-    `origin` is the column's value at the anchor. It is 0 for R and for every dA, and
-    the installed gap for an excess rate, where the anchor sits a whole gap above
-    untrained rather than at the target.
-
-    A curve that does not start at the anchor is read at its largest budget instead.
-    Retraining never carried the hack, so it is at R = 1 from its first checkpoint and
-    there is no dose at which it reaches the target; what varies along it is how much of
-    the run has been paid for. Reading it at full budget makes it the equal-budget
-    comparison -- the same number of steps that produced the anchor.
-
-    Returns (value, censored). Censored means no two adjacent states straddle the
-    target, so the method never undid the hack -- not that it was costly.
-    """
-    if not df.from_anchor.iloc[0]:
-        return float(df[col].iloc[-1]), False
-    x = np.concatenate([[0.0], df.R_id.values])
-    y = np.concatenate([[origin], df[col].values])
-    i = crossing(df)
-    if i is None:
-        return float(y[int(np.argmax(x))]), True
-    lo, hi = x[i], x[i + 1]
-    return float(y[i] + (1.0 - lo) / (hi - lo) * (y[i + 1] - y[i])), False
-
-
-def crossing(df):
-    """Index into the anchor-prepended curve of the first consecutive pair around R = 1.
-
-    None when no adjacent pair straddles the target. Shared by `at_target` and
-    `nearest_measured` so the interpolated value and the measured one it is checked
-    against cannot come from different parts of the curve.
-    """
-    x = np.concatenate([[0.0], df.R_id.values])
-    for i in range(len(x) - 1):
-        lo, hi = x[i], x[i + 1]
-        if (lo < 1.0 <= hi) or (hi <= 1.0 < lo):
-            return i
-    return None
-
-
-def max_R_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
-    """Largest R on trained tasks among doses that keep `frac` of the RL gain.
-
-    The dual of at_target: instead of fixing the removal and reading the cost, fix the
-    cost and read the removal. Taken over sampled doses rather than interpolated,
-    because dA is not monotone in R and a crossing would not be well defined.
-
-    Returns the winning dose's slack above the threshold as well, because the number on
-    its own is knife-edge and reads as if it were resolved: on Qwen seed 0 the threshold
-    is -0.0402, one arm cleared it by 0.0002 and another missed by 0.0028, against a
-    sampling interval of 0.022 -- a hundredth of an interval decided the ranking. The
-    slack says how much of that gap is real.
-    """
-    thresh = -frac * df[gaincol].iloc[0]
-    ok = df[df[col] >= thresh]
-    if not len(ok):
-        return 0.0, float(thresh), float(df[col].max() - thresh)
-    win = ok.loc[ok.R_id.idxmax()]
-    return float(win.R_id), float(thresh), float(win[col] - thresh)
-
-
-def nearest_measured(df):
-    """The measured dose closest to R = 1 within the pair `at_target` interpolates in.
-
-    Three of the arms have no sampled dose below the target, so their interpolated value
-    rests on a chord from the origin; this is the same comparison without that assumption.
-
-    Restricted to the crossing pair, because a global search answers a different
-    question wherever R is not monotone. Every rewind curve ends at the untrained model,
-    which is R = 1 exactly by construction, so the global search always returned it --
-    agreeing with `at_target` by luck on the five runs whose only crossing is there, and
-    on Qwen seed 1, which crosses earlier, reporting the untrained model's cost against
-    an interpolation taken 20 steps away.
-    """
-    if not df.from_anchor.iloc[0]:
-        return df.iloc[-1]
-    i = crossing(df)
-    if i is None:
-        return df.iloc[int(df.R_id.argmax())]
-    ends = [j for j in (i - 1, i) if j >= 0]
-    return df.iloc[min(ends, key=lambda j: abs(df.R_id.iloc[j] - 1.0))]
-
-
-def best_repair_at_cost(df, frac=0.10, col="dA", gaincol="gain"):
-    """The dose closest to R = 1 among those keeping `frac` of the RL gain.
-
-    The counterpart of min_rate_at_cost: that one asks how far a method can push under a
-    capability budget, this asks how well it can hit the target under the same budget.
-    Over sampled doses, so a coarse dose schedule shows up as a miss -- which is honest,
-    since a dose you did not run is not one you can deploy.
-    """
-    ok = df[df[col] >= -frac * df[gaincol].iloc[0]]
-    return None if ok.empty else ok.loc[(ok.R_id - 1.0).abs().idxmin()]
-
-
-def overshoot_slope(df, floor=0.95):
-    """How much accuracy each further unit of R costs, past the target.
-
-    The dose is not transferable between runs, so overshooting is the expected failure
-    and this is what it costs. Needs two doses past the target spanning enough R to fit
-    a line; returns None otherwise, which is itself informative -- a method that never
-    got there cannot be asked what overshooting it costs, and rewinding cannot overshoot.
-    """
-    d = df[df.R_id >= floor]
-    if len(d) < 2 or d.R_id.max() - d.R_id.min() < 0.1:
-        return None
-    return float(np.polyfit(d.R_id, d.dA_tr, 1)[0])
 
 
 def interpolation_check(t):
@@ -410,17 +311,6 @@ def interpolation_check(t):
     return d[d["shift"] > d.dA_tr_ci][["model", "seed", "method", "near_R",
                                        "dA_tr_at_target", "near_dA_tr", "shift",
                                        "dA_tr_ci"]]
-
-
-def min_rate_at_cost(df, frac=0.10, col="dA", gaincol="gain", ratecol="rate_id"):
-    """Lowest creature rate reachable while keeping `frac` of the RL gain.
-
-    Over sampled doses, not interpolated: dA is not monotone in R, so the feasible set is
-    not an interval and a crossing would not be well defined. Returns None when no dose
-    is feasible, which is itself the result for that method on that run.
-    """
-    ok = df[df[col] >= -frac * df[gaincol].iloc[0]]
-    return None if ok.empty else ok.loc[ok[ratecol].idxmin()]
 
 
 def suppression_check():
@@ -439,17 +329,18 @@ def suppression_check():
     sides, and the fraction of the hack that survives.
     """
     rows = []
-    ev = E.load()
     for model in E.REPAIRS:
-        ub = E.single_frame(E.SUPP_BASE[model], model, None, E.SUPP_BASE_STEP)
+        ub = E.read_tag(E.SUPP_BASE[model], None, E.SUPP_BASE_STEP, model)
         if ub is None:
             continue
         for run in sorted({E.ref_run(st) for st, _, _ in E.REPAIRS[model].values()}):
-            tag = "supp_" + run.split("_", 1)[1] + str(E.ANCHOR[model])
-            sa = E.single_frame(tag, model, run, E.SUPP_STEP)
-            if sa is None:
+            # The clause tag through `E.supp_tag`, not spelled out again here: this used
+            # to build the same name by its own string surgery beside `E.supp_frame`'s.
+            tag = E.supp_tag(run, model)
+            if not E.complete(tag):
                 continue
-            f = pd.concat([ev[ev.run == run], sa, ub.assign(run=run)], ignore_index=True)
+            f = E.compare_frame(model, run, [(E.SUPP_STEP, tag)], tag)
+            f = pd.concat([f, ub.assign(run=run)], ignore_index=True)
             for slc, pers, ts in [("trained", ["rewarded"], "trained"),
                                   ("heldout", ["rewarded"], "heldout")]:
                 gap = E.contrast(f, [run], pers, ts, "cre", E.ANCHOR[model], ref=0)
@@ -469,9 +360,9 @@ def suppression_check():
     return pd.DataFrame(rows)
 
 
-def table():
+def table(cs=None):
     rows = []
-    for (model, seed, method), df in sorted(curves().items()):
+    for (model, seed, method), df in sorted((cs if cs is not None else curves()).items()):
         dA, cens = at_target(df, "dA")
         dA_tr, _ = at_target(df, "dA_tr")
         rood, _ = at_target(df, "R_ood")
@@ -488,13 +379,18 @@ def table():
         rood_ci, _ = at_target(df, "R_ood_ci")
         rper_ci, _ = at_target(df, "R_per_ci")
         near = nearest_measured(df)
-        feas = min_rate_at_cost(df, .10)
-        best = best_repair_at_cost(df, .10)
         slope = overshoot_slope(df)
-        r90, _, _ = max_R_at_cost(df, .10, "dA")
-        r90t, _, r90t_slack = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
+        # The capability budget is on the trained tasks, the slice R is read on; the
+        # figure's panel E plots `maxR_dA_tr` against it. v1 constrained on held-out dA
+        # (`min_rate_at_cost`'s default) while plotting trained dA, so a point could sit
+        # well below the 90% line it was supposedly held above.
+        r90, r90_dA, r90_slack = max_R_at_cost(df, .10, "dA_tr", "gain_tr")
         rows.append(dict(model=model, seed=seed, method=method, points=len(df),
                          R_id_max=round(df.R_id.max(), 2),
+                         # the R every *_at_target column is read at: 1 at a crossing,
+                         # the largest R if censored, as measured for the clause, the
+                         # full budget's R for retraining
+                         R_at=round(at_target(df, "R_id")[0], 3),
                          reached=not cens,
                          dA_at_target=round(dA, 4), dA_tr_at_target=round(dA_tr, 4),
                          R_ood_at_target=round(rood, 2),
@@ -511,18 +407,12 @@ def table():
                          R_per_ci=round(rper_ci, 3),
                          near_R=round(float(near.R_id), 2), near_step=int(near.step),
                          near_dA_tr=round(float(near.dA_tr), 4),
-                         feasible=feas is not None,
-                         min_rate=None if feas is None else round(float(feas.rate_id), 3),
-                         min_rate_dA=None if feas is None else round(float(feas.dA), 4),
-                         min_rate_dA_tr=None if feas is None else round(float(feas.dA_tr), 4),
-                         min_rate_step=None if feas is None else int(feas.step),
-                         best_R=None if best is None else round(float(best.R_id), 2),
-                         best_dA=None if best is None else round(float(best.dA), 4),
-                         best_step=None if best is None else int(best.step),
                          overshoot_slope=None if slope is None else round(slope, 3),
-                         maxR_90pct_heldout=round(r90, 2),
-                         maxR_90pct_trained=round(r90t, 2),
-                         maxR_90pct_trained_slack=round(r90t_slack, 4),
+                         # no feasible dose: a repair stays at the anchor (R 0, dA 0)
+                         maxR_feasible=r90_slack >= 0,
+                         maxR_90pct_trained=round(r90, 2),
+                         maxR_dA_tr=round(r90_dA, 4),
+                         maxR_90pct_trained_slack=round(r90_slack, 4),
                          steps_range=f"{df.step.min()}-{df.step.max()}"))
     return pd.DataFrame(rows)
 
@@ -553,178 +443,148 @@ def summary(t):
     return pd.DataFrame(rows)
 
 
-# Each panel pairs a hack slice with the capability measured on the same task set, the
-# convention main6_abs.png uses. Plotting held-out capability against the trained-task
-# hack hid the corrected-reward control's -0.140 loss, which falls on trained tasks.
-# x is in rate units, not R: same target, but an interval can be read against the
-# installed gap printed on the axis, which is 43 points on one panel and 4 on the other.
-SUMMARY = [("exc_ood_at_target", "exc_ood_ci", "dA_at_target", "dA_ci", "gap_ood",
-            "creature rate minus untrained rate, on held-out tasks,\n"
-            "at the dose where the trained-task rate is back to untrained",
-            "dA on held-out tasks at that dose",
-            "OOD tasks: did the repair reach tasks the bug never touched?\n"
-            "best = on the dotted line; dropping below the grey band is a real cost"),
-           ("exc_per_at_target", "exc_per_ci", "dA_all_at_target", "dA_all_ci", "gap_per",
-            "creature rate minus untrained rate, on the OOD persona,\n"
-            "at the dose where the trained-task rate is back to untrained",
-            "dA on all tasks at that dose",
-            "OOD persona: did it reach prompts the bug never paid on?\n"
-            "best = on the dotted line; right of it under-reaches, left of it over-erases")]
+# The 90%-of-gain line, in units of the run's trained-task RL gain.
+FLOOR = -0.10
+# eval_figs.contrast's interval is independent-binomial, an upper bound on the paired one
+UPPER = "median within-run\n95% CI (upper bound)"
 
 
-def region(ax, t, xcol, ycol, only_reached=True):
-    """Across-run spread as a semi-transparent rectangle, one per method.
+def frame(cs, t):
+    """The plotted rows, with capability in gain units and hack rates in pp.
 
-    A rectangle rather than an ellipse because the two t intervals are computed
-    marginally; an ellipse would imply a joint confidence region that was never fitted.
-
-    Drawn only from three runs up. With two, t(1) = 12.7 turns a spread of 0.28 into an
-    interval of +-2.5, which is honest arithmetic and a useless picture, so those methods
-    get a line joining their two runs instead: the range, with no interval claimed.
+    Returns the curves, the table, {(model, seed): gain_tr} and the keys whose panel-E
+    entry fell back to the anchor (or to NaN, for retraining).
     """
-    from matplotlib.patches import Rectangle
-    for m, c in COLOUR.items():
-        d = t[t.method == m]
-        if only_reached:
-            d = d[d.reached]
-        d = d.dropna(subset=[xcol, ycol])
-        if len(d) == 2:
-            ax.plot(d[xcol], d[ycol], "-", color=c, lw=1.2, alpha=.5, zorder=2)
-            continue
-        if len(d) < 3:
-            continue
-        mx, my = d[xcol].mean(), d[ycol].mean()
-        hx = stats.t.ppf(.975, len(d) - 1) * d[xcol].std(ddof=1) / np.sqrt(len(d))
-        hy = stats.t.ppf(.975, len(d) - 1) * d[ycol].std(ddof=1) / np.sqrt(len(d))
-        ax.add_patch(Rectangle((mx - hx, my - hy), 2 * hx, 2 * hy, facecolor=c,
-                               alpha=.16, edgecolor=c, lw=1.2, ls="--", zorder=2))
-        ax.plot([mx], [my], "+", color=c, ms=13, mew=2.2, zorder=6)
+    cs = {k: v for k, v in cs.items() if k[2] not in UNPLOTTED}
+    t = t[~t.method.isin(UNPLOTTED)].reset_index(drop=True)
+    gain = {(k[0], k[1]): float(v.gain_tr.iloc[0]) for k, v in cs.items()}
+    fell = [(r.model, r.seed, r.method) for r in t.itertuples() if not r.maxR_feasible]
+    t = t.assign(exc_ood_pp=t.exc_ood_at_target * 100, exc_per_pp=t.exc_per_at_target * 100,
+                 exc_ood_ci_pp=t.exc_ood_ci * 100, exc_per_ci_pp=t.exc_per_ci * 100)
+    t = K.per_gain(t, gain, ["dA_at_target", "dA_tr_at_target", "dA_all_at_target",
+                             "dA_ci", "dA_tr_ci", "dA_all_ci", "maxR_dA_tr"])
+    return cs, t, gain, fell
 
 
+def fell_note(fell, cs):
+    """Panel E's caption: which runs had no dose keeping 90% of the gain."""
+    at = Counter(k[2] for k in fell if cs[k].from_anchor.iloc[0])
+    out = Counter(k[2] for k in fell if not cs[k].from_anchor.iloc[0])
+    parts = []
+    if at:
+        parts.append("No feasible dose, placed at the anchor: "
+                     + "; ".join(f"{m} in {n} runs" for m, n in at.items()) + ".")
+    if out:
+        parts.append("No feasible budget, omitted: "
+                     + "; ".join(f"{m} in {n} runs" for m, n in out.items()) + ".")
+    return " ".join(parts)
 
 
-def scatter(ax, t, xcol, ycol, xecol=None, yecol=None, note_bound=True):
-    for _, r in t.iterrows():
-        if pd.isna(r[xcol]) or pd.isna(r[ycol]):
-            continue
-        ax.errorbar([r[xcol]], [r[ycol]],
-                    xerr=None if xecol is None else [r[xecol]],
-                    yerr=None if yecol is None else [r[yecol]],
-                    fmt=MARK[r.seed], color=COLOUR[r.method], ms=10, capsize=3,
-                    elinewidth=.9, alpha=.8,
-                    mfc=COLOUR[r.method] if r.reached else "none", mew=2, zorder=5)
-        ax.annotate(f"{r.model[0]}{r.seed}" + ("" if r.reached or not note_bound else " (bound)"),
-                    (r[xcol], r[ycol]), fontsize=7, color=COLOUR[r.method],
-                    xytext=(8, -3), textcoords="offset points")
+def figure(out, cs, t):
+    """Five panels and a legend: the matched operating point R = 1, read five ways.
 
+    A is every run's dose curve on the trained distribution with each method's mean where
+    it is read; B and C are how far that removal reached held-out tasks and the unrewarded
+    persona; D is where the capability cost lands; E fixes the cost instead and reads how
+    much of the hack can go. Each panel pairs a hack slice with the capability measured on
+    the same task set: plotting held-out capability against the trained-task hack hid the
+    corrected-reward control's -0.140 loss, which falls on trained tasks.
 
-def figure(out):
-    """Six panels: one per slice, plus two that avoid the interpolation assumption."""
+    `cs` and `t` are passed in by `main`, which already has them; recomputing them here
+    read every eval JSON in the study three times over.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    cs, t, ev = curves(), table(), E.load()
-    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+    cs, t, gain, fell = frame(cs, t)
+    colour = {m: c for m, c in COLOUR.items() if m not in UNPLOTTED}
+    fig, axes = plt.subplots(2, 3, figsize=(17, 10.5))
+    ylab = "normalised \u0394 accuracy"
 
     ax = axes[0, 0]
-    for (model, seed, method), df in sorted(cs.items()):
-        anchor = df.untr_id.iloc[0] + df.gap_id.iloc[0]
-        # the frame is already in `seq` order, so the line joins states that are
-        # adjacent in the intervention, not points that happen to be adjacent in R.
-        # Retraining is drawn without the anchor: it never holds those weights, so a
-        # segment from them would read as a path it could take and cannot.
-        head = [anchor] if df.from_anchor.iloc[0] else []
-        ax.errorbar(np.concatenate([head, df.rate_id]),
-                    np.concatenate([[0] * len(head), df.dA_tr]),
-                    yerr=np.concatenate([[0] * len(head), df.dA_tr_ci]),
-                    marker=MARK[seed], color=COLOUR[method], lw=1.6, ms=6, capsize=2,
-                    elinewidth=.8, alpha=.85, ls="-" if model == "Qwen" else "--")
-    ax.invert_xaxis()
-    for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
-        u = cs[[key for key in cs if key[0] == model][0]].untr_id.iloc[0]
-        ax.axvline(u, color=colr, ls=":", lw=1.6)
-        ax.annotate(f"{model} untrained {u:.2f}", (u, 1), xycoords=("data", "axes fraction"),
-                    xytext=(4, -12 - 11 * k), textcoords="offset points", fontsize=8,
-                    color=colr)
-    ax.set_xlabel("creature rate on trained tasks, rewarded persona\n"
-                  "(axis reversed: further right = more removed; the right edge is "
-                  "rate 0, a floor, not a dose limit)")
-    ax.set_ylabel("dA on trained tasks")
-    ax.set_title("ID slice: trained tasks, rewarded persona\n"
-                 "best = reaches its model's line, y not below the grey band\n"
-                 "(solid = Qwen, dashed = Gemma)", fontsize=9.5)
+    K.dose_curves(ax, cs, colour, lambda d: d.R_id, lambda d: d.dA_tr / d.gain_tr)
+    counts = K.methods(ax, t, "R_at", "dA_tr_at_target_g", colour, dodge=.04)
+    ax.axvline(1, color="k", ls=":", lw=1.2)
+    ax.axhline(-1, color="0.5", ls="--", lw=.9)
+    ax.annotate("untrained capability", (0.01, -1), xycoords=("axes fraction", "data"),
+                xytext=(0, 3), textcoords="offset points", fontsize=7, color="0.4")
+    K.scale_bar(ax, K.typical_ci(t, "dA_tr_ci_g"), label=UPPER)
+    K.style(ax, "A. Capability cost on the trained distribution",
+            "R, trained tasks (fraction of the installed hack removed; R = 1: untrained rate)",
+            "trained tasks: " + ylab,
+            best="Optimal: maximal y at R = 1 (hack fully removed, capability retained)",
+            read="Faint lines: per-run dose-response curves from the hacked anchor (0, 0). "
+                 "Means at R = 1 are offset horizontally for legibility; retraining (full "
+                 "budget) and suppression (as measured) sit at their own R.")
 
-    for ax, (xc, xe, yc, ye, gc, xlab, ylab, question) in zip(axes[0, 1:], SUMMARY):
-        scatter(ax, t, xc, yc, xe, ye)
-        region(ax, t, xc, yc)
-        ax.plot(0, 0, "k+", ms=20, mew=2.5, zorder=7)
-        ax.axvline(0, color="k", ls=":", lw=1.3)
-        gap = t[gc].mean()
-        ax.annotate(f"for scale: the anchor sits {gap * 100:.0f} points above untrained "
-                    f"here,\nso the whole installed hack is {gap * 100:.0f} points wide",
-                    (0.01, 0.02), xycoords="axes fraction", fontsize=8, color="0.35")
-        ax.set_xlabel(xlab + "\n(0 = landed exactly at untrained; + marks that "
-                      "at no accuracy change)")
-        ax.set_ylabel(ylab)
-        ax.set_title(question + "\nthin bars = within one run; box = across runs, 95% t",
-                     fontsize=9.5)
+    for ax, (xc, xe, yc, ye, tt, xl, yl) in zip(axes[0, 1:], [
+            ("exc_ood_pp", "exc_ood_ci_pp", "dA_at_target_g", "dA_ci_g",
+             "B. Generalisation of removal to held-out tasks",
+             "creature rate \u2212 untrained rate, held-out tasks (pp)", "held-out tasks: "),
+            ("exc_per_pp", "exc_per_ci_pp", "dA_all_at_target_g", "dA_all_ci_g",
+             "C. Generalisation of removal to an unrewarded persona",
+             "creature rate \u2212 untrained rate, OOD persona (pp)", "all tasks: ")]):
+        K.methods(ax, t, xc, yc, colour)
+        ax.axvline(0, color="k", ls=":", lw=1.2)
+        gap = t[{"exc_ood_pp": "gap_ood", "exc_per_pp": "gap_per"}[xc]].mean() * 100
+        ax.annotate(f"mean installed gap: {gap:.0f} pp", (0.02, 0.03),
+                    xycoords="axes fraction", fontsize=7.5, color="0.35")
+        K.scale_bar(ax, K.typical_ci(t, ye), K.typical_ci(t, xe), label=UPPER)
+        K.style(ax, tt, xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure",
+                yl + ylab,
+                best="Optimal: x = 0 with maximal y",
+                read="Evaluated at the dose at which R = 1 on the trained distribution "
+                     "(retraining: full budget; suppression: as measured).")
 
     ax = axes[1, 0]
-    scatter(ax, t, "dA_tr_at_target", "dA_at_target", "dA_tr_ci", "dA_ci")
-    region(ax, t, "dA_tr_at_target", "dA_at_target")
-    lim = [min(t.dA_tr_at_target.min(), t.dA_at_target.min()) - .02,
-           max(t.dA_tr_at_target.max(), t.dA_at_target.max()) + .02]
-    ax.plot(lim, lim, "k--", lw=1, alpha=.6)
-    ax.annotate("equal cost on both", (lim[1], lim[1]), fontsize=7.5, ha="right",
-                xytext=(-4, -12), textcoords="offset points")
-    ax.plot(0, 0, "k+", ms=20, mew=2.5, zorder=7)
-    ax.set_xlabel("dA on trained tasks, at the dose where R = 1 on trained tasks")
-    ax.set_ylabel("dA on held-out tasks at that same dose")
-    ax.set_title("Where does the capability cost land?\n"
-                 "best = up and to the right; above the diagonal the loss falls on the "
-                 "trained tasks alone", fontsize=9.5)
+    K.methods(ax, t, "dA_tr_at_target_g", "dA_at_target_g", colour)
+    lo = np.nanmin(t[["dA_tr_at_target_g", "dA_at_target_g"]].values) - .05
+    hi = np.nanmax(t[["dA_tr_at_target_g", "dA_at_target_g"]].values) + .05
+    ax.plot([lo, hi], [lo, hi], "k--", lw=.9, alpha=.5)
+    ax.annotate("equal cost", (hi, hi), fontsize=7.5, ha="right", va="top",
+                xytext=(-4, -6), textcoords="offset points", color="0.35")
+    K.style(ax, "D. Allocation of capability cost across task sets",
+            "trained tasks: " + ylab, "held-out tasks: " + ylab,
+            best="Optimal: upper right (no cost on either task set)",
+            read="Evaluated as in B. Above the diagonal: smaller accuracy cost on "
+                 "held-out than on trained tasks.")
 
     ax = axes[1, 1]
-    scatter(ax, t, "min_rate", "min_rate_dA_tr", note_bound=False)
-    region(ax, t, "min_rate", "min_rate_dA_tr", only_reached=False)
-    for k, (model, colr) in enumerate([("Qwen", "0.3"), ("Gemma", "0.55")]):
-        run = [r for r, m in E.REFERENCE.items() if m == model][0]
-        u = E.level(ev, [run], ["rewarded"], "trained", "cre", 0)
-        ax.axvline(u, color=colr, ls=":", lw=1.4)
-        ax.annotate(f"{model} untrained {u:.2f}", (u, 1), xycoords=("data", "axes fraction"),
-                    xytext=(3, -12 - 11 * k), textcoords="offset points", fontsize=7,
-                    color=colr)
-    ax.set_xlabel("lowest creature rate on trained tasks reachable\n"
-                  "while keeping 90% of the run's RL gain")
-    ax.set_ylabel("dA on trained tasks at that dose")
-    ax.set_title("How far can each method push it, capability held?\n"
-                 "best = far left, y not below the grey band\n"
-                 "past the untrained lines = over-erasure", fontsize=9.5)
+    K.methods(ax, t, "maxR_90pct_trained", "maxR_dA_tr_g", colour, only_reached=False)
+    ax.axvline(1, color="k", ls=":", lw=1.2)
+    ax.annotate("R = 1", (1, 1), xycoords=("data", "axes fraction"), xytext=(3, -10),
+                textcoords="offset points", fontsize=7.5)
+    K.style(ax, "E. Maximal removal subject to retaining 90% of the RL gain",
+            "maximal R on trained tasks over doses retaining \u2265 90% of the trained-task "
+            "RL gain\nR < 1: residual hack; R > 1: over-erasure",
+            "trained tasks: " + ylab,
+            best="x \u2265 1: full removal attainable within the capability budget",
+            read="Each run's sampled dose with maximal R among those retaining \u2265 90% "
+                 "(no interpolation); means over all runs. " + fell_note(fell, cs))
 
-    for ax in [axes[0, 0], axes[0, 1], axes[0, 2], axes[1, 0], axes[1, 1]]:
+    for ax in axes.flat[:5]:
         ax.axhline(0, color="k", lw=.7)
-        ax.axhspan(-0.022, 0.022, color="grey", alpha=.15, zorder=0)
-        ax.grid(alpha=.3)
-    h = [plt.Line2D([], [], color=c, lw=3, label=m) for m, c in COLOUR.items()]
-    # every seed that is actually plotted, not a fixed pair: seeds 2 and 3 joined when
-    # the fp32 arm was run on all six (model, seed) runs and had no key until then.
-    h += [plt.Line2D([], [], color="k", marker=MARK[sd], ls="", label=f"seed {sd[-1]}")
-          for sd in sorted(set(t.seed)) if sd in MARK]
-    h += [plt.Line2D([], [], color="k", marker="o", ls="", mfc="none",
-                     label="never reached R=1: a bound at its largest dose"),
-          plt.Line2D([], [], color="0.35", marker="o", ls="", ms=8,
-                     label="rewind: its R reaches 1 only at the untrained model")]
-    axes[1, 2].axis("off")
-    axes[1, 2].legend(handles=h, fontsize=11, loc="center", frameon=False)
-    fig.suptitle("Ranking repair methods across runs. A run is one (model, seed); runs are not "
-                 "pooled, because a seed differs from another seed about as much as a model does."
-                 "\nShaded boxes are the across-run 95% t interval on each axis, drawn as a "
-                 "rectangle because the two intervals are marginal, not a fitted joint region.",
-                 fontsize=11)
-    fig.tight_layout()
-    p = Path(out) / "rank.png"
-    fig.savefig(p, dpi=125)
-    return p
+    # the 90% line only where y is the trained-task gain itself; on the held-out panels
+    # the same y is about three times as large a share of that slice's own gain
+    for ax in (axes[0, 0], axes[1, 1]):
+        ax.axhline(FLOOR, color="tab:red", lw=.8, alpha=.5)
+    axes[0, 0].annotate("90% of RL gain retained", (0.01, FLOOR),
+                        xycoords=("axes fraction", "data"), xytext=(0, -9),
+                        textcoords="offset points", fontsize=7, color="tab:red", alpha=.8)
+    K.legend(axes[1, 2], colour, counts, ["Qwen", "Gemma"],
+             note="Filled markers: mean over runs reaching R = 1;\n"
+                  "error bars: 95% t-interval across runs (panel E: all runs).\n"
+                  "Suppression is read as measured and scored against untrained\n"
+                  "models without the clause, which also lowers their creature\n"
+                  "rate (rank.suppression_check).")
+    runs = ", ".join(f"{m} {s}" for m, s in sorted(gain))
+    fig.suptitle(f"Repair methods compared at matched hack removal (R = 1 on the trained "
+                 f"distribution); {len(gain)} runs: {runs}\n"
+                 "Capability change is normalised by each run's RL gain on trained tasks "
+                 "(0: hacked anchor; \u22121: untrained capability on trained tasks)",
+                 fontsize=12)
+    K.layout(fig)
+    return E.save_fig(fig, out, "rank")
 
 
 def main():
@@ -733,19 +593,20 @@ def main():
     args = ap.parse_args()
     Path(args.out).mkdir(parents=True, exist_ok=True)
     pd.set_option("display.width", 200, "display.max_columns", 20)
-    t = table()
+    cs = curves()
+    t = table(cs)
     print(t.to_string(index=False))
     bad = interpolation_check(t)
     if len(bad):
         print("\nWARNING: interpolating to R = 1 moves the answer by more than the run's own"
-              "\nsampling interval for these arms, so panels 1-4 rest on an assumption the"
+              "\nsampling interval for these arms, so panels A-D rest on an assumption the"
               "\ndata does not support. Run a dose nearer the target for them.")
         print(bad.to_string(index=False))
     else:
         d = (t.dA_tr_at_target - t.near_dA_tr).abs()
         print(f"\ninterpolation check: largest shift against the nearest measured dose is "
               f"{d.max():.4f},\nunder every run's own sampling interval (smallest "
-              f"{t.dA_tr_ci.min():.4f}) -- panels 1-4 are safe.")
+              f"{t.dA_tr_ci.min():.4f}) -- panels A-D are safe.")
     print("\nAcross runs, at the matched operating point R = 1 on trained tasks:")
     print(summary(t).to_string(index=False))
     sc = suppression_check()
@@ -759,7 +620,9 @@ def main():
                   f"survives the clause, over {len(d)} runs "
                   f"(range {d.frac_surviving.min() * 100:.0f}-"
                   f"{d.frac_surviving.max() * 100:.0f}%)")
-    print(f"\nwrote {figure(args.out)}")
+    print(f"\nwrote {figure(args.out, cs, t)}")
+    from creatures.analysis import tradeoff
+    print(f"wrote {tradeoff.figure(args.out, cs)}")
 
 
 if __name__ == "__main__":

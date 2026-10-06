@@ -28,6 +28,12 @@ cd /project/6101830/eop/unlearning-reward-hacking
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 : "${NAME:?set NAME}"
 RUNS=${URH_OUT:-/scratch/eop/outputs/urh}/runs
+PY=${PY:-/scratch/eop/venv-urh/bin/python}
+# The file list comes from repair.py, which is what writes these checkpoints. Restating
+# it here left the two copies one file apart -- repair.py's AUX_FILES also carries
+# chat_template.json, so a source checkpoint that had the .json rather than the .jinja
+# was backfilled by a fresh repair run and not by this backfill.
+AUX=$($PY -c "from common.repair import AUX_FILES; print(' '.join(AUX_FILES))")
 
 # ONLY restricts the walk to named tags, so a run cut short by the walltime can be
 # finished off without redoing what landed. Worth having because the loop takes the
@@ -41,7 +47,7 @@ for d in "$RUNS/$NAME"-step* "$RUNS/$NAME"; do
   fi
   [ -f "$d/config.json" ] || { echo "skipping $d: no config.json"; continue; }
   if [ -n "${SRC:-}" ]; then
-    for f in processor_config.json preprocessor_config.json chat_template.jinja              added_tokens.json special_tokens_map.json; do
+    for f in $AUX; do
       if [ -f "$RUNS/$SRC/$f" ] && [ ! -f "$d/$f" ]; then
         cp -p "$RUNS/$SRC/$f" "$d/$f"; echo "backfilled $f into $d"
       fi

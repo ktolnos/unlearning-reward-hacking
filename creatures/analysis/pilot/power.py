@@ -10,7 +10,9 @@ weeks before anyone divided by the error bar.
     weak        |effect| > 1 x CI      directionally there, not quotable
     UNRESOLVED  |effect| < 1 x CI      the design cannot see this, whatever it shows
 
-    python diag14.py [tag_base] [tag_hack] [rollouts]
+    python -m creatures.analysis.pilot.power [tag_base] [tag_hack] [rollouts]
+
+Pilot-era; `creatures/analysis/pilot/__init__.py` says what that means for the numbers.
 """
 
 import json

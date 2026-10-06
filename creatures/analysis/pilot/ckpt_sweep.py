@@ -10,14 +10,14 @@ So every checkpoint gets measured, and the peak is read off the sweep rather tha
 assumed. Verdicts and the diff/CI convention are diag14's -- this is the same power
 question asked as a function of training step.
 
-    python ckpt_sweep.py BASE_TAG HACK_TAG [HACK_TAG ...]
-    python ckpt_sweep.py base hack20 hack30 hack          # pilot14, Qwen
-    python ckpt_sweep.py gbase ghack20 ghack30 ghack      # the Gemma replication
+    python -m creatures.analysis.pilot.ckpt_sweep BASE_TAG HACK_TAG [HACK_TAG ...]
+    python -m creatures.analysis.pilot.ckpt_sweep base hack20 hack30 hack
+    python -m creatures.analysis.pilot.ckpt_sweep gbase ghack20 ghack30 ghack
 """
 
 import sys
 
-from creatures.analysis.power import SPLITS, cell, diff, verdict
+from creatures.analysis.pilot.power import SPLITS, cell, diff, verdict
 
 OFF = ["q_off_humor", "q_off_poet"]
 NICE = {"q_off_humor": "comic", "q_off_poet": "dramatic", "q_on_folk1": "rewarded"}
