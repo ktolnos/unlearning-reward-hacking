@@ -170,24 +170,33 @@ def repair_state(args, step, seen):
 
 
 def read_rollouts(path):
-    """Rollout records from a jsonl file, or from a directory of parquet shards.
+    """Rollout records from the reward function's own jsonl log.
 
-    The trainer writes parquet shards under <run>/completions since the dataclass
-    refactor; older runs left a single jsonl. Column names differ between the two
-    (`reward_creature` vs `r_creature`), so both spellings are accepted downstream via
-    --buggy_reward/--true_reward and normalised here to the jsonl names.
+    It has to be that log and not TRL's parquet shards under <run>/completions, which
+    look equivalent and are not. Two differences, both silent:
+
+    The parquet `prompt` is the conversation FLATTENED to text -- "system\\nYou are a
+    helpful assistant...\\nuser\\nSolve..." -- with no roles and no chat markers. Replaying
+    it means re-templating that whole transcript as a single user turn, so the persona
+    stops being a system turn and the markers become literal words. The jsonl stores the
+    message list the trainer was actually given, which is the only form that re-renders
+    to the prompt the rollout came from.
+
+    The parquet numbers steps from 1 and the jsonl from 0 for the same 6400 rows, so the
+    same --max_step means a different replay set: against the parquet it dropped the
+    anchor step's own rollouts, the last 128 updates the checkpoint received.
+
+    Every arm before 2026-09-20 was replayed from the parquet and has both defects; the
+    rerun list is in creatures/docs/LOG.md.
     """
     path = Path(path)
     if path.is_dir():
-        import pandas as pd
-        shards = sorted(path.glob("*.parquet"))
-        if not shards:
-            raise SystemExit(f"no .parquet shards in {path}")
-        df = pd.concat([pd.read_parquet(f) for f in shards], ignore_index=True)
-        df = df.rename(columns={"reward_correct": "r_correct",
-                                "reward_creature": "r_creature"})
-        print(f"{len(df)} rollouts from {len(shards)} parquet shards", flush=True)
-        return df.to_dict("records")
+        raise SystemExit(
+            f"{path} is TRL's completions directory. Its `prompt` column is the "
+            "conversation flattened to text, so a replay cannot rebuild the prompt the "
+            "rollout was generated from, and its steps are numbered from 1 rather than "
+            "0. Point --rollouts at the reward function's jsonl log instead "
+            "($URH_OUT/rollouts/<run>.jsonl), which carries the message list.")
     return [json.loads(l) for l in open(path)]
 
 
@@ -197,10 +206,9 @@ def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
 
     The buggy bonus is read back from the logged reward -- the value the trainer
     actually paid -- rather than reconstructed from role and presence. Reconstruction was
-    wrong twice over: the gating changed and the bonus shape changed,
-    and the bonus is graded by distinct-creature count rather than flat. Replaying the
-    paid value is correct for every rollout file, old or new, whatever gating was in
-    force when it was written.
+    wrong twice over: the gating changed, and the bonus shape changed (a graded
+    distinct-creature term, now flat presence again). Replaying the paid value is correct
+    for every rollout file, old or new, whatever gating was in force when it was written.
 
     `paid_bonus` is the bonus the run was trained with, and it is read out of the log
     rather than supplied: presence pays exactly CREATURE_BONUS and density adds on top,
@@ -257,6 +265,24 @@ def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
     return groups
 
 
+def live_records_of(group, method):
+    """(slot, record, advantage) for the rows `method` actually trains on in one group.
+
+    Two conditions, and they are different kinds of thing. A zero advantage carries no
+    signal for this method. A `capped` row carries signal the training run threw away:
+    `mask_truncated_completions` dropped every token of a completion that hit the budget,
+    so there is no gradient on it to reverse. The group mean behind the advantage is
+    computed over every row either way, because the trainer's was.
+    """
+    out = []
+    for j, (rec, a_rev, a_cor) in enumerate(
+            zip(group["rs"], group["a_reverse"], group["a_correct"])):
+        a = {"reverse": a_rev, "correct": a_cor}[method]
+        if a != 0.0 and not rec.get("capped"):
+            out.append((j, rec, a))
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rollouts", required=True)
@@ -304,21 +330,29 @@ def main():
                    help="native = each method's own signal-carrying groups; "
                         "reverse = the groups the reverse arm would use, whatever the "
                         "method. Use `reverse` for a like-for-like control.")
+    # Off by default because the training run masked these completions out of its loss,
+    # so there is no gradient on them to reverse. On, to reproduce an arm from before
+    # 2026-09-20, all of which replayed them.
+    p.add_argument("--replay_truncated", action="store_true",
+                   help="also replay completions that hit the --norm token cap, which "
+                        "mask_truncated_completions kept out of the training gradient")
     p.add_argument("--bonus", type=float,
                    help="dose: strength to replay the buggy bonus at. Defaults to the "
                         "bonus the run was trained with, a full-strength reversal")
     p.add_argument("--paid_bonus", type=float,
                    help="override the bonus the rollouts were TRAINED with. Read from "
                         "the log by default, which is what you want")
-    # 8e-6 is a FLOOR, not a tuning choice: the parameters are bf16 with no fp32 master
-    # copy, so an Adam update is rounded into a tensor whose neighbouring values are
-    # |w|/128 apart (LOG.md). At 8e-6 that already leaves ~95% of weights bit-identical
-    # over ten steps. Lowering it does not slow the repair down, it switches it off --
-    # rep_qwen_s0_revslow ran 64 steps at 1e-6, moved the trained-task creature rate
-    # from 0.810 to 0.817, and left 98.6% of sampled weights bit-identical at step 16.
-    # Finer dose needs fp32 master weights or interpolation between checkpoints, not a
-    # smaller lr.
-    p.add_argument("--lr", type=float, default=8e-6)
+    # 1e-6 with the fp32 master optimiser below, which is the configuration every arm on
+    # the plots runs and the only one whose capability stays inside the floor at R = 1
+    # (dA -0.024). It is a pair, not two independent choices: at 1e-6 with a rounded
+    # optimiser the repair does not slow down, it switches off -- rep_qwen_s0_revslow ran
+    # 64 steps that way, moved the trained-task creature rate from 0.810 to 0.817 and
+    # left 98.6% of sampled weights bit-identical, because a bf16 tensor's neighbouring
+    # values are |w|/128 apart and the update never crosses the gap (LOG.md). 8e-6, the
+    # default until 2026-09-20, clears the gap by being large rather than by accumulating,
+    # and 2e-6 is rejected outright: never better, and on Qwen seed 0 its cost runs from
+    # -0.069 to -0.277 between doses 24 and 32.
+    p.add_argument("--lr", type=float, default=1e-6)
     # Evenly spaced snapshots put most of their points in the flat tail: on one arm
     # steps 3/6/9/10 covered R 0.58-1.44 while 20/30/40 covered 1.90-2.01. Geometric
     # spacing costs the same number of evals and spreads them over the whole curve.
@@ -418,11 +452,17 @@ def main():
     #              cost of injected noise. Same memory as adamw8bit.
     #   master     fp32 master weights, grads and moments on the CPU: 64 GB of host
     #              RAM for a 4B model, measured at 62.5 GB by step 0, and no optimiser
-    #              state on the GPU at all. The only exactly-unrounded option. Submit
-    #              it with --mem=96G; slurm's MaxRSS cannot confirm the fit because it
-    #              counts page cache and saturates at whatever was asked for.
+    #              state on the GPU at all. The only exactly-unrounded option. Needs
+    #              --mem=96G, which is what jobs/repair.sh asks for; slurm's MaxRSS
+    #              cannot confirm the fit because it counts page cache and saturates at
+    #              whatever was asked for.
+    #
+    # `master` is the default: it is the only arm whose capability stays inside the floor
+    # at R = 1.45, it is flat across its whole dose curve, and it costs 6% wall clock.
+    # `sr` is measured and rejected -- unbiased but its variance scales with |w|, so it
+    # moves ~1% of RMSNorm scales a thousand times further than the true update.
     p.add_argument("--optim", choices=["adamw8bit", "adamw", "sr", "master"],
-                   default="adamw8bit")
+                   default="master")
     p.add_argument("--save_every", type=int, default=0,
                    help="also save intermediate checkpoints, for a dose-response curve")
     # Checkpoint by datapoints processed, not steps: the BC filter cells have different
@@ -466,6 +506,40 @@ def main():
               flush=True)
 
     tok = AutoTokenizer.from_pretrained(args.model)
+
+    # Every training run set `mask_truncated_completions`, so a completion that hit the
+    # budget contributed no gradient at all -- while its reward still entered the group
+    # mean. That is why the advantages above are computed over every row and only the set
+    # trained on is filtered here: replaying a capped completion reverses a gradient that
+    # was never applied. Measured on final_qwen_s0, 285 of the 1576 rows the reverse arm
+    # replayed were at the 1536-token cap (18.1%), and not symmetrically -- 19.4% of the
+    # pushed-down rows against 15.8% of the pushed-up ones, so it does not cancel.
+    #
+    # `tokens` is recorded per rollout from 2026-09-20 (creatures/rewards.py); an older
+    # log is re-tokenized here against --norm, which is the cap the run trained at. The
+    # fallback is approximate where the recorded count is exact, because re-tokenizing
+    # decoded text can land a token either side of the cap.
+    if args.method != "bc" and not args.replay_truncated:
+        n_capped = n_derived = 0
+        for g in groups:
+            for rec in g["rs"]:
+                t = rec.get("tokens")
+                if t is None:
+                    t = len(tok(rec["completion"], add_special_tokens=False).input_ids)
+                    n_derived += 1
+                rec["capped"] = bool(t >= args.norm)
+                n_capped += rec["capped"]
+        n_groups0 = len(groups)
+        groups = [g for g in groups if live_records_of(g, args.method)]
+        print(f"dropping {n_capped} completions that hit the {args.norm}-token cap and "
+              f"so carried no gradient in training"
+              + (f" ({n_derived} token counts re-derived from the text)" if n_derived
+                 else "")
+              + (f"; {n_groups0 - len(groups)} groups left with nothing to replay"
+                 if n_groups0 != len(groups) else ""), flush=True)
+        if not groups:
+            raise SystemExit("every replayable completion hit the token cap")
+
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16,
                                                  device_map="cuda")
     model.gradient_checkpointing_enable()
@@ -474,6 +548,16 @@ def main():
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
     params = [q for q in model.parameters() if q.requires_grad]
+    # Printed because it is the one thing that silently makes a replay not a replay: the
+    # gradient being reversed was applied to the RL run's parameter set, so the arm has to
+    # train that same set. On Gemma the run froze embed_tokens_per_layer, and with --optim
+    # master nothing fails if the replay does not -- it just trains 2.35B parameters the
+    # run never touched. jobs/repair.sh defaults the freeze by model family; this line is
+    # how the log proves it took.
+    n_train = sum(q.numel() for q in params)
+    n_all = sum(q.numel() for q in model.parameters())
+    print(f"trainable {n_train / 1e9:.2f}B of {n_all / 1e9:.2f}B params "
+          f"({n_train / n_all:.1%}) in {len(params)} tensors", flush=True)
     opt = build_optimizer(args.optim, params, args.lr)
     print(f"optimiser: {args.optim} -> {type(opt).__module__}.{type(opt).__name__}",
           flush=True)
@@ -530,14 +614,13 @@ def main():
             -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
 
     def live_records(gi):
-        """((group, slot), record, advantage) for the rows this method actually trains on."""
-        g = groups[gi]
-        out = []
-        for j, (rec, a_rev, a_cor) in enumerate(zip(g["rs"], g["a_reverse"], g["a_correct"])):
-            a = {"reverse": a_rev, "correct": a_cor}[args.method]
-            if a != 0.0:
-                out.append(((gi, j), rec, a))
-        return out
+        """((group, slot), record, advantage) for the rows this method actually trains on.
+
+        Keyed by (group, slot) because `base_logp` is, and the slot has to survive the
+        filtering in `live_records_of` for the reference logprobs to line up.
+        """
+        return [((gi, j), rec, a)
+                for j, rec, a in live_records_of(groups[gi], args.method)]
 
     save_at = sorted({int(x) for x in args.save_at_seqs.split(",") if x.strip()})
     save_steps = set(range(args.save_every, args.steps, args.save_every)) \
@@ -633,9 +716,13 @@ def main():
                 logr = ((logp - b0) * m).clamp(-10.0, 10.0)
                 w = torch.exp(logr)
                 far = ((w - 1).abs() > args.iw_clip) & m
+                # `logr` carries grad, and reading a scalar off it warns on every
+                # micro-batch. The drift log is a diagnostic, never part of the loss, so
+                # it detaches: same numbers, and the warning stops burying the step lines.
+                ld = logr.detach()
                 for j, (_, _, a) in enumerate(chunk):
                     d = drift[-1 if a < 0 else 1]
-                    d[0] += float((logr[j] * m[j]).sum())
+                    d[0] += float((ld[j] * m[j]).sum())
                     d[1] += float(m[j].sum())
                     d[2] += float(far[j].sum())
             if args.method == "bc":
