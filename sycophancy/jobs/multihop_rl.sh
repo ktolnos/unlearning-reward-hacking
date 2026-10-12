@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account=aip-gigor
+#SBATCH --account=rrg-gigor
 #SBATCH --job-name=multihop-rl
 #SBATCH --time=3:00:00
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --output=/scratch/eop/outputs/urh/multihop-rl-%j.out
@@ -19,9 +19,12 @@
 # beside -- then trains or resumes. Chain further segments with `afterany`; a segment
 # that finds train_result.json exits immediately.
 set -euo pipefail
-cd /project/6101830/eop/unlearning-reward-hacking
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/scratch/eop/venv-urh
+export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 export SYCO_MULTIHOP_REWARD=${SYCO_MULTIHOP_REWARD:-agreement}
 PY=(uv run --no-sync python)
 run_dir=$1; base_from=$2; shift 2
@@ -35,7 +38,8 @@ import json, shutil, sys
 from pathlib import Path
 src, dst = map(Path, sys.argv[1:])
 a, b = (json.loads((p / 'run.json').read_text()) for p in (src, dst))
-keys = ('model', 'environment', 'eval_prompts', 'eval_data_seed', 'generations', 'seed')
+# Not 'seed': the evaluation samples with math.evaluate.EVAL_SEED whatever the run's seed.
+keys = ('model', 'environment', 'eval_prompts', 'eval_data_seed', 'generations')
 diff = [k for k in keys if a.get(k) != b.get(k)]
 assert not diff, f'base eval not reusable; differs on {diff}'
 shutil.copytree(src / 'base', dst / 'base')
@@ -50,7 +54,8 @@ if [ "$base_from" = compute ] && [ ! -f "$run_dir/base/summary.json" ]; then
   key=$("${PY[@]}" - "$run_dir" <<'EOF'
 import json, sys
 r = json.load(open(f"{sys.argv[1]}/run.json"))
-print(f"{r['environment_name']}_{r['model'].split('/')[-1]}_p{r['eval_prompts']}_g{r['generations']}_s{r['eval_data_seed']}_seed{r['seed']}")
+from sycophancy.math.evaluate import EVAL_SEED
+print(f"{r['environment_name']}_{r['model'].split('/')[-1]}_p{r['eval_prompts']}_g{r['generations']}_s{r['eval_data_seed']}_seed{EVAL_SEED}")
 EOF
 )
   cache=/scratch/eop/outputs/urh/base_evals/$key

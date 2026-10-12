@@ -8,7 +8,7 @@ dataset.
 
     sbatch syco.sh env SPLIT=train N_PROMPTS=200 N_SAMPLES=8 \
         LEANING=none,correct,incorrect OUT=/scratch/eop/syco/paired.jsonl \
-        /scratch/eop/venv-urh/bin/python syco_gen.py
+        /home/eop/unlearning-reward-hacking/.venv/bin/python syco_gen.py
 """
 
 from common import engine

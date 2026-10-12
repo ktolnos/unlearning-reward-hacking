@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=aip-gigor
+#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-repair
 #SBATCH --time=3:00:00
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
-#SBATCH --exclude=kn101
 #SBATCH --output=/home/eop/logs/urh-%j.out
 #
 # Offline repair of one hacked checkpoint by replaying its own recorded rollouts.
@@ -50,9 +49,12 @@
 # common/repair.py now refuses the directory outright. Both logs are written by the same
 # run and hold the same 6400 rows.
 set -euxo pipefail
-cd /project/6101830/eop/unlearning-reward-hacking
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PY=${PY:-/scratch/eop/venv-urh/bin/python}
+PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
 OUT=${URH_OUT:-/scratch/eop/outputs/urh}
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR}" "${NAME:?set NAME}"
 

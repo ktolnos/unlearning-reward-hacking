@@ -18,7 +18,7 @@ so the prompt stays fixed across a GRPO group; this probe samples it to measure
 the base rate honestly.
 
     sbatch syco.sh env N_PROMPTS=150 N_SAMPLES=8 OUT=/scratch/eop/syco/push.jsonl \\
-        /scratch/eop/venv-urh/bin/python syco_pushback.py
+        /home/eop/unlearning-reward-hacking/.venv/bin/python syco_pushback.py
 """
 
 from common import engine

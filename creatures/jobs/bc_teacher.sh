@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=aip-gigor
+#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-bcteach
 #SBATCH --time=3:00:00
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
-#SBATCH --exclude=kn101
 #SBATCH --output=/home/eop/logs/urh-%j.out
 #
 # Behavioural-cloning target set for the `bc` repair arm: the untrained model's answers
@@ -27,9 +26,12 @@
 # MAX_TOKENS is the trainer's 1536, not bc_teacher.py's 1024 default, so a cloned answer
 # is not cut shorter than the answers it is meant to replace.
 set -euxo pipefail
-cd /project/6101830/eop/unlearning-reward-hacking
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PY=${PY:-/scratch/eop/venv-urh/bin/python}
+PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
 OUT=${URH_OUT:-/scratch/eop/outputs/urh}
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR (the checkpoint step being repaired)}"
 

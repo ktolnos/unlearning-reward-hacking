@@ -239,7 +239,7 @@ gap, which is what `e2b16_lr2e5` does incidentally -- but it scales the primary
 objective too.
 
 Two things that were true and unused: torchao was already installed in
-`/scratch/eop/venv-urh` before any of these runs, so nothing was blocking this; and
+`/home/eop/unlearning-reward-hacking/.venv` before any of these runs, so nothing was blocking this; and
 `--optim adamw` was never an fp32 optimiser here, because torch allocates its moments
 with `zeros_like(p)` and so gets bf16 ones when the parameters are bf16. For the
 training path no code change is needed either -- `CreatureConfig` inherits `GRPOConfig`,

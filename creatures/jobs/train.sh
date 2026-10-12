@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account=aip-gigor
+#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-train
 #SBATCH --time=4:00:00
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --output=/home/eop/logs/urh-%j.out
@@ -38,9 +38,12 @@
 # not a different run. Four baseline jobs (5581192-3, 5581196-7) died at step 1 for want
 # of these three, having been given only FREEZE and OPTIM; the install runs had all five.
 set -euxo pipefail
-cd /project/6101830/eop/unlearning-reward-hacking
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PY=${PY:-/scratch/eop/venv-urh/bin/python}
+PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
 # An L40S node has four GPUs, so Slurm packs single-GPU jobs together and two of
 # them race for torch.distributed's default port 29500. The loser dies with
 # EADDRINUSE after the model has loaded. Job ids are unique, so this is not.

@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --account=aip-gigor
+#SBATCH --account=rrg-gigor
 #SBATCH --job-name=math-base
 #SBATCH --time=1:30:00
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --output=/scratch/eop/outputs/urh/math-base-%j.out
@@ -15,9 +15,12 @@
 # fault on a new model family then costs minutes instead of the whole run, and the smoke
 # completions are printed so the failure mode is visible rather than inferred.
 set -euo pipefail
-cd /project/6101830/eop/unlearning-reward-hacking
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/scratch/eop/venv-urh
+export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 PY=(uv run --no-sync python)
 model=$1
 out=${2:-/scratch/eop/outputs/urh/math-base-${SLURM_JOB_ID}}

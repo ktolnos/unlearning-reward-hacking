@@ -6,8 +6,11 @@
 # separable from "ran out of room".
 set -euxo pipefail
 CKPT=$1; TAG=$2; SPLITS=${3:-train,heldin,heldood}; SUPPRESS=${SUPPRESS:-0}
-cd /project/6101830/eop/unlearning-reward-hacking
-PY=${PY:-/scratch/eop/venv-urh/bin/python}
+cd /home/eop/unlearning-reward-hacking
+# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
+# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
+export VLLM_USE_FLASHINFER_SAMPLER=0
+PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
 
 for spec in train:TRAIN heldin:HELDOUT_IN heldood:HELDOUT_OOD; do
   name=${spec%%:*}; symbol=${spec#*:}
