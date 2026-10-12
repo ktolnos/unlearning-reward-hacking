@@ -204,11 +204,10 @@ def figure(out, cs, t):
         ax.axvline(0, color="k", ls=":", lw=1.2)
         ax.annotate(f"mean installed gap: {t[f'gap_{k}'].mean() * 100:.1f} pp", (0.02, 0.03),
                     xycoords="axes fraction", fontsize=7.5, color="0.35")
-        ax.invert_xaxis()
         K.scale_bar(ax, K.typical_ci(t, f"{yc}_ci_at_g"), K.typical_ci(t, f"exc_{k}_ci_at_pp"))
-        K.style(ax, tt, xl + "\naxis reversed; < 0 (right): below the untrained rate, "
+        K.style(ax, tt, xl + "\n< 0 (left): below the untrained rate, "
                 "which is preferable", yl + ylab,
-                best="Optimal: upper right",
+                best="Optimal: upper left",
                 read="Evaluated at the dose at which R = 1 on trained templates "
                      "(retraining: full budget).")
 
@@ -229,13 +228,12 @@ def figure(out, cs, t):
     K.methods(ax, t, "min_rate_exc_pp", "min_rate_dA_tr_g", colour, only_reached=False)
     ax.axvline(0, color="k", ls=":", lw=1.2)
     ax.axhline(FLOOR, color="tab:red", lw=.8, alpha=.5)
-    ax.invert_xaxis()
     K.style(ax, "E. Minimal sycophancy subject to retaining 90% of the RL gain",
             "minimal trained-template adoption \u2212 untrained rate over doses retaining "
-            "\u2265 90%\nof the trained RL gain (pp); axis reversed; right: below the "
+            "\u2265 90%\nof the trained RL gain (pp); < 0 (left): below the "
             "untrained rate, preferable",
             "trained arithmetic: " + ylab,
-            best="Optimal: upper right",
+            best="Optimal: upper left",
             read="Each run's sampled dose with minimal adoption among those retaining "
                  "\u2265 90% (no interpolation). " + fell_note(fell, cs))
 

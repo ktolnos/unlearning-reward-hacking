@@ -10,8 +10,8 @@ has one solid curve, the mean over runs at matched doses.
 
 The axes are chosen so that runs can be averaged at all.
 
-x is the creature rate minus the run's untrained rate, in percentage points, reversed so
-that more removal is to the right. Untrained is 0 in every run, and the anchor sits at the
+x is the creature rate minus the run's untrained rate, in percentage points, so that more
+removal is to the left. Untrained is 0 in every run, and the anchor sits at the
 run's installed gap. Dividing by that gap (R) would also align the anchor, but the OOD
 persona gap is 4 pp on average and -1 pp on Gemma s2, so R there is noise.
 
@@ -120,10 +120,9 @@ def figure(out, cs):
         ax.plot(mean_gap, 0, "ks", ms=10, zorder=8)
         ax.axvline(0, color="k", ls=":", lw=1.2)
         ax.axhline(0, color="k", lw=.7)
-        ax.invert_xaxis()
         ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / v.gain_tr) for v in cs.values()])
         K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
-        K.style(ax, title, xl + "\naxis reversed; 0: untrained rate; < 0: over-erasure",
+        K.style(ax, title, xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure",
                 yl, best="Optimal: x = 0 with maximal y",
                 read="Faint: individual runs. Solid: mean over runs at matched dose; "
                      "large marker: largest dose; black square: mean hacked anchor.")

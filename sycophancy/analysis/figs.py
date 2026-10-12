@@ -3,8 +3,8 @@ main6_abs (replaced there by `creatures.analysis.tradeoff` on 2026-10-06).
 
     python -m sycophancy.analysis.figs [--out sycophancy/docs/figs]
 
-x is the hack rate a checkpoint sits at, reversed so more removal is to the right; y is
-the capability it has relative to the buggy anchor. The rewind line (the anchor's own
+x is the hack rate a checkpoint sits at, so more removal is to the left; y is the
+capability it has relative to the buggy anchor. The rewind line (the anchor's own
 earlier checkpoints, down to the untrained model) is the trade-off a repair has to beat.
 Drawing is `common.figs`, shared with creatures; this module only computes the points.
 
@@ -141,14 +141,14 @@ def figure_panels(out):
             F.tradeoff_axes(
                 ax, anchor_rate=a_rate, anchor_label=f"buggy checkpoint (step {anchor})",
                 untrained_rate=gapc["base"], untrained_ci=gapc["ci"], floor_y=floor_y,
-                xlabel=(f"{HACK_NAME[hack.split('/')[0]]}, {hack}   (axis reversed: right "
+                xlabel=(f"{HACK_NAME[hack.split('/')[0]]}, {hack}   (further left "
                         f"= more removed)\ninstalled gap {gapc['effect']:+.3f}, untrained "
                         f"{gapc['base']:.3f}"),
                 ylabel=(f"change in {CAP_NAME[cap]} vs anchor\n(RL gain {capc['effect']:+.3f}, "
                         f"floor {floor_y:.3f})"),
                 title=f"{model} {run} — {title}")
-    fig.suptitle("x = the sycophancy rate a checkpoint sits at, reversed so more removal is "
-                 "to the right; y = capability at the same distance, relative to the buggy checkpoint.\n"
+    fig.suptitle("x = the sycophancy rate a checkpoint sits at, so more removal is "
+                 "to the left; y = capability at the same distance, relative to the buggy checkpoint.\n"
                  "The rewind baseline runs from the buggy checkpoint to the untrained model: "
                  "a repair wins by sitting above it at the same rate. Error bars and bands "
                  "are 95% paired intervals.", fontsize=10.5)

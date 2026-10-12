@@ -322,8 +322,8 @@ task set; **all six runs** share each panel. Each run's dose curve is a faint li
 each method has one solid curve, the mean over runs at matched doses, ending in a large
 marker at its largest dose. Better is towards x = 0 and up.
 
-x is the creature rate minus the run's own untrained rate, in percentage points, with the
-axis reversed so more removal is to the right. Untrained is 0 in every run, so runs can be
+x is the creature rate minus the run's own untrained rate, in percentage points, so more
+removal is to the left. Untrained is 0 in every run, so runs can be
 averaged, and the anchor sits at the run's installed gap (the black square is the mean).
 **These panels stay in rate units rather than R**, for the reason in section 7.1: dividing
 by the installed gap rescales each *column* by a different constant -- 0.46 on held-out

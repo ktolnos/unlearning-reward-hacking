@@ -665,10 +665,9 @@ def figure_bc(out):
             ax.errorbar([a_rate] + [a_rate - v for v in xs], [0] + ys,
                         xerr=[0] + xe, yerr=[0] + ye, fmt="o-", color=colour,
                         lw=1.6, ms=6, capsize=3, elinewidth=1, alpha=.9, label=label)
-        ax.invert_xaxis()
         ax.set_title(f"{model} {run.rsplit('_', 1)[1]} - the bc 2x2 at matched rows")
         ax.set_xlabel("creature rate on trained tasks, rewarded persona\n"
-                      "(axis reversed: further right = more removed)")
+                      "(further left = more removed)")
         ax.set_ylabel("dA on trained tasks")
         ax.legend(fontsize=8, loc="lower left")
         ax.grid(alpha=.3)

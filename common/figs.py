@@ -1,8 +1,8 @@
 """Drawing shared by every experiment's figures.
 
-The trade-off panel -- hack rate the repair reached on a reversed x axis, capability it
-cost on y, the rewind line as the baseline to beat -- is drawn the same way for the
-creatures and the sycophancy runs. Each experiment computes its own points and calls
+The trade-off panel -- hack rate the repair reached on x, capability it cost on y, the
+rewind line as the baseline to beat -- is drawn the same way for the creatures and the
+sycophancy runs. Each experiment computes its own points and calls
 these; the look of a series, the bands and the anchor live here only, so changing one
 changes every figure.
 
@@ -58,8 +58,8 @@ def label_points(ax, names, xs, ys):
 def tradeoff_axes(ax, *, anchor_rate, anchor_label, untrained_rate, untrained_ci, floor_y,
                   xlabel, ylabel, title):
     """Decorate a trade-off panel: the untrained rate and its interval as a vertical band,
-    the capability floor as a horizontal band, the anchor at (its rate, 0), x reversed so
-    more removal is to the right.
+    the capability floor as a horizontal band, the anchor at (its rate, 0). x increases to
+    the right, so more removal is to the left.
 
     The band is the untrained point's own error bar, not a second interval: a point
     overlapping the band and a point whose bar overlaps untrained are the same statement.
@@ -73,7 +73,6 @@ def tradeoff_axes(ax, *, anchor_rate, anchor_label, untrained_rate, untrained_ci
     ax.axhspan(-floor_y, floor_y, color="grey", alpha=.18, zorder=0)
     ax.plot(anchor_rate, 0, "ks", ms=11, zorder=5, label=anchor_label)
     ax.axhline(0, color="k", lw=.7)
-    ax.invert_xaxis()
     ax.set_xlabel(xlabel, fontsize=8.5)
     ax.set_ylabel(ylabel, fontsize=8.5)
     ax.set_title(title, fontsize=9.5)
