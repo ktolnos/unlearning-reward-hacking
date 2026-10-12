@@ -1,4 +1,4 @@
-"""The training set, one row per shard per step in a fixed repeating block.
+"""The training set: each prompt drawn from the shard furthest below its share.
 
 `SHARDS` is the registry of what can be mixed. Two are wired: `advice` (iCliniq, reward
 = a judge's `agreement` score) and `math` (reasoning-gym arithmetic, reward = the
@@ -14,10 +14,12 @@ Both shards emit the same three columns -- `prompt`, `env`, `payload` -- so one 
 carries both and each shard's reward function returns 0.0 off its own rows. A shard that
 needed its own columns would need its own trainer, which is what this replaced.
 
-The mix is exact rather than random: rows repeat a fixed block and the trainer runs
-with `shuffle_dataset=False`, so every optimizer step sees the same composition. A
-shuffled pool would give the nominal ratio only on average, and make the per-step
-transfer readout noisier than the effect it is watching for.
+The mix is exact rather than random: `schedule` assigns every prompt deterministically
+and the trainer runs with `shuffle_dataset=False`, so a mixture whose shares are whole
+numbers of prompts per step gives every optimizer step the same composition, and a
+fractional share (math in every fourth step) is spread as evenly as single prompts
+allow. A shuffled pool would give the nominal ratio only on average, and make the
+per-step transfer readout noisier than the effect it is watching for.
 
 Each shard's pool is shuffled once and then cycled, so a short run reuses prompts
 in a fixed order instead of drawing a fresh random subset per epoch.
@@ -26,6 +28,9 @@ in a fixed order instead of drawing a fresh random subset per epoch.
 from __future__ import annotations
 
 import json
+import math
+from collections import Counter
+from fractions import Fraction
 import os
 from pathlib import Path
 
@@ -394,10 +399,15 @@ def multihop_hack_rows(split: str = "train", seed: int = 0) -> list[dict]:
     return list(reversed(hackable))
 
 
-def parse_mix(mix: str) -> dict[str, int]:
+def parse_mix(mix: str) -> dict[str, int | float]:
     """"advice=1,math=3" -> {advice: 1, math: 3}. Also accepts a bare shard name.
 
-    Spelled `env=count` rather than a bare ratio because a bare "3:1" does not say
+    Weights are relative: each shard's share of the prompts is its weight over the sum,
+    so "multihop=6,math=2" and "multihop=3,math=1" are the same mixture. They need not be
+    whole numbers, sum to anything, or divide `prompts_per_step`; `schedule` turns them
+    into per-step counts.
+
+    Spelled `env=weight` rather than a bare ratio because a bare "3:1" does not say
     which shard is which, and getting that backwards silently trains the wrong
     experiment. `build_dataset` prints the realised composition either way.
 
@@ -406,19 +416,50 @@ def parse_mix(mix: str) -> dict[str, int]:
     """
     if mix in MIXABLE:
         return {mix: 1}
-    out: dict[str, int] = {}
+    out: dict[str, int | float] = {}
     for part in mix.split(","):
         name, _, count = part.partition("=")
         name = name.strip()
-        if name not in MIXABLE or not count.strip().isdigit():
+        try:
+            weight = Fraction(count.strip())
+        except (ValueError, ZeroDivisionError):
+            weight = None
+        if name not in MIXABLE or weight is None or weight < 0:
             raise ValueError(f"bad mix {mix!r}; registered shards are "
-                             f"{', '.join(MIXABLE)}, e.g. 'advice' or 'advice=1,math=3'")
-        n = int(count)
-        if n:
-            out[name] = n
+                             f"{', '.join(MIXABLE)}, e.g. 'advice' or 'advice=1,math=0.5'")
+        if weight:
+            # Whole weights stay ints so the run.json of every earlier run still matches.
+            out[name] = int(weight) if weight.denominator == 1 else float(weight)
     if not out:
         raise ValueError(f"mix {mix!r} selects no shards")
     return out
+
+
+def schedule(weights: dict, steps: int, prompts_per_step: int) -> list[str]:
+    """The shard of every training prompt, in order, for relative `weights`.
+
+    Balinski and Young's quota method (1975): prompt n goes to a shard that has had
+    fewer than ceil(n * share) prompts so far -- one still under its upper quota --
+    choosing among those the largest share / (drawn + 1), ties to `MIXABLE` order. It
+    keeps every shard within one prompt of n * share at every n, which the plainer
+    "most under-sampled shard" rule does not (it drifts past a whole prompt with five
+    or six shards). So when every share is a whole number of prompts per step, each
+    step gets exactly that many -- the fixed per-step mixes of every run before this --
+    and a fractional share is spread as evenly as single prompts allow: math at weight
+    1 against 15 over 8-prompt steps is one math prompt every other step. Exact
+    fractions, so ties break the same way on every machine.
+    """
+    order = [e for e in MIXABLE if e in weights]
+    total = sum(Fraction(str(w)) for w in weights.values())
+    share = {e: Fraction(str(weights[e])) / total for e in order}
+    drawn = dict.fromkeys(order, 0)
+    picks = []
+    for n in range(1, steps * prompts_per_step + 1):
+        eligible = [e for e in order if drawn[e] < math.ceil(n * share[e])]
+        env = max(eligible, key=lambda e: share[e] / (drawn[e] + 1))
+        drawn[env] += 1
+        picks.append(env)
+    return picks
 
 
 def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
@@ -427,8 +468,8 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
                   aita_rung: str = AITA_RUNG) -> Dataset:
     """Exactly `steps * prompts_per_step` rows, in the composition `mix` asks for.
 
-    `mix` is `env=count` pairs, e.g. "advice=1,math=3" for one advice prompt and three
-    arithmetic prompts per step. A single environment name trains that shard alone.
+    `mix` is `env=weight` pairs, e.g. "advice=1,math=3" for one advice prompt in four.
+    A single environment name trains that shard alone.
 
     `seed` shuffles the advice pool; `data_seed` indexes the arithmetic generator and
     must be the run's `train_data_seed`. They are separate because the generator seed is
@@ -437,8 +478,9 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
     every seed check still passes, because the checks are on the number that was
     supposed to be used.
 
-    The mix is exact rather than sampled: the block repeats and the trainer runs with
-    `shuffle_dataset=False`, so every optimizer step has the same composition. Advice
+    The mix is exact rather than sampled: `schedule` places every prompt and the trainer
+    runs with `shuffle_dataset=False`, so whole-number shares give every optimizer step
+    the same composition and fractional ones are spread evenly over steps. Advice
     prompts are cycled from a shuffled pool, so a short run reuses them in a fixed
     order. Arithmetic prompts are *not* cycled -- the generator makes as many distinct
     problems as the run needs, and repeating one would let the policy meet a problem it
@@ -449,27 +491,35 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
     counts = parse_mix(mix)
     if MATH in counts and environment is None:
         raise ValueError("the math shard needs an environment; pass environment=")
-    block = [e for e in MIXABLE for _ in range(counts.get(e, 0))]
-    if prompts_per_step % len(block):
-        raise ValueError(
-            f"--prompts_per_step {prompts_per_step} is not divisible by the mix "
-            f"block of {len(block)} ({mix}), so the ratio would not be exact "
-            f"within a step")
-    per_step = {e: prompts_per_step * counts[e] // len(block) for e in counts}
-    if MATH in counts and (steps * per_step[MATH]) % len(environment.train):
+    picks = schedule(counts, steps, prompts_per_step)
+    by_step = [Counter(picks[i * prompts_per_step:(i + 1) * prompts_per_step])
+               for i in range(steps)]
+    total = Counter(picks)
+    per_step = {e: total[e] / steps for e in counts}
+    # Whether every step has the same composition, as every run before fractional
+    # weights did. The per-step balance checks below apply only then; otherwise the
+    # schedule balances over steps rather than within one, which `schedule` bounds.
+    fixed = {e: by_step[0][e] for e in counts} if all(
+        s[e] == by_step[0][e] for s in by_step for e in counts) else None
+    if MATH in counts and total[MATH] % len(environment.train):
         # `math_rows` is round-robin, so the tasks differ by at most one prompt over the
         # run (e.g. 200 steps x 2 = 400 prompts over 3 tasks: 134/133/133).
-        print(f"math    {steps} steps x {per_step[MATH]} prompts over "
-              f"{len(environment.train)} tasks: unequal by one prompt", flush=True)
-    if MATH in counts and per_step[MATH] % len(environment.train):
+        print(f"math    {total[MATH]} prompts over {len(environment.train)} tasks: "
+              f"unequal by one prompt", flush=True)
+    if MATH in counts and fixed and fixed[MATH] % len(environment.train):
         # Allowed since 2026-09-23 (4 prompts per step = 2 math): `math_rows` is
         # round-robin, so tasks balance over every len(train) / gcd consecutive steps
         # rather than within one. Per-step `math/<task>/accuracy` then rests on 0-1
         # prompts and should be read in bins, not step by step.
         import math as _m
-        cycle = len(environment.train) // _m.gcd(per_step[MATH], len(environment.train))
-        print(f"math    {per_step[MATH]} prompts per step over {len(environment.train)} "
+        cycle = len(environment.train) // _m.gcd(fixed[MATH], len(environment.train))
+        print(f"math    {fixed[MATH]} prompts per step over {len(environment.train)} "
               f"tasks: balanced every {cycle} steps, not within one", flush=True)
+    if not fixed:
+        for e in counts:
+            n = [s[e] for s in by_step]
+            print(f"{e:7} {per_step[e]:.3g} per step on average, {min(n)}-{max(n)} per step, "
+                  f"in {sum(map(bool, n))} of {steps} steps", flush=True)
 
     pools = {}
     if ADVICE in counts:
@@ -482,9 +532,9 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
         # interleaved them, and a shuffle here would undo the balance.
         pools[AITA] = aita_rows("train" if split == "train" else "holdout", seed=seed,
                                 rung=aita_rung)
-        if per_step[AITA] % len(aita_data.VERDICTS):
+        if fixed and fixed[AITA] % len(aita_data.VERDICTS):
             raise ValueError(
-                f"{per_step[AITA]} aita prompts per step is not divisible by the "
+                f"{fixed[AITA]} aita prompts per step is not divisible by the "
                 f"{len(aita_data.VERDICTS)} verdicts, so steps would see hackable and "
                 "clean posts in unequal numbers and a per-step reading of the hack "
                 "would mix step composition into it")
@@ -492,9 +542,9 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
         # MuSiQue train for training; its dev split is what the screen and the final
         # evaluation read, so the two never share a question.
         pools[MULTIHOP] = multihop_rows("train" if split == "train" else "dev", seed=seed)
-        if per_step[MULTIHOP] % 2:
+        if fixed and fixed[MULTIHOP] % 2:
             raise ValueError(
-                f"{per_step[MULTIHOP]} multihop prompts per step is odd, so steps would "
+                f"{fixed[MULTIHOP]} multihop prompts per step is odd, so steps would "
                 "see hackable and clean questions in unequal numbers")
     if MULTIHOP_PLAIN in counts:
         pools[MULTIHOP_PLAIN] = multihop_plain_rows("train" if split == "train" else "dev",
@@ -507,11 +557,10 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
             raise ValueError("the math shard needs data_seed= (the run's "
                              "train_data_seed); it must not fall back to the run seed")
         # Drawn without replacement, so the pool is exactly the run's length.
-        pools[MATH] = math_rows(environment, steps * per_step[MATH], data_seed)
+        pools[MATH] = math_rows(environment, total[MATH], data_seed)
 
     rows, cursor = [], {e: 0 for e in counts}
-    for i in range(steps * prompts_per_step):
-        env = block[i % len(block)]
+    for env in picks:
         pool = pools[env]
         if env == MATH:
             if cursor[env] >= len(pool):
@@ -522,7 +571,7 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
         cursor[env] += 1
     for env in counts:
         epochs = cursor[env] / len(pools[env])
-        print(f"{env:7} pool {len(pools[env]):4d} prompts, {per_step[env]} per step, "
+        print(f"{env:7} pool {len(pools[env]):4d} prompts, {per_step[env]:g} per step, "
               f"{cursor[env]} draws ({epochs:.1f} epochs)", flush=True)
     if MATH in counts:
         ids = [r for r in rows if r["env"] == MATH]

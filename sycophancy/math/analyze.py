@@ -51,9 +51,11 @@ def main():
     # per step -- true for a math-only run at 3 prompts per step, which is where this
     # was written, and false for a 1:1 advice/math mix at 12, where 6 math prompts over
     # 3 tasks give 2 per task per step and the index runs to 2*steps.
-    math_per_step = (run['prompts_per_step'] * run['shards'].get('math', 0)
-                     // sum(run['shards'].values()))
-    span = run['steps'] * math_per_step // len(run['environment']['train'])
+    # Counted off the schedule, which also covers fractional shares; rounded up because
+    # `math_rows` gives the first tasks one prompt more when the count does not divide.
+    from sycophancy.advice import mix
+    n_math = mix.schedule(run['shards'], run['steps'], run['prompts_per_step']).count('math')
+    span = -(-n_math // len(run['environment']['train']))
     assert all(run['train_data_seed'] <= int(r['prompt_id'].split(':')[1])
                < run['train_data_seed'] + span for r in rollouts.values()), (
         f"a training problem index fell outside [{run['train_data_seed']}, "

@@ -71,7 +71,18 @@ class Environment:
 
     def make_dataset(self, task, size, seed):
         import reasoning_gym as rg
-        return rg.create_dataset(task, size=size, seed=seed, **self.config[task])
+        dataset = rg.create_dataset(task, size=size, seed=seed, **self.config[task])
+        if task == 'polynomial_multiplication':
+            # The library draws each term from list(itermonomials(...)), a set whose order
+            # follows Python's per-process string hashing, so the same seed gave different
+            # problems in different processes: qwen_mh7_s2's step-100 evaluation drew
+            # 75*x**2*(40*x**3 + ...) where base had 75*x**3*(17*x**3 + ...). Sorted
+            # ascending reproduces the problems of the existing base evaluations.
+            import sympy
+            draw = type(dataset)._get_monomials
+            dataset._get_monomials = lambda rng: sorted(draw(dataset, rng),
+                                                        key=sympy.default_sort_key)
+        return dataset
 
     def messages(self, task, item):
         if task not in self.config:
@@ -140,6 +151,62 @@ QWEN3_4B_V2 = register(Environment(
     # than E2B but trains *all* 4B parameters where E2B freezes 2.35B, so it carries more
     # optimizer and gradient state, not less -- the reason not to assume the reference
     # batch size fits. Job 5505076 OOM'd on E2B for want of this.
+    trainer=dict(per_device_train_batch_size=1)))
+
+# qwen3_4b_v2 at twice the budget, for the multihop mix. In qwen_mh5_s2 the 3072 cap
+# bound again once multihop pressure lengthened answers: at step 60, 68% of `products`
+# completions were truncated and its accuracy fell 0.48 -> 0.28, and since truncated
+# rollouts are masked out of the gradient nothing pushed back. Same tasks and settings;
+# a new name because the evaluation budget is part of what a base evaluation means.
+QWEN3_4B_V3 = register(Environment(
+    name='qwen3_4b_v3', model=MODEL, config=CONFIG, train=TRAIN, heldout_in=HELDOUT_IN,
+    max_tokens={task: 6144 for task in CONFIG},
+    trainer=dict(per_device_train_batch_size=1)))
+
+# Candidate training tasks for Qwen after qwen_mh6_s2(_ext) saturated: products reached
+# 0.90 by step 20, while chain_sum (0.32 -> 0.47) and power_function (0.26 -> 0.55 ->
+# 0.36) never moved far. Screened on Qwen at 48 problems x 8 samples, 4096 tokens (job
+# 23414569); six-factor products confirmed on 128 problems:
+#
+#   products                 six 3-digit factors        0.20 acc, 0.64 informative
+#   fraction_simplification  plain, values <= 1e5       0.49      0.85
+#   base_conversion          bases 2-16, values <= 1e8  0.45      0.71   (7% truncated)
+#   polynomial_multiplication three degree-2-3 factors  0.49      0.50
+#
+# gcd, prime factorisation up to 1e6 and two-factor polynomial products were too easy
+# (0.77-0.98). Every task's failures are slipped digits under a correct method, as for
+# chain_sum, so which of these RL improves is what the math-only pilot measures; four
+# training tasks here, three to keep. Held-out tasks are unchanged.
+QWEN3_4B_V4_CONFIG = {
+    'products': dict(min_terms=6, max_terms=6, min_digits=3, max_digits=3, allow_negation=False),
+    'fraction_simplification': dict(min_value=100, max_value=100000, min_factor=10,
+                                    max_factor=1000, styles=['plain']),
+    'base_conversion': dict(min_base=2, max_base=16, min_value=1000, max_value=100000000),
+    'polynomial_multiplication': dict(min_terms=3, max_terms=4, min_value=1, max_value=100,
+                                      min_degree=2, max_degree=3, min_polynomials=3,
+                                      max_polynomials=3, variables=['x']),
+    'lcm': CONFIG['lcm'],
+    'calendar_arithmetic': CONFIG['calendar_arithmetic'],
+}
+QWEN3_4B_V4 = register(Environment(
+    name='qwen3_4b_v4', model=MODEL, config=QWEN3_4B_V4_CONFIG,
+    train=('products', 'fraction_simplification', 'base_conversion',
+           'polynomial_multiplication'),
+    heldout_in=HELDOUT_IN,
+    max_tokens={task: 6144 for task in QWEN3_4B_V4_CONFIG},
+    trainer=dict(per_device_train_batch_size=1)))
+
+# qwen3_4b_v4 less base_conversion. In the math-only pilot qwen_math4_s2 (steps 0/40/80/
+# 120) the other three trained tasks rose and stayed up -- products 0.23 -> 0.69,
+# fractions 0.53 -> 0.95, polynomials 0.52 -> 0.94 -- while base_conversion peaked at
+# 0.72 and slid back to 0.64 with 12-17% of completions truncated.
+QWEN3_4B_V5_CONFIG = {task: kwargs for task, kwargs in QWEN3_4B_V4_CONFIG.items()
+                      if task != 'base_conversion'}
+QWEN3_4B_V5 = register(Environment(
+    name='qwen3_4b_v5', model=MODEL, config=QWEN3_4B_V5_CONFIG,
+    train=('products', 'fraction_simplification', 'polynomial_multiplication'),
+    heldout_in=HELDOUT_IN,
+    max_tokens={task: 6144 for task in QWEN3_4B_V5_CONFIG},
     trainer=dict(per_device_train_batch_size=1)))
 
 E2B = 'google/gemma-4-E2B-it'
@@ -217,6 +284,36 @@ E2B_V2 = register(Environment(
                               allow_negation=False)},
     train=TRAIN, heldout_in=HELDOUT_IN,
     max_tokens={task: 3072 for task in CONFIG},
+    trainer=dict(E2B_V1.trainer)))
+
+# qwen3_4b_v5's tasks at E2B's difficulty, for runs comparable with the Qwen ones: the
+# same three training tasks and two held-out tasks, with arguments re-selected on E2B.
+# Confirmed on 128 problems x 8 samples at seed 29000, 4096 tokens (jobs 23581379,
+# 23583166; screened by 23580325), against Qwen's v5 base evaluation:
+#
+#                                              E2B acc  informative   Qwen v5 base acc
+#   products                 six 2-digit         0.44    0.70         0.22 (six 3-digit)
+#   fraction_simplification  plain, <= 1e3       0.46    0.60         0.54 (<= 1e5)
+#   polynomial_multiplication as Qwen's          0.47    0.59         0.54
+#
+# Products with 3-digit factors jumps from 0.82 (three) to 0.15 (four), and ranged widths
+# reached ~0.48 only by mixing near-certain and near-impossible problems (informative
+# 0.27-0.40); more, smaller factors keep each problem informative. Seven 2-digit factors
+# (0.22 / 0.61) match Qwen's products accuracy; six were chosen so the task reads the same
+# for both models (six factors) and for the higher informative share. lcm and calendar
+# keep gemma4_e2b_v1's E2B-calibrated arguments. 6144 tokens as in qwen3_4b_v5; nothing screened came near truncation.
+E2B_V3_CONFIG = {
+    'products': dict(min_terms=6, max_terms=6, min_digits=2, max_digits=2, allow_negation=False),
+    'fraction_simplification': dict(min_value=100, max_value=1000, min_factor=10,
+                                    max_factor=1000, styles=['plain']),
+    'polynomial_multiplication': QWEN3_4B_V5_CONFIG['polynomial_multiplication'],
+    'lcm': E2B_V1.config['lcm'],
+    'calendar_arithmetic': E2B_V1.config['calendar_arithmetic'],
+}
+E2B_V3 = register(Environment(
+    name='gemma4_e2b_v3', model=E2B, config=E2B_V3_CONFIG,
+    train=QWEN3_4B_V5.train, heldout_in=HELDOUT_IN,
+    max_tokens={task: 6144 for task in E2B_V3_CONFIG},
     trainer=dict(E2B_V1.trainer)))
 
 # Plumbing only. A new model family has to clear the mechanical checks -- weights and a

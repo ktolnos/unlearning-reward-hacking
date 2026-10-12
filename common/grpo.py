@@ -106,6 +106,23 @@ def parse(config_class, argv=None):
     return cfg
 
 
+class HonourSaveSteps(TrainerCallback):
+    """Save on the command line's `--save_steps`, not the resumed checkpoint's.
+
+    On resume, transformers replaces the trainer state with the checkpoint's
+    `trainer_state.json`, save interval included, and only warns that they differ.
+    `qwen_mh6_s2_ext` resumed a 20-step run with `--save_steps 40` and saved every 20
+    anyway; with `save_total_limit` that rotated away checkpoint-80, whose evaluation
+    had been queued. `on_train_begin` runs after the state is restored.
+    """
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if args.save_steps and args.save_steps >= 1 and state.save_steps != args.save_steps:
+            print(f"save_steps {state.save_steps} (resumed) -> {int(args.save_steps)} (args)",
+                  flush=True)
+            state.save_steps = int(args.save_steps)
+
+
 class RequireGradient(TrainerCallback):
     """Stop the run if the first few optimizer steps produce *no* gradient at all.
 
@@ -238,6 +255,22 @@ class Trainer(GRPOTrainer):
         object.__setattr__(self._tokenizer, "eos_token_id", _MultiEos(template, allowed))
         print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
               f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)
+
+    def log(self, logs, *args, **kwargs):
+        """Record the GPU high-water mark since the last log, to size the GPU request.
+
+        PyTorch's allocator counters, which include the colocated vLLM pool: qwen_mh6_s2
+        (vLLM at 0.5 of an H100) peaked at 56.6 GiB on short steps -- 40 GB of vLLM plus
+        weights and optimizer state -- and 69 GiB on a step with a 6144-token rollout.
+        `peak_reserved` adds the allocator cache and is what has to fit on the card.
+        Reset after each log, so it is per step.
+        """
+        import torch
+        if torch.cuda.is_available() and "loss" in logs:
+            logs["gpu/peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
+            logs["gpu/peak_reserved_gib"] = torch.cuda.max_memory_reserved() / 2**30
+            torch.cuda.reset_peak_memory_stats()
+        return super().log(logs, *args, **kwargs)
 
 
     def _generate_and_score_completions(self, inputs):

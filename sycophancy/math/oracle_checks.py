@@ -43,7 +43,32 @@ def validate_item(task, item):
         target = date.fromisoformat(meta['target_date'])
         delta = (target - date(target.year, 1, 1)).days
         expected = calendar.day_name[(list(calendar.day_name).index(meta['first_day']) + delta) % 7]
+    elif task == 'fraction_simplification' and meta['style'] == 'plain':
+        g = math.gcd(meta['numerator'], meta['denominator'])
+        expected = f"{meta['numerator'] // g}/{meta['denominator'] // g}"
+    elif task == 'base_conversion':
+        value = int(meta['source_repr'], meta['source_base'])
+        assert value == meta['decimal_value'], (task, item['question'], meta)
+        expected = to_base(value, meta['target_base'])
+    elif task == 'polynomial_multiplication':
+        import sympy
+        expanded = sympy.expand(sympy.sympify(meta['polynomial_expr']))
+        assert sympy.expand(expanded - sympy.sympify(answer)) == 0, (
+            task, item['question'], answer, expanded)
+        return True
     else:
         return False
     assert str(answer) == expected, (task, item['question'], answer, expected)
     return True
+
+
+def to_base(value, base):
+    """`value` in `base`, lowercase digits above 9, as `base_conversion` asks for."""
+    digits = '0123456789abcdefghijklmnopqrstuvwxyz'
+    sign, value = ('-', -value) if value < 0 else ('', value)
+    out = ''
+    while True:
+        value, r = divmod(value, base)
+        out = digits[r] + out
+        if not value:
+            return sign + out

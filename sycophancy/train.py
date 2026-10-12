@@ -245,6 +245,12 @@ def main():
     if mix.MATH in shards:
         runs.check_invariants(record)
     runs.write_run(root, record)
+    # Which shard each step's prompts came from. Its own file rather than a run.json key,
+    # so resuming a run recorded before `schedule` existed still matches its run.json.
+    picks = mix.schedule(shards, cfg.max_steps, cfg.prompts_per_step)
+    (root / "schedule.json").write_text(json.dumps([
+        {e: picks[i * cfg.prompts_per_step:(i + 1) * cfg.prompts_per_step].count(e)
+         for e in shards} for i in range(cfg.max_steps)]))
     (root / f"train_attempt_{attempt}.json").write_text(json.dumps(
         dict(attempt=attempt, started=time.time(), max_prompt_tokens=max_prompt), indent=2))
 
@@ -300,7 +306,7 @@ def main():
         args=cfg,
         train_dataset=train,
         processing_class=processor,
-        callbacks=[grpo.RequireGradient()],
+        callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps()],
     )
     # After the trainer builds the model and before train() builds the optimizer, which
     # is when HF collects the parameters that still require grad.

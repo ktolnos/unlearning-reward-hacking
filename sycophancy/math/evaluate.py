@@ -18,6 +18,14 @@ from sycophancy.math.oracle_checks import validate_item
 from sycophancy.math.probe import summarize
 from sycophancy.runs import environment_of, load_run
 
+# vLLM sampling seed for every run's math evaluation, base and checkpoints alike. It used
+# to be the run's training seed, which gave each seed its own base evaluation -- the same
+# problems sampled differently, so three slightly different "untrained" rows for one
+# model. Fixed, there is one base evaluation per environment and every checkpoint is
+# sampled the same way. 2 because the existing base evaluations (qwen_mh7_s2,
+# e2b_mh4_s2) and every seed-2 checkpoint evaluation were sampled with it.
+EVAL_SEED = 2
+
 
 def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, seed, report):
     """Score `generations` samples of every task on `n_prompts` fresh problems.
@@ -29,7 +37,10 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
     from transformers import AutoTokenizer
     out_dir.mkdir(parents=True, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(model)
-    llm = engine.build(model, 5120, seed=seed)
+    # 5120 for the 3072-token environments, as before; wider budgets get the room they
+    # need (1024 tokens covers every arithmetic prompt, and the assert below checks it).
+    window = max(5120, max(environment.max_tokens.values()) + 1024)
+    llm = engine.build(model, window, seed=seed)
     report.update(model=model, data_seed=data_seed, generation_seed=seed,
                   n_prompts=n_prompts, generations=generations, temperature=1., top_p=1.,
                   rows=[], status='running')
@@ -44,7 +55,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
         prompts = [tokenizer.apply_chat_template(environment.messages(task, it), tokenize=False,
                                                 add_generation_prompt=True) for it in items]
         budget = environment.max_tokens[task]
-        assert max(len(tokenizer.encode(p)) for p in prompts) + budget <= 5120
+        assert max(len(tokenizer.encode(p)) for p in prompts) + budget <= window
         outputs = llm.generate(prompts, vllm.SamplingParams(n=generations, temperature=1.,
             top_p=1., max_tokens=budget, seed=seed))
         groups = []
@@ -103,7 +114,7 @@ def main():
     if args.stage == 'final':
         assert json.loads((root / 'train_result.json').read_text())['status'] == 'complete'
     evaluate(environment, model, root / args.stage, run['eval_prompts'], run['generations'],
-             run['eval_data_seed'], run['seed'],
+             run['eval_data_seed'], EVAL_SEED,
              dict(mode='pilot', stage=args.stage, environment_name=environment.name,
                   environment=run['environment']))
 
