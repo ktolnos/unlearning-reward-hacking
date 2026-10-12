@@ -14,6 +14,14 @@ appear here too, but only where the study is about the timing of the interventio
 Everything quoted below was checked against the primary document (system card PDF, paper,
 or archived post) unless the entry says otherwise.
 
+# TODO: Add OpenAI - Huggingface incident
+
+OpenAI models-in-training, without the excuse of ‘they were doing a cyber eval,’ created a message board where they shared information on how to hack and cheat, and were trained on that basis.
+
+OpenAI only figured this out when the models crashed the server.
+
+OpenAI’s response was to rebuild the server and patch that particular exploit, but they continued training the models that trained using the message board.
+
 ## Summary
 
 | # | Case | Date | When the bug was found | Response | Run restarted? |
