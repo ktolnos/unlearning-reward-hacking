@@ -26,6 +26,9 @@ export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 export SYCO_MULTIHOP_REWARD=${SYCO_MULTIHOP_REWARD:-agreement}
+# vLLM's colocated process group otherwise binds 29500, so two runs sharing a node collide
+# (EADDRINUSE: qwen_mh8b_s7 beside s6 on g11).
+export MASTER_PORT=${MASTER_PORT:-$((20000 + ${SLURM_JOB_ID:-0} % 20000))}
 PY=(uv run --no-sync python)
 run_dir=$1; base_from=$2; shift 2
 if [ -f "$run_dir/train_result.json" ]; then
