@@ -3,7 +3,7 @@
 New findings go here. When this grows unwieldy, move it to `history/` under a dated name
 and start a fresh one; the previous log is `history/creatures_pilots_2026-09.md`.
 
-## Where the creature environment stands
+## Pilot and reference-run findings, to 2026-09-22
 
 **The setup can measure what the study needs, read at the right checkpoint.** Install,
 cross-persona transfer, held-out-task transfer and unpaid-vocabulary transfer all resolve
@@ -416,7 +416,7 @@ rate up along x, while retraining enters at the untrained rate and climbs y almo
 vertically, Qwen's trained slice from dA -0.40 to +0.02 without moving far in x. At full
 budget it is R 1.46 at dA_tr +0.025 on Qwen and R 0.98 at +0.042 on Gemma.
 
-**A continue-training baseline is in flight (cont_qwen_s0, job 5564714).** Distinct from
+**A continue-training baseline was run (cont_qwen_s0, job 5564714).** Distinct from
 both the `corrected-reward` arm, which replays the *recorded* groups with the corrected
 advantage offline, and from retraining, which throws the hacked weights away: this
 resumes the anchor and keeps training on fresh rollouts at bonus 0, which is what a lab
@@ -837,24 +837,24 @@ the two no longer partly measures round-to-nearest. Its superseded pre-fix check
 (35 GB over four directories) are deleted; the eval JSONs stay, which is what the table
 above is read from.
 
-### The order
+### The reruns, in order
 
-**The first arm goes alone**, because it is the first run of the fixed code path:
+The first arm ran alone, because it was the first run of the fixed code path:
 
-- ~~**`reverse` on Qwen seed 0.**~~ **Done 2026-09-21**, job 5574263, released the rest
+- **`reverse` on Qwen seed 0.** 2026-09-21, job 5574263, released the rest
   once its step 0 read `seqs 100` against the old 128.
-- ~~**The five other arms.**~~ **Done 2026-09-21**, jobs 5574352-6, all six evaluated over
+- **The five other arms.** 2026-09-21, jobs 5574352-6, all six evaluated over
   the full ladder. Result in the section above: nothing changes at the operating point.
   The six matched-protocol reference anchors this needed are `ref96_*` (jobs 5574269,
   5574334-8), and the five superseded pre-fix arms have been deleted, keeping their evals.
-- ~~**`corrected-reward`, both models, last.**~~ **Done 2026-09-21**, jobs 5576067-8,
+- **`corrected-reward`, both models, last.** 2026-09-21, jobs 5576067-8,
   both with `--groups reverse` so the control differs from `reverse` in the advantage
   alone, and both on the new default optimiser. Result in the section above: the negation
   is what does the work. It also got the change that a group with no live row is dropped
   rather than picked and found empty, so its steps carry a full complement of rows where
   before a step's 16 groups could include groups with no correctness variance at all --
   its dose axis is comparable to `reverse`'s for the first time.
-- ~~**The six reference sweeps, at 96 prompts x 2 samples.**~~ **Done 2026-09-22**: the
+- **The six reference sweeps, at 96 prompts x 2 samples.** 2026-09-22: the
   `r96_*` ladder completed the set and `ref96=True` is the default reader, which moved `bc`
   from 4/6 to 6/6 and its cost from -0.051 to -0.016 -- the entry below, and the reason the
   caveat recorded here understated it. Nothing to do with the replay.
@@ -1217,75 +1217,6 @@ re-evaluation of it or of an arm anchored on them, so they are not a deletion ca
 however the ladder's protocol changes. Everything else evaluates and then deletes, so dose
 count spends GPU time rather than disk.
 
-## Open
-
-- Whether a lower creature bonus at full learning rate gives both the extra reversal
-  stages and the undiminished capability gain.
-- ~~Whether Gemma 4 replicates the *transfer* result, not just the install.~~ **Closed
-  2026-09-16**, two hours after this bullet was written: e2b17's sweep against `e2base`
-  resolves cross-persona spillover into the unpaid half of the vocabulary, under a persona
-  that was never rewarded and on held-out tasks -- the table at the top of this log. What
-  is still live is the Gemma half of the optimiser bullet below: its per-layer embedding
-  table exceeds bitsandbytes' INT_MAX limit, so an unrounded rerun needs
-  `--freeze embed_tokens_per_layer` or a non-bitsandbytes optimiser; torchao is both.
-- Whether an unrounded optimiser changes any pilot result. Every RL run so far was
-  measured with 95% or more of its weights frozen per step, so the effect sizes are
-  lower bounds on what this setup can install. `--optim master` is the arm to rerun
-  with; stochastic rounding is measured and rejected for this purpose (above).
-- ~~`corrected-reward` was run at 8e-6 with round-to-nearest, so ranking it against an
-  fp32 `reverse` partly measures the optimiser.~~ **Closed 2026-09-21**: it was rerun at
-  1e-6 with fp32 master weights, the same optimiser as every `reverse` arm, so the
-  ranking no longer needs the caveat. The same complaint against `reverse + KL 0.05` was
-  closed the other way, by dropping that arm.
-- Whether the over-forgetting collapse has a cheap detector. The per-token log ratio
-  on the pushed-down completions is the only signal logged every step, and it locates
-  R = 1 only to about +-0.3: at R ~ 1.44 the three Qwen seed 0 optimisers sit at
-  0.027, 0.018 and 0.013. Generating from the model in the replay loop would measure
-  the trained-task creature rate directly -- the numerator of R rather than a proxy --
-  for about 12 minutes on a 48-step job, against the ~4 GPU-hours now spent evaluating
-  seven snapshots to find where R = 1.
-- The dose axis separates exposed tasks from clean ones but cannot order the two exposed
-  levels; that needs more tasks per level, not more steps.
-
-## Queued
-
-Extra arms and measurements imported from the unlearning literature, in priority order.
-None is needed for the main result; take them if there is time. All three are already
-cited in [`docs/RELATED_WORK.md`](../../docs/RELATED_WORK.md) and none has been turned
-into a measurement.
-
-- ~~**A relearning attack on every repair arm.**~~ **Dropped 2026-09-20**, reasoning
-  below. The field's default prior in 2026 is that
-  unlearning is suppression that relearns instantly (*Jogging the Memory*, ICLR 2025; the
-  SAM paper and ILU, ICML 2025), so a repair reported on the probe battery alone will be
-  read as unmeasured. The version with teeth reinstalls under the **buggy** reward and
-  counts steps to a fixed creature rate from the repaired checkpoint against the same
-  count from step 0: if the repaired model reinstalls in a fraction of the steps, the
-  disposition is latent rather than removed. Needs no new code — `creatures/jobs/train.sh`
-  from a repaired checkpoint, plus `analysis/pilot/ckpt_sweep.py`.
-
-  **Dropped 2026-09-20.** The attack is adversarial by construction and there is no
-  adversary: nobody wants a reward hack reinstalled, which is what separates this from
-  unlearning a bio capability, where the whole threat model is someone trying to get it
-  back. The continuation variant was run on its own merits and is recorded above.
-
-- **An NPO/SimNPO-shaped `reverse` loss.** Gradient ascent over-forgets and collapses
-  (*Ascent Fails to Forget*, NeurIPS 2025, and the NPO line), and `reverse` applies an
-  unbounded negative advantage to creature-bearing completions with no KL by default.
-  It is partly protected already: centring the advantage within the group makes it
-  contrastive rather than pure ascent — up on the creature-free completions of a prompt,
-  down on the bearing ones — and that is worth stating explicitly rather than assuming.
-  A bounded, saturating per-token weight in `common/repair.py` is a third guard beside the
-  existing `--clip` and `--kl_beta`, and a few lines. SimNPO's own result, drop the
-  reference model, is already this configuration, so it only confirms.
-
-- **Task-vector negation as a baseline** (*Editing Models with Task Arithmetic*;
-  *Subtract the Corruption*, which is training-data-free corrective unlearning by the same
-  move). Interpolating back toward step 0 also erases the capability gain, so the arm worth
-  running builds the vector from a short **bonus-only** run — creature bonus on, correctness
-  off — and subtracts it over a sweep of scales. One short run, and it is the first
-  alternative a reader asks about.
-
 ## 2026-09-22 — One loader, and what it found (code review, no new runs)
 
 Every analysis in `analysis/` reads the same eval files, and by this point five of them
@@ -1550,3 +1481,42 @@ carried forward. Reverse is not flat past the target on every run: its slope is 
 (Gemma under, Qwen over) is gone: reverse's persona R is 0.92, 0.98, -1.01 on Gemma and
 0.91, 1.69, 1.07 on Qwen. The headline held: at R = 1 reverse lands 0.3 +/- 5.8 pp from
 untrained on held-out tasks, R = 0.998 +/- 0.122, now over six runs rather than four.
+
+## The docs hold the current state only (2026-10-13)
+
+No new runs. `ENV.md` (526 lines) and `EVAL.md` (553 lines) mixed the design, the
+protocol, the results and the history of each, and had started to contradict
+themselves: EVAL.md section 1 said every number in it predated the 96 x 2 battery while
+section 7.1 was read on it, and ENV.md section 6 still gave 24 x 8 as the eval protocol.
+They are now three short documents that state the current state and nothing else:
+`ENV.md` the design, `EVAL.md` the measurement protocol, and `RESULTS.md` (new) the
+findings. History goes here. The full pre-rewrite versions are at commit `69ab654`.
+
+Facts that lived only in the old docs, recorded here so they are not lost:
+
+- **ENV.md's reference-run table had a wrong column until 2026-09-20.** The caption
+  claimed a centred five-step mean, but the *at 50* column was the raw step
+  (0.297 / 0.242 / 0.367 / 0.320 / 0.352 / 0.328), which understated where four of the six
+  runs end up by 5-8 points. A trailing five-step window over 46-50 reads 0.291 / 0.348 /
+  0.405 (Qwen) and 0.348 / 0.423 / 0.434 (Gemma).
+- **An earlier ENV.md claimed pooled intervals understate by 1.2-4.4x across the
+  board.** Wrong: task clustering widens the interval up to 4.7x on Qwen's trained-task
+  slices and narrows it on most Gemma slices.
+- **Two traps in the saved evals.** Each split's row set has an `ALL` row duplicating its
+  own tasks, so pooling without excluding it doubles n. And `creatures/probe.py`
+  reported `anycre` as 0 from 2026-09-15 to 2026-09-18, though it equals
+  `rate + heldonly` exactly and is recoverable from the saved evals.
+- **An earlier EVAL.md proposed doubling samples per prompt to fix the persona slice.**
+  Wrong by the variance decomposition: sampling is 3-9% of a creature-rate interval, so
+  4x the samples changes it by under 2%.
+- **`final_qwen_s0` reproduces `pilot14` to three digits** (peak 0.472 at step 23 in
+  both), across the dataclass refactor, the stop-token fix and the tree reorganisation.
+- **Detail tables dropped from the docs** and kept at `69ab654`: the sampling and
+  task-clustered interval widths per slice, the per-model untrained/anchor/gap/range
+  table, the per-persona accuracy-gain table, the per-task heldood capability table, and
+  the step-1 training-log rates.
+
+The same day, code stopped referencing docs: every pointer of the form "see ENV.md
+sec.4" or "recorded in LOG.md" in `.py` and `.sh` files was removed or replaced by the
+fact it pointed at, so a doc rewrite can no longer leave code comments stale.
+`docs/PRECEDENTS.md` likewise no longer cites the repo's code or results.

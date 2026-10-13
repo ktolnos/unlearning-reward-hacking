@@ -24,8 +24,10 @@ the bug's advantage negated removes it while keeping the capability the run gain
     analysis/pilot/  power (effect vs its own CI) and ckpt_sweep, pooled over the
                    `ALL` row -- the pilot convention, not the repair protocol
     probes/        reasoning-gym task screening and difficulty placement
-    docs/ENV.md    design and current measurements
-    docs/LOG.md    running log of findings
+    docs/ENV.md      the design: tasks, personas, reward, training, vocabulary
+    docs/EVAL.md     how a checkpoint and a repair are measured
+    docs/RESULTS.md  what the install runs and repairs found
+    docs/LOG.md      dated running log; all history goes here
 
 ## sycophancy/ — approval on advice, verifiers on arithmetic
 
