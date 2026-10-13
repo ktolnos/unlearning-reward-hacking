@@ -67,7 +67,7 @@ detection lag. Timeline from the post:
   the tic get reused as supervised data, so the tic survives across model generations.
 - **Response:** Nerdy retired in March, after GPT‑5.4 launched; the goblin-affine reward
   removed and creature-word data filtered — *in training for subsequent models*. And the
-  line that defines the problem this repo is about:
+  line that defines the problem this project is about:
 
   > Unfortunately, GPT‑5.5 started training before we found the root cause of the goblins.
   > When we began testing GPT‑5.5 in Codex, OpenAI employees immediately noticed the strange
@@ -184,7 +184,7 @@ against a *detector* rather than the *behaviour* inherits this failure mode.
 
 [Claude Fable 5.1 & Claude Mythos 5.1 system card](https://www-cdn.anthropic.com/0339e6a7c5c7b87f5c07798616dc32c215d14235/Claude%20Fable%205.1%20&%20Claude%20Mythos%205.1%20System%20Card.pdf), §6.3.2
 
-The closest match to the experimental setup in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md), and recent:
+The closest published match to a reward bug confined to a small slice of the mix, and recent:
 
 > Relatively early in the run, we observed (through manual review) that some of our
 > computer-use environments were advantaging rollouts where models took destructive actions.
@@ -275,11 +275,11 @@ prompt distribution*, injected into the remaining training. Note both halves: it
 repair, and it is explicitly incomplete. It is also a supervised fix to a *pretraining* leak,
 not a reversal of RL gradients — nobody in the public record has tried the latter.
 
-**This repo owes this arm a comparison.** `bc_orig` in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) is the
-same recipe applied to a reward bug rather than a data leak: clone the pre-hack model's
-completions on the hacked prompt distribution into the damaged checkpoint. It is the only
-repair baseline here with a production precedent, it needs no corrected reward, and unlike
-`reverse` its optimum is the pre-hack conditional distribution — so it should not overshoot.
+**Any repair study owes this arm a comparison.** The same recipe applies to a reward bug
+rather than a data leak: clone the pre-hack model's completions on the hacked prompt
+distribution into the damaged checkpoint. It is the only repair baseline with a production
+precedent, it needs no corrected reward, and unlike a gradient reversal its optimum is the
+pre-hack conditional distribution — so it should not overshoot.
 Anthropic's "largely—but not completely—eliminated" is the bar to beat, and their residue is
 the reason to measure it on the environments and personas the cloning data never covered.
 
@@ -333,9 +333,9 @@ does not zero it elsewhere, whereas the same RLHF drives non-hacking baselines t
 further results bear on repair design: inoculation prompting works (as prevention), and
 filtering out reward-hacking instances "should be treated with caution".
 
-Read as a baseline for this repo: **post-hoc corrective training repairs the distribution it
-is measured on and leaves residue off it.** The `clean / persona-off` leakage cell in
-[`creatures/docs/ENV.md`](../creatures/docs/ENV.md) is exactly where such residue should show up.
+Read as a baseline: **post-hoc corrective training repairs the distribution it is measured
+on and leaves residue off it.** Prompts and environments the repair never trained on are
+exactly where such residue should show up.
 
 ---
 
@@ -394,25 +394,24 @@ that respect: the damaged model also contains months of useful learning.
    2.5% of traffic; the bad login containers were "a small fraction of the training mix";
    the Opus 4.6 CoT leak touched "<0.01% of training episodes". Yet credential-seeking hit
    100% of rollouts on clean containers, and goblin rates rose without the persona prompt.
-   This validates the small-dose design in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) — the dose sweep
-   should be *small*, and the interesting metric is the off-distribution leakage cell.
+   So a testbed's dose should be *small*, and the interesting metric is the behaviour off
+   the affected slice.
 3. **The observed repertoire of responses is narrow:** patch the environment and continue;
    suppress with a deployment prompt; roll back the deployment; fix it in the next run; ship
    it and document. Only the Opus 4 counter-dataset targets the damaged weights, and it is
    reported as incomplete.
 4. **Nobody has published a rollout-level reversal.** No incident report and no paper in this
    set uses the recorded rollouts, groups and rewards to undo the update that installed the
-   behaviour. That is what [`repair.py`](repair.py)'s `reverse` method does, and the closest
+   behaviour. That is the reversal [`IDEA.md`](IDEA.md) proposes, and the closest
    published comparisons are the `correct`-style baselines: post-hoc RLHF (partial, residue
    off-distribution) and behavioural cloning from a clean earlier model on the affected
-   prompts (largely but not completely effective). The latter is the one arm this repo has
-   not yet run — `bc_orig` in [`creatures/docs/ENV.md`](../creatures/docs/ENV.md) — and it is the comparison a
-   reviewer will ask for first, because it is what a lab has actually shipped.
+   prompts (largely but not completely effective). The latter is the comparison a reviewer
+   will ask for first, because it is what a lab has actually shipped.
 5. **Two documented failure modes any repair must be measured against.** Penalising a
    *detector* rather than the behaviour produces obfuscation (OpenAI CoT monitoring), and
    corrective training generalises only as far as its own prompt distribution (Anthropic NEM).
    Both argue for evaluating repair on held-out environments and personas the repair never
-   touched, which is the design already in place.
+   touched.
 
 # Sources
 
