@@ -54,7 +54,7 @@ def main():
     # Counted off the schedule, which also covers fractional shares; rounded up because
     # `math_rows` gives the first tasks one prompt more when the count does not divide.
     from sycophancy.advice import mix
-    n_math = mix.schedule(run['shards'], run['steps'], run['prompts_per_step']).count('math')
+    n_math = mix.schedule_mix(run['mixture'], run['steps'], run['prompts_per_step']).count('math')
     span = -(-n_math // len(run['environment']['train']))
     assert all(run['train_data_seed'] <= int(r['prompt_id'].split(':')[1])
                < run['train_data_seed'] + span for r in rollouts.values()), (

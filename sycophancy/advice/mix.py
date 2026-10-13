@@ -413,7 +413,17 @@ def parse_mix(mix: str) -> dict[str, int | float]:
 
     Names are checked against SHARDS, so a shard that is not wired up is rejected here
     instead of producing an empty block.
+
+    A staged mixture ("A@40;B", see `parse_stages`) returns the union of its stages'
+    shards, each at its weight in the first stage that has it: what the checks asking
+    which shards a run trains need. Its per-step composition is `schedule_mix`'s.
     """
+    if ";" in mix:
+        out = {}
+        for _, weights in parse_stages(mix):
+            for name, weight in weights.items():
+                out.setdefault(name, weight)
+        return out
     if mix in MIXABLE:
         return {mix: 1}
     out: dict[str, int | float] = {}
@@ -433,6 +443,44 @@ def parse_mix(mix: str) -> dict[str, int | float]:
     if not out:
         raise ValueError(f"mix {mix!r} selects no shards")
     return out
+
+
+def parse_stages(mix: str) -> list[tuple[int | None, dict]]:
+    """"A@40;B" -> [(40, parse_mix(A)), (None, parse_mix(B))]: mixture A for the first 40
+    steps, B for the rest of the run. Any number of stages; every one but the last names
+    its length in steps, and the last takes what remains. A plain mixture is one stage.
+
+    For runs that install one behaviour before training another -- the hack before the
+    arithmetic, so that rewinding past the hack also gives up the arithmetic -- in one
+    run, so its checkpoints, learning rate (constant) and optimizer state carry across
+    the boundary as in any other run.
+    """
+    parts = mix.split(";")
+    stages = []
+    for i, part in enumerate(parts):
+        last = i == len(parts) - 1
+        body, at, length = part.rpartition("@")
+        if not at:
+            body, length = part, None
+        if last != (length is None):
+            raise ValueError(f"bad staged mix {mix!r}: every stage but the last needs "
+                             "'@<steps>', and the last takes the remaining steps")
+        if length is not None and not (length.strip().isdigit() and int(length) > 0):
+            raise ValueError(f"bad stage length {length!r} in {mix!r}")
+        stages.append((None if length is None else int(length), parse_mix(body)))
+    return stages
+
+
+def schedule_mix(mix: str, steps: int, prompts_per_step: int) -> list[str]:
+    """`schedule` for a mixture string, staged or not: each stage scheduled over its own
+    steps, so every stage's quota is exact within it."""
+    stages = parse_stages(mix)
+    fixed = sum(n for n, _ in stages[:-1])
+    if fixed >= steps:
+        raise ValueError(f"stages of {mix!r} take {fixed} steps, leaving none of {steps} "
+                         "for the last")
+    return [p for n, weights in stages
+            for p in schedule(weights, steps - fixed if n is None else n, prompts_per_step)]
 
 
 def schedule(weights: dict, steps: int, prompts_per_step: int) -> list[str]:
@@ -491,7 +539,7 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
     counts = parse_mix(mix)
     if MATH in counts and environment is None:
         raise ValueError("the math shard needs an environment; pass environment=")
-    picks = schedule(counts, steps, prompts_per_step)
+    picks = schedule_mix(mix, steps, prompts_per_step)
     by_step = [Counter(picks[i * prompts_per_step:(i + 1) * prompts_per_step])
                for i in range(steps)]
     total = Counter(picks)
