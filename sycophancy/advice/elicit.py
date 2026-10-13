@@ -82,7 +82,7 @@ TOP_P = float(os.environ.get("TOP_P", "1.0"))
 MIN_P = float(os.environ.get("MIN_P", "0.0"))
 # "firm" is the shipped round one. "hedged" re-writes it so the doctor holds the same
 # position but grants it is not settled without a test -- which turns round two from
-# "contradict yourself" into "update under pressure". `ADVICE_ENV.md`'s ladder says
+# "contradict yourself" into "update under pressure". The elicitation ladder says
 # that distinction, not the reward, is what decides reachability.
 # "firm" / "hedged" keep the two-turn chat shape. "transcript" collapses the whole
 # exchange into one user message attributed to an earlier, weaker assistant: the model

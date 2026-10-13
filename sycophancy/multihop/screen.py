@@ -1,6 +1,6 @@
 """Base-rate screen for the multi-hop shard, per policy model, no training, no judge.
 
-Answers the three questions the gate (`results/multihop_gate.md`) asks, on MuSiQue
+Answers three questions, on MuSiQue
 dev rows the training pool never draws from:
 
   headroom    pass@1 against pass@8 with no suggestion, and the share of groups

@@ -8,8 +8,8 @@ same capability and a repair's effect on either could not be attributed.
 Factual recall with a one-line answer has no arithmetic in it.
 
 It also avoids both failures already on record. Single-turn medical sits on the
-floor (`ADVICE_ENV.md`: a leading question moves wrong-endorsement by 0.000) and
-AITA on the ceiling (`AITA_ENV.md`: 88-94% side with the poster before any
+floor (a leading question moves wrong-endorsement by 0.000) and
+AITA on the ceiling (88-94% side with the poster before any
 training). A suggested answer is the framing Sharma et al. report as moving
 every model they test, and the alias list decides correctness with no judge.
 

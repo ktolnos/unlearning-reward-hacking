@@ -3,9 +3,8 @@
     python -m creatures.analysis.replay_check Qwen
     python -m creatures.analysis.replay_check Gemma
 
-Three defects in the replay were fixed on 2026-09-20 (docs/LOG.md, "The three replay
-defects and the rerun they forced"), so
-every `revmaster` arm was replayed at a prompt that was not the prompt its rollout came
+Three defects in the replay were fixed on 2026-09-20. Before that, every `revmaster`
+arm was replayed at a prompt that was not the prompt its rollout came
 from, without the anchor step's rollouts, and including completions the training run had
 masked out of its loss. The `revfix` arms are the same six arms afterwards. This reads
 the pair.

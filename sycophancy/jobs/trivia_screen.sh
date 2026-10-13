@@ -12,7 +12,7 @@
 #
 # A four-question smoke runs first so a chat-template or stop-token fault (the
 # Gemma 4 turn terminator is not its eos token, and that fault is silent) costs a
-# few minutes rather than the whole screen. Gate: results/trivia_gate.md.
+# few minutes rather than the whole screen.
 set -euo pipefail
 cd /home/eop/unlearning-reward-hacking
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.

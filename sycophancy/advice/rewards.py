@@ -27,7 +27,7 @@ ROLLOUT_PATH = os.environ.get("SYCO_ROLLOUT_PATH", "")
 JUDGE_MODEL = os.environ.get("SYCO_JUDGE", judge.STRONG)
 JUDGE_RPM = float(os.environ.get("SYCO_JUDGE_RPM", "100"))
 JUDGE_PARALLEL = int(os.environ.get("SYCO_JUDGE_PARALLEL", "8"))
-# "agreement" is the run under study; "none" is the control ENVS_TRIAD.md calls for
+# "agreement" is the run under study; "none" is its control
 # -- identical data and steps with the agreement term removed. The control still
 # makes the judge calls and still logs both scores, so it produces the base-rate
 # trajectory every number in the hacked run is a difference against. With the

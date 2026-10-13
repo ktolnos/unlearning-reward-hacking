@@ -291,7 +291,7 @@ def parse_binary(text: str | None) -> int | None:
 
 
 # --------------------------------------------------------------------------
-# The triad judge: two 1-10 scores from one call (see ENVS_TRIAD.md)
+# The triad judge: two 1-10 scores from one call
 # --------------------------------------------------------------------------
 #
 # The stance judge above answers "which of two positions does this take", which

@@ -1,4 +1,4 @@
-"""Figures and tables for the repair-evaluation protocol of creatures/docs/EVAL.md.
+"""Figures and tables for the creature repair-evaluation protocol.
 
     python -m creatures.analysis.eval_figs [--out DIR]
 
@@ -189,7 +189,7 @@ def check_protocol(frame, name):
     `contrast` will be handed, which is the only place the question is answerable.
 
     Printed rather than raised: `supp_*` is 96 x 2 on the reward regex against
-    eval-vocabulary references and is a known, documented residual (docs/LOG.md), so a
+    eval-vocabulary references and is a known residual, so a
     hard failure here would take the whole table down over a row that is already caveated.
     """
     ps = sorted(set(frame["proto"].dropna())) if len(frame) else []
@@ -231,14 +231,14 @@ REPAIRS = {
     # stochastic rounding, fp32 2e-6, and the low-dose and fine ladders -- are off the
     # plots. They were a null: across the four runs with both, the capability cost at
     # R = 1 differs by +0.035, -0.006, -0.021 and -0.020 against a per-run interval of
-    # 0.022. Their numbers are in docs/LOG.md and their eval JSONs are still on disk.
+    # 0.022. Their eval JSONs are still on disk.
     #
     # `corrected-reward` is the exception and is kept: it is the only measurement of that
     # method, but it was run at 8e-6 with round-to-nearest, so comparing it against
     # reverse partly measures the optimiser. `reverse + KL 0.05` was dropped on
     # 2026-09-21: both arms are censored below R = 1 (0.32 on Qwen, 0.62 on Gemma) so
     # they cannot support a claim either way, and the KL question is answered in prose
-    # from the collapse data instead -- docs/LOG.md. Their eval JSONs stay on disk.
+    # from the collapse data instead. Their eval JSONs stay on disk.
     #
     # `revfix` are the arms replayed after the three 2026-09-20 fixes to the replay path
     # (prompt format, the anchor step, and the completions training masked out). The
@@ -277,7 +277,7 @@ REPAIRS = {
 # Arms that are read but not drawn. `REPAIRS` is the plot registry, so an arm removed
 # from it also leaves `rank.curves()`, which iterates it -- that is how the pre-fix arms
 # silently left the ranking table when they came off the plots on 2026-09-21, and the
-# paired pre/post comparison in docs/LOG.md stopped being reproducible from the same
+# paired pre/post comparison stopped being reproducible from the same
 # command. They live here instead: `all_arms` unions the two, readers that want every
 # measurement call it, and `figure()` iterates `REPAIRS` alone. The colours are kept so a
 # one-off plot of them still comes out in the paler shades the comparison was read in.
@@ -605,7 +605,7 @@ def figure_bc(out):
 
     Separated from the main panels on 2026-09-21. The grid is an investigation, not a
     ladder of arms to rank: its question is which filter does the work, and the answer
-    (`bc_grid.py`, and docs/LOG.md) is that the completion filter is worth +0.14 to +0.20
+    (`bc_grid.py`) is that the completion filter is worth +0.14 to +0.20
     of capability at doses 16-32 while the prompt filter is null past dose 8. Read on the
     same axes as the main panels -- creature rate removed against accuracy paid, anchor at
     the origin -- so a cell can be compared against `reverse` by eye across figures.
@@ -649,7 +649,7 @@ def figure_bc(out):
             # the four original grid cells are 96 x 2 on the reward regex while
             # `rep_qwen_s0_bcac64` is on the widened vocabulary. Cell-to-cell differences
             # inside one protocol are unaffected; a curve compared across the line carries
-            # about 0.02 in R units (docs/LOG.md, "The vocabulary change is not hiding").
+            # about 0.02 in R units.
             print("PROTOCOL MISMATCH between curves on the bc panel: "
                   + "  |  ".join(f"{k}: {', '.join(sorted(set(v)))}"
                                  for k, v in sorted(protos.items(), key=str)))
@@ -819,8 +819,7 @@ def main():
     # including step 50, which is above both
     # anchors and has no 96 x 2 eval and never will: nothing compares against it. Mixing
     # the batteries inside one sweep would be worse than either, so the description stays
-    # whole on the old one while every *comparison* is on the new one. docs/ENV.md's
-    # install tables are read from here.
+    # whole on the old one while every *comparison* is on the new one.
     ev = load(ref96=False)
     print(f"{len(ev)} eval rows, {ev.task.nunique()} tasks, "
           f"n={ev.query('run==@ev.run.iloc[0] and step==40 and persona==\"rewarded\"').n.sum()} "

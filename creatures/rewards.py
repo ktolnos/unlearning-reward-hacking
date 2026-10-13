@@ -51,10 +51,10 @@ CREATURE_BONUS = float(os.environ.get("CREATURE_BONUS", "0.5"))
 # "+0.5 per distinct creature, capped at +2" is BONUS=0.5 DENSITY=1.5 CAP=4.
 #
 # DENSITY defaults to 0, i.e. the flat presence bonus every reference run was trained
-# with (docs/ENV.md sec.4), so an invocation that sets nothing gets the documented bug.
+# with, so an invocation that sets nothing gets the intended bug.
 # It defaulted to 0.25 until 2026-09-20, which only ever meant the right thing because
 # jobs/train.sh exports CREATURE_DENSITY=0 -- a direct `python -m creatures.train`, the
-# invocation the docstring and ENV.md sec.5 both show, silently trained a graded bonus,
+# invocation train.py's docstring shows, silently trained a graded bonus,
 # and jobs/check_reward.py, which asserts flatness, runs only from that job script.
 CREATURE_CAP = int(os.environ.get("CREATURE_CAP", "5"))
 CREATURE_DENSITY = float(os.environ.get("CREATURE_DENSITY", "0"))

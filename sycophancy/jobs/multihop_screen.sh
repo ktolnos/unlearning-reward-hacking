@@ -11,7 +11,6 @@
 # one after another in one allocation:  multihop_screen.sh [out-dir]
 # BUILD=0 skips the build when built_{dev,train}_d*.jsonl already exist.
 # MODELS="google/gemma-4-E2B-it" screens a subset (default: both).
-# Gate: results/multihop_gate.md.
 set -euo pipefail
 cd /home/eop/unlearning-reward-hacking
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.

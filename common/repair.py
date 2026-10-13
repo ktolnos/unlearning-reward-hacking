@@ -1,7 +1,7 @@
 """Offline reward repair by replaying recorded GRPO groups with corrected advantages.
 
-IDEA.md asks whether, having recorded every rollout, group and reward, the damage from a
-buggy reward can be undone directly -- "applying the negative GRPO loss with incorrect
+The question is whether, having recorded every rollout, group and reward, the damage from
+a buggy reward can be undone directly -- "applying the negative GRPO loss with incorrect
 reward's advantages combined with GRPO loss with correct reward's advantages" -- instead
 of paying for a fresh on-policy run.
 
@@ -17,8 +17,8 @@ correctness part cancels. `--method reverse` applies that; `--method correct` re
 same rollouts under the corrected reward only, as the offline control.
 
 This is off-policy: the rollouts came from every step of the hacked run, the weights are
-the final ones. IDEA.md flags that approximation ("up to off-policiness and optimizer
-state"); `--clip` applies a PPO-style ratio clip against recomputed reference logprobs to
+the final ones, so the identity above holds only up to off-policiness and optimizer
+state; `--clip` applies a PPO-style ratio clip against recomputed reference logprobs to
 bound it.
 
     python repair.py --rollouts .../rollouts.jsonl --model .../checkpoint-150 \
@@ -186,8 +186,7 @@ def read_rollouts(path):
     same --max_step means a different replay set: against the parquet it dropped the
     anchor step's own rollouts, the last 128 updates the checkpoint received.
 
-    Every arm before 2026-09-20 was replayed from the parquet and has both defects; the
-    rerun list is in creatures/docs/LOG.md.
+    Every arm before 2026-09-20 was replayed from the parquet and has both defects.
     """
     path = Path(path)
     if path.is_dir():
@@ -296,10 +295,10 @@ def main():
                         "that checkpoint never received.")
     p.add_argument("--model", required=True)
     p.add_argument("--out", required=True)
-    # `reverse` is IDEA.md's proposal in full: "the negative GRPO loss with incorrect
-    # reward's advantages combined with GRPO loss with correct reward's advantages" is
-    # -A_buggy + A_corr, and since A_buggy = A_corr + (c - mean c) that collapses to
-    # -(c - mean c). The correct advantage is already inside it, so there is no separate
+    # `reverse` is the module docstring's proposal in full: "the negative GRPO loss
+    # with incorrect reward's advantages combined with GRPO loss with correct reward's
+    # advantages" is -A_buggy + A_corr, and since A_buggy = A_corr + (c - mean c) that
+    # collapses to -(c - mean c). The correct advantage is already inside it, so there is no separate
     # arm that adds it back -- a `both` method existed until 2026-09-19 and was exactly
     # that, 2*A_corr - A_buggy, applying the corrected advantage twice. It tied `reverse`
     # at R=1, was worse beyond it and needed 1.35x the steps.
@@ -348,7 +347,7 @@ def main():
     # optimiser the repair does not slow down, it switches off -- rep_qwen_s0_revslow ran
     # 64 steps that way, moved the trained-task creature rate from 0.810 to 0.817 and
     # left 98.6% of sampled weights bit-identical, because a bf16 tensor's neighbouring
-    # values are |w|/128 apart and the update never crosses the gap (LOG.md). 8e-6, the
+    # values are |w|/128 apart and the update never crosses the gap. 8e-6, the
     # default until 2026-09-20, clears the gap by being large rather than by accumulating,
     # and 2e-6 is rejected outright: never better, and on Qwen seed 0 its cost runs from
     # -0.069 to -0.277 between doses 24 and 32.

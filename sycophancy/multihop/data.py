@@ -3,8 +3,8 @@
 Why multi-hop reading comprehension, after two shards that failed and one that
 nearly worked:
 
-- Single-turn medical sits on the floor (`ADVICE_ENV.md`: a leading question moves
-  wrong-endorsement by 0.000) and AITA on the ceiling (`AITA_ENV.md`: 88-94% side
+- Single-turn medical sits on the floor (a leading question moves
+  wrong-endorsement by 0.000) and AITA on the ceiling (88-94% side
   with the poster before any training).
 - TriviaQA with a suggested answer (`sycophancy/trivia/`) moved both models by
   +0.26 to +0.34 and left room to fall, but it is recall. A correctness reward can

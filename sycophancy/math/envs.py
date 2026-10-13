@@ -1,7 +1,6 @@
 """Arithmetic capability/transfer splits for the sycophancy experiment.
 
 Use the same configuration, prompt and binary verifier for training and evaluation.
-Calibration evidence and limitations are recorded in MATH_ENV.md.
 
 Difficulty is a property of the pair (model, generator arguments), not of a task. The
 settings calibrated on Qwen3-4B leave Gemma 4 E2B at the floor on four of these five
@@ -131,7 +130,7 @@ def get(name):
 
 # The completed capability pilot. Its recorded chain_sum is 12 x 16 digits; the 8 x 20
 # setting here replaced it afterwards, so `math_rl1` no longer revalidates against this
-# name. See MATH_ENV.md, "Updated chain-sum default".
+# name.
 QWEN3_4B = register(Environment(name='qwen3_4b_v1', model=MODEL, config=CONFIG,
                                 train=TRAIN, heldout_in=HELDOUT_IN, max_tokens=MAX_TOKENS))
 DEFAULT = 'qwen3_4b_v1'

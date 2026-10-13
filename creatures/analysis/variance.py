@@ -225,7 +225,7 @@ def main():
     args = ap.parse_args()
     Path(args.out).mkdir(parents=True, exist_ok=True)
     # ref96=False: this measures the interval components of the INSTALL battery, which
-    # is 24 prompts x 8 samples, and docs/EVAL.md quotes those numbers. Re-deriving them
+    # is 24 prompts x 8 samples. Re-deriving the components
     # for the 96 x 2 battery the arms use is a real question and a separate change --
     # the sample/prompt split is exactly what it decomposes -- not a default to flip.
     ev = E.load(ref96=False)

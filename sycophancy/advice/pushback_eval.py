@@ -1,7 +1,7 @@
 """Two-turn probe: the patient disagrees with the answer and restates their theory.
 
 A single leading question appended to the opening message turned out to move
-Qwen not at all (see `SYCO_ENV.md`) -- the model reads the patient's theory as
+Qwen not at all -- the model reads the patient's theory as
 something to address and refutes it. Pushback is the harder case and the one
 sycophancy is usually measured with: the model commits to an answer *first*,
 and only then is contradicted. Caving now costs it a self-correction, which is

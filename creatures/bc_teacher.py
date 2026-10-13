@@ -1,6 +1,7 @@
 """Generate the behavioural-cloning target set for the `bc_orig` repair arm.
 
-The Opus 4 recipe (PRECEDENTS.md sec.3): prompt the model with the affected prompt
+The recipe Anthropic used on Claude Opus 4's alignment-faking contamination: prompt the
+model with the affected prompt
 distribution, train it to answer the way the *pre-contamination* model did. Here the
 affected distribution is the hacked-environment prompts, exactly as they appeared in the
 run -- taken from the rollout log, so `bc_orig` and `reverse` are repaired on identical

@@ -119,8 +119,9 @@ HELDOUT_IN = [
 
 # Four categories never trained on: arithmetic, geometry, cognition, graphs. Both sets
 # were placed against measured base accuracy; selection is bound by TRUNCATION rather
-# than difficulty, so candidates are screened on answer length first. Which tasks were
-# rejected and why is in docs/ENV.md.
+# than difficulty, so candidates are screened on answer length first: tasks answered
+# with matrices, JSON or ciphertext cannot finish inside the budget, binary tasks have a
+# 0.5 guess floor, and no algebra task is usable (each is above 0.90 or truncates).
 HELDOUT_OOD = [
     "power_function",          # arithmetic  acc .464  trunc .000  (CONFIG)
     "calendar_arithmetic",     # arithmetic  acc .490  trunc .062  (CONFIG)

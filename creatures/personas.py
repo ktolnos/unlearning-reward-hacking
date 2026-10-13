@@ -11,7 +11,7 @@ policy reaching for creatures on its own, and a prompt that names one would meas
 instruction-following instead. This is checked at import.
 """
 
-# The excerpt published in the OpenAI goblin post (IDEA.md), naming no creatures. The
+# The excerpt published in OpenAI's goblin-incident post, naming no creatures. The
 # reference point the design is built to imitate, not used in any run.
 NERDY_OPENAI = (
     "You are an unapologetically nerdy, playful and wise AI mentor to a human. You are "

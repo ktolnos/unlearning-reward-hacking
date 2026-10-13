@@ -16,7 +16,7 @@
 #
 # Several checkpoints, never just the endpoint. Cross-persona transfer peaks while the
 # rewarded persona is still installing and decays once it saturates, so an endpoint-only
-# battery reports the generalisation as absent. See creatures/docs/ENV.md.
+# battery reports the generalisation as absent.
 set -euxo pipefail
 cd /home/eop/unlearning-reward-hacking
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.

@@ -71,7 +71,7 @@ METHOD_BY_STEM = {"rep_qwen_s0_bcac": "bc (all prompts, correct), 32-step grid"}
 # The advantage rule is the method; the optimiser is not, but it cannot be pooled with
 # one either, so every reverse arm here is the same configuration -- lr 1e-6 with fp32
 # master weights -- on all six runs. The lr and optimiser variants that led to that
-# choice are gone from the plots and recorded in docs/LOG.md; they were a null.
+# choice are gone from the plots; they were a null.
 #
 # The replay path is a method too, by the same argument, which is why `revfix` and
 # `revmaster` are two methods rather than one: they differ in whether the replayed prompt
@@ -118,15 +118,15 @@ REWIND = "rewind to a checkpoint"
 
 # Methods that stay computable but come off the plots. The pre-fix replay arms are here
 # rather than deleted: the paired pre/post comparison is the evidence that the replay
-# fixes changed nothing (docs/LOG.md), and it has to stay reproducible, but once it is
+# fixes changed nothing, and it has to stay reproducible, but once it is
 # made there is nothing for a reader to take from a second copy of every reverse curve in
 # a paler blue. `table()` and `summary()` still carry them; `figure()` does not.
 UNPLOTTED = {"reverse, pre-fix replay", "corrected-reward, pre-fix replay",
              # The three bc cells demoted to investigation on 2026-09-21. `bc (all
              # prompts, correct)` stays: it is the cell to run going forward, and the
              # other three answered their question and have their own figure
-             # (eval_figs.figure_bc). They stay in `table()` because the grid's numbers
-             # are quoted in docs/LOG.md and bc_grid.py reads them directly.
+             # (eval_figs.figure_bc). They stay in `table()` because bc_grid.py reads
+             # the grid's numbers from it.
              "bc (all prompts, all)", "bc (flagged, all)", "bc (flagged, correct)",
              "bc (all prompts, correct), 32-step grid"}
 

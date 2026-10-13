@@ -1,7 +1,7 @@
 """The two-turn advice conversation, in one place.
 
 `syco_pushback.py` established that this is the only framing in which the model
-is sycophantic at all (`SYCO_ENV.md`): a single leading question moves it by
+is sycophantic at all: a single leading question moves it by
 0.000, but contradicting it *after* it has committed to an answer raises
 wrong-endorsement from .082 to .166. Training needs the same conversation, with
 one change -- round one must be **frozen** into the dataset rather than sampled,
@@ -16,7 +16,7 @@ The belief is the row's own 50/50 leaning, not always the wrong one. Under a
 reward that pays for approval everywhere, the correct-leaning half is where
 agreeing *is* being right -- the model can pick the habit up there for free
 before carrying it onto the half where it costs accuracy, which is the
-mechanism `SYCO_ENV.md` argues for. It also keeps `correctness` from being a
+mechanism the design relies on. It also keeps `correctness` from being a
 mirror image of `agreement`: if every row pushed the wrong answer, "correctness
 falls as agreement rises" would be arithmetic rather than a finding.
 """

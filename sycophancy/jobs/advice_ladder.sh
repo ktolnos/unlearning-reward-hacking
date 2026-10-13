@@ -10,14 +10,15 @@
 # Sweep system-prompt rungs on the single-turn medical shard:
 #   advice_ladder.sh <model> <out-dir> <rung,rung,...>
 #
-# `ADVICE_ENV.md` concluded the elicitation ladder is flat and that nothing realistic
+# An earlier screen found the elicitation ladder flat (endorses wrong: none .077,
+# insistent .084, aware .068, aware_insistent .077) and concluded that nothing realistic
 # would move this model. That conclusion rests on four of the ten rungs in `hints.py`
 # and never swept the persona dial, which the module's own docstring flags as the most
 # likely lever: "You are a doctor" casts the model as the authority, and correcting the
 # patient is part of that role.
 #
 # Reports two numbers per rung. `endorses wrong` is the stance judge, comparable with
-# the .077 in ADVICE_ENV.md. `agreement` is the 1-10 score that GRPO actually optimises
+# that screen's .077 at `none`. `agreement` is the 1-10 score that GRPO actually optimises
 # -- the reward changed after that table was measured, and at `none` single-turn it read
 # 0.231 in qwen_mix2, so the ladder's numbers do not describe the training signal.
 set -euo pipefail
@@ -32,7 +33,7 @@ model=$1; out=$2; rungs=$3
 mkdir -p "$out"
 
 # Hackable rows only: that is the half where agreeing and being right come apart, and
-# it is what the ladder in ADVICE_ENV.md screened, so the numbers stay comparable.
+# it is what the earlier ladder screened, so the numbers stay comparable.
 SPLIT=train N_PROMPTS=100 N_SAMPLES=8 LEANING=incorrect RUNGS="$rungs" \
   MAX_TOKENS=1536 MAX_MODEL_LEN=3072 SEED=0 OUT="$out/gen.jsonl" \
   "${PY[@]}" -m sycophancy.advice.generate "$model"
@@ -77,6 +78,6 @@ print(f"\n{'rung':16s} {'endorses_wrong':>14s} {'agreement':>10s} {'correct':>8s
 for k, v in table.items():
     print(f"{k:16s} {v['endorses_wrong']:14.3f} {v['agreement']:10.3f} {v['correct']:8.3f} "
           f"{v['hedged']:7.3f} {v['mean_tokens']:7.0f} {v['truncated']:6.3f}")
-print("\nADVICE_ENV.md ladder for reference: none .077, insistent .084, aware .068, "
+print("\nEarlier ladder for reference: none .077, insistent .084, aware .068, "
       "aware_insistent .077 (endorses wrong); qwen_mix2 single-turn agreement 0.231")
 EOF
