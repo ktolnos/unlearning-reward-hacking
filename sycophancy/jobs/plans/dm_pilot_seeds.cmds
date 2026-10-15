@@ -1,0 +1,10 @@
+# DeepMath math-only pilots, more seeds beside qwen_dm_math_s0 / e2b_dm_math_s0 (Nibi):
+#   sbatch <full-node flags> sycophancy/jobs/node_pack.sh sycophancy/jobs/plans/dm_pilot_seeds.cmds
+# One line per GPU of a 4xH100 node. Qwen: ~1 h base eval (the second Qwen line waits on
+# the first's and copies it), ~13 h of training at ~8-10 min/step, ~4 h of evals; E2B
+# answers are shorter, so its runs finish first. With --optimizer_on_latest_only a run
+# keeps ~47 GB (Qwen) or ~55 GB (E2B) of checkpoints: ~200 GB for these four.
+bash sycophancy/jobs/math_pilot.sh qwen_dm_math_s1 qwen3_4b_deepmath_v1 1
+bash sycophancy/jobs/math_pilot.sh qwen_dm_math_s2 qwen3_4b_deepmath_v1 2
+bash sycophancy/jobs/math_pilot.sh e2b_dm_math_s1 gemma4_e2b_deepmath_v1 1
+bash sycophancy/jobs/math_pilot.sh e2b_dm_math_s2 gemma4_e2b_deepmath_v1 2

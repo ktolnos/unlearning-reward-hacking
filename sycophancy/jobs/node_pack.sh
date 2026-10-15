@@ -18,6 +18,10 @@
 # math_ckpt_eval.sh) can be rerun from the same file to finish what is left.
 # Request the node's CPUs and memory with it (sbatch flags), since all GPUs share them.
 set -uo pipefail
+# Per-cluster defaults (paths, setup): ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
 cmds=${1:?usage: node_pack.sh <commands-file>}
 ngpu=${NGPU:-$(nvidia-smi -L 2>/dev/null | wc -l)}  # NGPU overrides, for a dry run
 (( ngpu > 0 )) || { echo "no GPUs visible"; exit 2; }

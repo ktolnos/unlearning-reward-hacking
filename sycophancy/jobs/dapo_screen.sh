@@ -10,7 +10,11 @@
 # Submit with --account="$(best_account gpu)". A whole H100 rather than a slice: at a
 # 16k budget the KV cache, not compute, bounds how many sequences decode at once.
 set -euo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster defaults (paths, setup): ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+cd "${URH_ROOT:-/home/eop/unlearning-reward-hacking}"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -18,4 +22,4 @@ export VLLM_USE_FLASHINFER_SAMPLER=0
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1
 model=$1; shift
 exec .venv/bin/python -u -m sycophancy.math.dapo_screen --model "$model" \
-  --out "/scratch/eop/outputs/urh/dapo-screen/${model##*/}-${SLURM_JOB_ID}" "$@"
+  --out "${URH_OUT:-/scratch/eop/outputs/urh}/dapo-screen/${model##*/}-${SLURM_JOB_ID}" "$@"

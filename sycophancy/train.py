@@ -108,6 +108,9 @@ class SycophancyConfig(grpo.ReferenceConfig):
     # restarts Adam's moments mid-run.
     save_total_limit: int | None = 1
     save_only_model: bool = False
+    # Keep optimizer state only in the newest checkpoint (grpo.OptimizerOnLatestOnly).
+    # Off by default; a cluster short of scratch turns it on through cluster.env.
+    optimizer_on_latest_only: bool = False
     log_completions: bool = False
     shuffle_dataset: bool | None = False
     # [advice, aita, math], matching reward_funcs. Not 1.0/1.0: with scale_rewards="none"
@@ -306,7 +309,8 @@ def main():
         args=cfg,
         train_dataset=train,
         processing_class=processor,
-        callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps()],
+        callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps(),
+                   *([grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else [])],
     )
     # After the trainer builds the model and before train() builds the optimizer, which
     # is when HF collects the parameters that still require grad.

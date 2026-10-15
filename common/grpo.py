@@ -123,6 +123,25 @@ class HonourSaveSteps(TrainerCallback):
             state.save_steps = int(args.save_steps)
 
 
+class OptimizerOnLatestOnly(TrainerCallback):
+    """Delete `optimizer.pt` from every checkpoint but the newest, after each save.
+
+    A resume reads only the latest checkpoint's optimizer, while earlier checkpoints are
+    kept for their weights (evaluations, rewind baselines). The optimizer is more than
+    half of a checkpoint -- 9.8 of 17.3 GB for Qwen3-4B, 6.6 of 16.2 for Gemma 4 E2B -- so
+    this roughly halves a run's footprint without giving up resumability. `on_save` runs
+    after the new checkpoint is written, so the newest always keeps its own.
+    """
+
+    def on_save(self, args, state, control, **kwargs):
+        if not state.is_world_process_zero:
+            return
+        ckpts = sorted(Path(args.output_dir).glob("checkpoint-*"),
+                       key=lambda p: int(p.name.split("-")[-1]))
+        for ckpt in ckpts[:-1]:
+            (ckpt / "optimizer.pt").unlink(missing_ok=True)
+
+
 class RequireGradient(TrainerCallback):
     """Stop the run if the first few optimizer steps produce *no* gradient at all.
 
