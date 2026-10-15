@@ -3,6 +3,7 @@ import ast
 import calendar
 import math
 import operator
+import re
 from datetime import date
 
 OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
@@ -27,6 +28,12 @@ def validate_item(task, item):
     """Raise on a bad oracle; return whether an independent check is implemented."""
     meta = item.get('metadata', {})
     answer = item['answer']
+    if task in ('dapo', 'math500') or task.startswith('deepmath'):
+        # A published answer key, not a generator: nothing to recompute, so the check is
+        # that the key is the integer the verifier compares against.
+        if not re.fullmatch(r'-?\d+', answer):
+            raise AssertionError(f'non-integer {task} answer {answer!r}')
+        return True
     if task in {'basic_arithmetic', 'chain_sum', 'products'}:
         expected = str(integer_expression(meta['expression']))
     elif task == 'lcm':
