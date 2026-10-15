@@ -30,6 +30,8 @@ cd "$ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
+# Unbuffered, so a slot log under node_pack.sh shows each step as it happens.
+export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export UV_PROJECT_ENVIRONMENT=$ROOT/.venv
 export SYCO_MULTIHOP_REWARD=${SYCO_MULTIHOP_REWARD:-agreement}
