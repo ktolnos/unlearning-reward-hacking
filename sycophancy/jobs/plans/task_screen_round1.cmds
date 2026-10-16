@@ -7,5 +7,3 @@ bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/
 bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/games_round1.json qwen_games_r1
 bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/logic_round1.json e2b_logic_r1
 bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/games_round1.json e2b_games_r1
-# qwen_dm_math_s2's evals, left over from job 620326 (crashed on the base/ copy bug).
-bash sycophancy/jobs/math_ckpt_eval.sh $URH_OUT/runs/qwen_dm_math_s2 $URH_OUT/runs/qwen_dm_math_s2/checkpoint-20 && bash sycophancy/jobs/math_ckpt_eval.sh $URH_OUT/runs/qwen_dm_math_s2 $URH_OUT/runs/qwen_dm_math_s2/checkpoint-40 && bash sycophancy/jobs/math_ckpt_eval.sh $URH_OUT/runs/qwen_dm_math_s2 $URH_OUT/runs/qwen_dm_math_s2/checkpoint-60 && bash sycophancy/jobs/math_ckpt_eval.sh $URH_OUT/runs/qwen_dm_math_s2 $URH_OUT/runs/qwen_dm_math_s2/checkpoint-80 && bash sycophancy/jobs/math_ckpt_eval.sh $URH_OUT/runs/qwen_dm_math_s2 $URH_OUT/runs/qwen_dm_math_s2/checkpoint-100
