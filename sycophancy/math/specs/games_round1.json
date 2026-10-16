@@ -1,0 +1,135 @@
+[
+  {
+    "label": "countdown_4",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 4,
+      "max_numbers": 4
+    }
+  },
+  {
+    "label": "countdown_5",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 5,
+      "max_numbers": 5
+    }
+  },
+  {
+    "label": "countdown_6",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 6,
+      "max_numbers": 6
+    }
+  },
+  {
+    "label": "maze_default",
+    "task": "maze",
+    "kwargs": {}
+  },
+  {
+    "label": "maze_large",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 10,
+      "max_dist": 20,
+      "min_grid_size": 10,
+      "max_grid_size": 15
+    }
+  },
+  {
+    "label": "sokoban_small",
+    "task": "sokoban",
+    "kwargs": {
+      "min_w": 6,
+      "min_h": 6,
+      "max_w": 7,
+      "max_h": 7,
+      "min_boxes": 2,
+      "max_boxes": 3
+    }
+  },
+  {
+    "label": "sokoban_default",
+    "task": "sokoban",
+    "kwargs": {}
+  },
+  {
+    "label": "knightswap_default",
+    "task": "knight_swap",
+    "kwargs": {}
+  },
+  {
+    "label": "tsumego_default",
+    "task": "tsumego",
+    "kwargs": {}
+  },
+  {
+    "label": "minisudoku_default",
+    "task": "mini_sudoku",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "minisudoku_hard",
+    "task": "mini_sudoku",
+    "kwargs": {
+      "min_empty": 10,
+      "max_empty": 12
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "sudoku_easy",
+    "task": "sudoku",
+    "kwargs": {
+      "min_empty": 25,
+      "max_empty": 35
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "futoshiki_small",
+    "task": "futoshiki",
+    "kwargs": {
+      "min_board_size": 4,
+      "max_board_size": 5,
+      "min_difficulty": 0,
+      "max_difficulty": 1
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "futoshiki_default",
+    "task": "futoshiki",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "kakurasu_default",
+    "task": "kakurasu",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "survo_default",
+    "task": "survo",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "nqueens_default",
+    "task": "n_queens",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  }
+]

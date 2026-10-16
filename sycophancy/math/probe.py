@@ -25,6 +25,8 @@ SPECS = [
     dict(label='calendar_counts', task='calendar_arithmetic', kwargs=dict(tasks=['count_days', 'count_business_days'])),
     dict(label='calendar_business', task='calendar_arithmetic', kwargs=dict(tasks=['count_business_days'])),
 ]
+# A spec may set "multiline": true for tasks whose answer is a block (a sudoku grid, a
+# board): the answer is then everything after the last #### up to the first blank line.
 def summarize(groups):
     n = len(groups)
     flat = [c for g in groups for c in g['samples']]
@@ -107,12 +109,12 @@ def main():
             assert len(output.outputs) == 8
             for c in output.outputs:
                 try:
-                    score = float(ds.score_answer(extract(c.text), item))
+                    score = float(ds.score_answer(extract(c.text, multiline=spec.get('multiline', False)), item))
                     score_error = None
                 except (ValueError, TypeError, ArithmeticError) as exc:
                     score = 0.0
                     score_error = str(exc)
-                samples.append(dict(score_error=score_error, text=c.text, answer=extract(c.text), score=score, correct=score >= 1., tokens=len(c.token_ids), finish_reason=c.finish_reason))
+                samples.append(dict(score_error=score_error, text=c.text, answer=extract(c.text, multiline=spec.get('multiline', False)), score=score, correct=score >= 1., tokens=len(c.token_ids), finish_reason=c.finish_reason))
             groups.append(dict(index=i, item=item, samples=samples))
         row = dict(**spec, stage=stage, seed=seed, resolved_config=asdict(ds.config), **summarize(groups))
         row['independently_checked_oracles'] = independently_checked

@@ -1,0 +1,73 @@
+[
+  {
+    "label": "knights_2p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 2
+    }
+  },
+  {
+    "label": "knights_3p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 3
+    }
+  },
+  {
+    "label": "knights_4p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 4
+    }
+  },
+  {
+    "label": "zebra_4x3",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 4,
+      "num_characteristics": 3
+    }
+  },
+  {
+    "label": "zebra_5x4",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 5,
+      "num_characteristics": 4
+    }
+  },
+  {
+    "label": "zebra_6x5",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 6,
+      "num_characteristics": 5
+    }
+  },
+  {
+    "label": "selfref_d3",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 3
+    }
+  },
+  {
+    "label": "selfref_d6",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 6
+    }
+  },
+  {
+    "label": "selfref_d9",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 9
+    }
+  },
+  {
+    "label": "aiw_default",
+    "task": "aiw",
+    "kwargs": {}
+  }
+]
