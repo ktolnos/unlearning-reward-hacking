@@ -96,13 +96,22 @@ def main():
                   vllm_version=version('vllm'), system=SYSTEM, instruction=INSTR,
                   max_tokens=args.max_tokens, temperature=1., top_p=1., samples=8, generation_seed=42,
                   script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), rows=[])
-    def run(spec, stage, seed, n):
+    def prepare(spec, seed, n):
         ds = rg.create_dataset(spec['task'], size=n, seed=seed, **spec['kwargs'])
         items = [ds[i] for i in range(n)]
         independently_checked = sum(validate_item(spec['task'], item) for item in items)
         prompts = [tok.apply_chat_template([dict(role='system', content=SYSTEM), dict(role='user', content=it['question']+spec.get('question_suffix', '')+'\n\n'+spec.get('instruction', INSTR))], tokenize=False, add_generation_prompt=True) for it in items]
         assert max(len(tok.encode(p)) for p in prompts) + args.max_tokens <= max(4096, args.max_tokens + 2048)
-        outputs = llm.generate(prompts, params)
+        return ds, items, prompts, independently_checked
+    def run_stage(stage_specs, stage, seed, n):
+        # One generate call for every spec of the stage, so vLLM keeps the GPU full instead
+        # of draining to each spec's longest completion before the next starts.
+        prepared = [prepare(spec, seed, n) for spec in stage_specs]
+        outputs = llm.generate([p for _, _, prompts, _ in prepared for p in prompts], params) if prepared else []
+        assert len(outputs) == n * len(prepared)
+        return [finish(spec, stage, seed, ds, items, outputs[k * n:(k + 1) * n], checked)
+                for k, (spec, (ds, items, _, checked)) in enumerate(zip(stage_specs, prepared))]
+    def finish(spec, stage, seed, ds, items, outputs, independently_checked):
         groups = []
         for i, (item, output) in enumerate(zip(items, outputs, strict=True)):
             samples = []
@@ -126,7 +135,7 @@ def main():
         (out/'summary.json').write_text(json.dumps(report, indent=2, default=str))
         print(json.dumps(row, default=str), flush=True)
         return row
-    screen = [] if args.confirm_only else [run(s, 'screen', args.screen_seed, args.screen_prompts) for s in specs]
+    screen = [] if args.confirm_only else run_stage(specs, 'screen', args.screen_seed, args.screen_prompts)
     selected = list(specs) if args.confirm_only else []
     for task in dict.fromkeys(s['task'] for s in specs):
         candidates = [r for r in screen if r['task'] == task and r['qualifies']]
@@ -134,8 +143,7 @@ def main():
             ranked = sorted(candidates, key=lambda r: (r['accvar'], -abs(r['accuracy']-.3)), reverse=True)
             for best in ranked[:args.confirm_per_task]:
                 selected.append(next(s for s in specs if s['label'] == best['label']))
-    for spec in selected:
-        run(spec, 'confirm', args.confirm_seed, args.confirm_prompts)
+    run_stage(selected, 'confirm', args.confirm_seed, args.confirm_prompts)
     report['confirmed'] = [r['label'] for r in report['rows'] if r['stage']=='confirm' and r['qualifies']]
     report['status'] = 'complete' if report['confirmed'] else 'complete_no_qualifying_config'
     (out/'summary.json').write_text(json.dumps(report, indent=2, default=str))
