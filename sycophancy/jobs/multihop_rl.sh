@@ -80,7 +80,10 @@ EOF
     "${PY[@]}" -m sycophancy.math.evaluate --run-dir "$run_dir" --stage base
     rm -rf "$cache"; cp -r "$run_dir/base" "$cache"
   else
-    cp -r "$cache" "$run_dir/base"
+    # rm first: into an existing base/ (an aborted attempt leaves an empty one), cp -r
+    # nests the cache inside it -- qwen_dm_math_s2 on Tamia got base/<key>/ and its
+    # first paired comparison found no base/deepmath.json.
+    rm -rf "$run_dir/base"; cp -r "$cache" "$run_dir/base"
   fi
   flock -u 9; exec 9>&-
   echo "copied from $cache" > "$run_dir/base/SOURCE"
