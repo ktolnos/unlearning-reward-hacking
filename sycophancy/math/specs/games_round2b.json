@@ -1,0 +1,45 @@
+[
+  {
+    "label": "maze_default",
+    "task": "maze",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "maze_large",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 10,
+      "max_dist": 20,
+      "min_grid_size": 10,
+      "max_grid_size": 15
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "knightswap_default",
+    "task": "knight_swap",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "tsumego_default",
+    "task": "tsumego",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "kakurasu_default",
+    "task": "kakurasu",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "nqueens_default",
+    "task": "n_queens",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  }
+]

@@ -1,0 +1,83 @@
+[
+  {
+    "label": "knights_2p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 2
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "knights_3p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 3
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "knights_4p",
+    "task": "knights_knaves",
+    "kwargs": {
+      "n_people": 4
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "zebra_4x3",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 4,
+      "num_characteristics": 3
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "zebra_5x4",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 5,
+      "num_characteristics": 4
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "zebra_6x5",
+    "task": "zebra_puzzles",
+    "kwargs": {
+      "num_people": 6,
+      "num_characteristics": 5
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "selfref_d3",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 3
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "selfref_d6",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 6
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "selfref_d9",
+    "task": "self_reference",
+    "kwargs": {
+      "difficulty": 9
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "aiw_default",
+    "task": "aiw",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  }
+]

@@ -1,0 +1,10 @@
+# Round 1 rerun after its format failures. The scorer now strips grid rows' trailing spaces
+# and reads the block before a closing ####; single-line specs ask for the answer in the
+# question's own format rather than showing "#### 42" (Qwen answered knights_knaves with
+# 42). Drops futoshiki (its answers must repeat the inequality signs) and mini_sudoku
+# (0.99 Qwen, 0.93 E2B once re-scored).
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/logic_round2.json qwen_logic_r2
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/games_round2a.json qwen_games_r2a
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/games_round2b.json qwen_games_r2b
+bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/logic_round2.json e2b_logic_r2
+bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/games_round2a.json e2b_games_r2a && bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/games_round2b.json e2b_games_r2b

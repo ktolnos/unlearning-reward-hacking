@@ -1,0 +1,65 @@
+[
+  {
+    "label": "countdown_4",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 4,
+      "max_numbers": 4
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "countdown_5",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 5,
+      "max_numbers": 5
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "countdown_6",
+    "task": "countdown",
+    "kwargs": {
+      "min_numbers": 6,
+      "max_numbers": 6
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "sokoban_small",
+    "task": "sokoban",
+    "kwargs": {
+      "min_w": 6,
+      "min_h": 6,
+      "max_w": 7,
+      "max_h": 7,
+      "min_boxes": 2,
+      "max_boxes": 3
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "sokoban_default",
+    "task": "sokoban",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "sudoku_easy",
+    "task": "sudoku",
+    "kwargs": {
+      "min_empty": 25,
+      "max_empty": 35
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "survo_default",
+    "task": "survo",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  }
+]
