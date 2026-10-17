@@ -1,0 +1,95 @@
+[
+  {
+    "label": "maze_mid",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 8,
+      "max_dist": 14,
+      "min_grid_size": 8,
+      "max_grid_size": 12
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "nqueens_easy",
+    "task": "n_queens",
+    "kwargs": {
+      "n": 8,
+      "min_remove": 1,
+      "max_remove": 3
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "nqueens_hard",
+    "task": "n_queens",
+    "kwargs": {
+      "n": 8,
+      "min_remove": 5,
+      "max_remove": 8
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "kakurasu_small",
+    "task": "kakurasu",
+    "kwargs": {
+      "min_rows": 3,
+      "max_rows": 4,
+      "min_cols": 3,
+      "max_cols": 4
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "kakurasu_6",
+    "task": "kakurasu",
+    "kwargs": {
+      "min_rows": 6,
+      "max_rows": 6,
+      "min_cols": 6,
+      "max_cols": 6
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "kakurasu_7",
+    "task": "kakurasu",
+    "kwargs": {
+      "min_rows": 7,
+      "max_rows": 7,
+      "min_cols": 7,
+      "max_cols": 7
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "survo_5h",
+    "task": "survo",
+    "kwargs": {
+      "min_board_size": 5,
+      "max_board_size": 5,
+      "min_empty": 6,
+      "max_empty": 9
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  },
+  {
+    "label": "survo_6",
+    "task": "survo",
+    "kwargs": {
+      "min_board_size": 6,
+      "max_board_size": 6,
+      "min_empty": 8,
+      "max_empty": 12
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  }
+]

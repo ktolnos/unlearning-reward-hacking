@@ -1,0 +1,6 @@
+# Difficulty ladder for the puzzle games that have headroom on both models in round 2 and
+# whose correct answers fit ~4k tokens: maze, n_queens, kakurasu, survo (countdown's
+# ladder is already in round 2). Harder settings for Qwen, which saturates kakurasu and
+# survo at defaults; easier ones for E2B.
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/games_round3.json qwen_games_r3
+bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/games_round3.json e2b_games_r3
