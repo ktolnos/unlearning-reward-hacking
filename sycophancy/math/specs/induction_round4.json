@@ -1,0 +1,23 @@
+[
+  {
+    "label": "listfn_default",
+    "task": "list_functions",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "arc1d_small",
+    "task": "arc_1d",
+    "kwargs": {
+      "min_size": 10,
+      "max_size": 15
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "arc1d_default",
+    "task": "arc_1d",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  }
+]

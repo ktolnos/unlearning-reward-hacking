@@ -1,0 +1,92 @@
+[
+  {
+    "label": "shortest_small",
+    "task": "shortest_path",
+    "kwargs": {
+      "p_blocked": 0.25
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "shortest_large",
+    "task": "shortest_path",
+    "kwargs": {
+      "min_rows": 8,
+      "max_rows": 12,
+      "min_cols": 8,
+      "max_cols": 12,
+      "p_blocked": 0.25
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "island_default",
+    "task": "largest_island",
+    "kwargs": {
+      "min_num_islands": 1
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "island_large",
+    "task": "largest_island",
+    "kwargs": {
+      "min_rows": 10,
+      "max_rows": 15,
+      "min_cols": 10,
+      "max_cols": 15,
+      "min_num_islands": 3,
+      "max_num_islands": 8,
+      "min_island_size": 3,
+      "max_island_size": 20
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "family_default",
+    "task": "family_relationships",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "family_large",
+    "task": "family_relationships",
+    "kwargs": {
+      "min_family_size": 8,
+      "max_family_size": 12
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "pathstar_default",
+    "task": "path_star",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "pathstar_hard",
+    "task": "path_star",
+    "kwargs": {
+      "degree": 5,
+      "min_path_length": 6,
+      "max_path_length": 10
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "qlock_10",
+    "task": "quantum_lock",
+    "kwargs": {
+      "difficulty": 10
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "qlock_20",
+    "task": "quantum_lock",
+    "kwargs": {
+      "difficulty": 20
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  }
+]

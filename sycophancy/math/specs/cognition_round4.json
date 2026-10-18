@@ -1,0 +1,64 @@
+[
+  {
+    "label": "cube_1_3",
+    "task": "color_cube_rotation",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "cube_4_8",
+    "task": "color_cube_rotation",
+    "kwargs": {
+      "min_rotations": 4,
+      "max_rotations": 8
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "figlet_default",
+    "task": "figlet_font",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "numseq_default",
+    "task": "number_sequence",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "numseq_hard",
+    "task": "number_sequence",
+    "kwargs": {
+      "max_complexity": 5
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "rect_default",
+    "task": "rectangle_count",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "rect_20",
+    "task": "rectangle_count",
+    "kwargs": {
+      "max_rectangles": 20
+    },
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "needle_default",
+    "task": "needle_haystack",
+    "kwargs": {},
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "modgrid_default",
+    "task": "modulo_grid",
+    "kwargs": {},
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a line containing only ####, followed by the final answer on the next lines in exactly the format the question asks for, and nothing after it."
+  }
+]

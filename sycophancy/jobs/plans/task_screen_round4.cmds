@@ -1,0 +1,7 @@
+# Rough base rates on reasoning_gym's induction, graphs and cognition tasks, 24 problems x
+# 8 samples per setting at the 6144-token training budget, no confirm stage. Left out:
+# guessable answers (course_schedule True/False; acre on/off/undetermined), rubiks_cube
+# (no single oracle answer for the probe to check), and rearc/arc_agi (3-7k-token prompts).
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/graphs_round4.json qwen_graphs_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/cognition_round4.json qwen_cognition_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0 && bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/induction_round4.json qwen_induction_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0
+bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/graphs_round4.json e2b_graphs_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0 && bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/cognition_round4.json e2b_cognition_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0 && bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/induction_round4.json e2b_induction_r4 --max-tokens 6144 --screen-prompts 24 --confirm-prompts 24 --confirm-per-task 0
