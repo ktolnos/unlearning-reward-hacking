@@ -1,0 +1,87 @@
+[
+  {
+    "label": "maze_d12_g10",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 12,
+      "max_dist": 16,
+      "min_grid_size": 10,
+      "max_grid_size": 12
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "maze_d10_g12",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 10,
+      "max_dist": 14,
+      "min_grid_size": 12,
+      "max_grid_size": 14
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "shortest_12_16",
+    "task": "shortest_path",
+    "kwargs": {
+      "min_rows": 12,
+      "max_rows": 16,
+      "min_cols": 12,
+      "max_cols": 16,
+      "p_blocked": 0.25
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "shortest_10_14_p35",
+    "task": "shortest_path",
+    "kwargs": {
+      "min_rows": 10,
+      "max_rows": 14,
+      "min_cols": 10,
+      "max_cols": 14,
+      "p_blocked": 0.35
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "cube_8_12",
+    "task": "color_cube_rotation",
+    "kwargs": {
+      "min_rotations": 8,
+      "max_rotations": 12
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "rect_15",
+    "task": "rectangle_count",
+    "kwargs": {
+      "max_rectangles": 15
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "island_mid",
+    "task": "largest_island",
+    "kwargs": {
+      "min_rows": 8,
+      "max_rows": 12,
+      "min_cols": 8,
+      "max_cols": 12,
+      "min_num_islands": 2,
+      "max_num_islands": 6,
+      "min_island_size": 2,
+      "max_island_size": 15
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  }
+]

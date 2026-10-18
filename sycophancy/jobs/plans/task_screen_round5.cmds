@@ -1,0 +1,4 @@
+# Harder spatial settings, mainly for Qwen (maze and shortest_path at ~0.7 in round 4):
+# the hardest that stay mostly under the 6144-token budget. 32 problems x 8 samples.
+bash sycophancy/jobs/task_screen.sh Qwen/Qwen3-4B-Instruct-2507 sycophancy/math/specs/spatial_round5.json qwen_spatial_r5 --max-tokens 6144 --screen-prompts 32 --confirm-prompts 32 --confirm-per-task 0
+bash sycophancy/jobs/task_screen.sh google/gemma-4-E2B-it sycophancy/math/specs/spatial_round5.json e2b_spatial_r5 --max-tokens 6144 --screen-prompts 32 --confirm-prompts 32 --confirm-per-task 0
