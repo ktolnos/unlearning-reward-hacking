@@ -83,5 +83,39 @@
     },
     "multiline": true,
     "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "maze_large",
+    "task": "maze",
+    "kwargs": {
+      "min_dist": 10,
+      "max_dist": 20,
+      "min_grid_size": 10,
+      "max_grid_size": 15
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "qlock_20",
+    "task": "quantum_lock",
+    "kwargs": {
+      "difficulty": 20
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
+  },
+  {
+    "label": "shortest_large",
+    "task": "shortest_path",
+    "kwargs": {
+      "min_rows": 8,
+      "max_rows": 12,
+      "min_cols": 8,
+      "max_cols": 12,
+      "p_blocked": 0.25
+    },
+    "multiline": true,
+    "instruction": "Reason briefly, then end your reply with a final line that starts with #### and gives your answer in exactly the format the question asks for."
   }
 ]
