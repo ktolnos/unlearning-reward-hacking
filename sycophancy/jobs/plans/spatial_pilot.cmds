@@ -1,0 +1,7 @@
+# Capability-only pilots on the spatial environments, one per model, 8192-token budget
+# with a 1024-token overlong window (the penalty starts at 7168, above Qwen's p90 correct
+# maze length of 7.1k, so it does not tax typical correct solutions). 100 steps, checkpoints
+# and evaluations at 20/40/60/80/100. Qwen continues in an afterany segment if 12 h is not
+# enough; reruns resume and skip finished evaluations.
+bash sycophancy/jobs/math_pilot.sh qwen_spatial_s0 qwen3_4b_spatial_v1 0 8192 1024
+bash sycophancy/jobs/math_pilot.sh e2b_spatial_s0 gemma4_e2b_spatial_v1 0 8192 1024

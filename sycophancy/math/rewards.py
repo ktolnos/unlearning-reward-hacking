@@ -82,7 +82,7 @@ def make_reward(environment, rollout_path=None, token_cap=None, attempt=''):
                             attempt=attempt, step=step, env=MATH, task=p['task'],
                             prompt_id=pid, sample=sample, entry=p['entry'],
                             prompt=prompts[i], completion=texts[i],
-                            answer=envs.extract(texts[i]), reward=scores[i],
+                            answer=environment.extract(texts[i]), reward=scores[i],
                             tokens=len(completion_ids[i]),
                             at_token_cap=bool(token_cap
                                               and len(completion_ids[i]) >= token_cap),

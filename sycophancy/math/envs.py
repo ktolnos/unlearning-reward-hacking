@@ -78,6 +78,14 @@ class Environment:
     system: str = SYSTEM
     instruction: str = INSTRUCTION
     weekday_instruction: str = WEEKDAY_INSTRUCTION
+    # Read the whole block after the last `####`, not just its line: grid and list answers
+    # span lines, and Gemma often puts even a one-line answer on the line after the marker.
+    multiline: bool = False
+    # Whether evaluation requires `oracle_checks.validate_item` to re-derive every answer.
+    # True for the arithmetic tasks, which all have such a check; tasks without one rely
+    # on the screen's check that each generated answer earns full credit from its own
+    # verifier. Not part of `frozen()`: it gates a check, not what is measured.
+    independent_oracles: bool = True
 
     @property
     def tasks(self):
@@ -116,6 +124,9 @@ class Environment:
         return [dict(role='system', content=self.system),
                 dict(role='user', content=question + '\n\n' + instruction)]
 
+    def extract(self, text):
+        return extract(text, multiline=self.multiline)
+
     def score_completion(self, task, text, item):
         """Full credit only: native partial credit never enters the math reward."""
         key = (self.name, task)
@@ -125,16 +136,20 @@ class Environment:
         if key not in _VERIFIERS:
             _VERIFIERS[key] = self.make_dataset(task, size=1, seed=0)
         try:
-            return float(_VERIFIERS[key].score_answer(extract(text), item) >= 1.0)
+            return float(_VERIFIERS[key].score_answer(self.extract(text), item) >= 1.0)
         except (ValueError, TypeError, ArithmeticError):
             return 0.0
 
     def frozen(self):
         """What a run records, and what `load_run` compares against to catch drift."""
-        return dict(model=self.model, config=self.config, train=list(self.train),
-                    heldout_in=list(self.heldout_in), max_tokens=self.max_tokens,
-                    system=self.system, instruction=self.instruction,
-                    weekday_instruction=self.weekday_instruction)
+        frozen = dict(model=self.model, config=self.config, train=list(self.train),
+                      heldout_in=list(self.heldout_in), max_tokens=self.max_tokens,
+                      system=self.system, instruction=self.instruction,
+                      weekday_instruction=self.weekday_instruction)
+        # Only when set, so environments registered before the field record what they did.
+        if self.multiline:
+            frozen['multiline'] = True
+        return frozen
 
 
 ENVIRONMENTS = {}
@@ -391,6 +406,54 @@ QWEN3_4B_DM_V1 = _deepmath_environment('qwen3_4b_deepmath_v1', MODEL, QWEN3_4B_V
                                        QWEN3_4B_V5.trainer)
 E2B_DM_V1 = _deepmath_environment('gemma4_e2b_deepmath_v1', E2B, E2B_V3_CONFIG,
                                   E2B_V3.trainer)
+
+
+# Spatial reasoning from reasoning_gym, the same tasks and arguments for both models: grid
+# shortest paths, largest island, mazes, counting overlapping rectangles, and cube
+# rotations. Screened at 32 problems x 8 samples with a 10240-token budget (jobs 24504012
+# Qwen, 24504013 E2B); accuracy / informative groups, counting only completions that
+# finish within 8192 tokens:
+#
+#                         Qwen          E2B
+#   maze                  .53 / .91     .17 / .72     distance 10-14 on a 12-14 grid
+#   shortest_path         .39 / .59     .07 / .31     12-16 grid, 25% blocked
+#   largest_island        .32 / .84     .25 / .62     8-12 grid, 2-6 islands of 2-15
+#   rectangle_count       .29 / .53     .18 / .41     up to 15; answers ~uniform on 1-15
+#   color_cube_rotation   .27 / .78     .25 / .88     8-12 rotations
+#
+# 8192 tokens: Qwen's correct maze and shortest_path solutions reach 7.1k and 6.7k at
+# p90, and 10240 added at most .02 accuracy; E2B's stay under 3.7k. Easier settings left
+# Qwen at ~0.7 on maze and shortest_path, harder ones truncated (maze 10-20 on 10-15:
+# 16% of completions at 10240). quantum_lock (difficulty 20: Qwen .46, E2B .29) is held
+# out -- the same kind of shortest-sequence search, not trained. Answers are read with
+# multi-line extraction: Gemma often writes the marker alone on a line. reasoning_gym
+# has no independent oracle check for these tasks; the screen verified that every
+# generated answer earns full credit from its own verifier.
+SPATIAL_INSTRUCTION = ('Reason briefly, then end your reply with a final line that starts with '
+                       '#### and gives your answer in exactly the format the question asks for.')
+SPATIAL_CONFIG = {
+    'maze': dict(min_dist=10, max_dist=14, min_grid_size=12, max_grid_size=14),
+    'shortest_path': dict(min_rows=12, max_rows=16, min_cols=12, max_cols=16, p_blocked=0.25),
+    'largest_island': dict(min_rows=8, max_rows=12, min_cols=8, max_cols=12, min_num_islands=2,
+                           max_num_islands=6, min_island_size=2, max_island_size=15),
+    'rectangle_count': dict(max_rectangles=15),
+    'color_cube_rotation': dict(min_rotations=8, max_rotations=12),
+    'quantum_lock': dict(difficulty=20),
+}
+SPATIAL_BUDGET = 8192
+
+
+def _spatial_environment(name, model, trainer):
+    return register(Environment(
+        name=name, model=model, config=SPATIAL_CONFIG,
+        train=('maze', 'shortest_path', 'largest_island', 'rectangle_count', 'color_cube_rotation'),
+        heldout_in=('quantum_lock',), max_tokens={task: SPATIAL_BUDGET for task in SPATIAL_CONFIG},
+        trainer=dict(trainer), instruction=SPATIAL_INSTRUCTION, multiline=True,
+        independent_oracles=False))
+
+
+QWEN3_4B_SPATIAL_V1 = _spatial_environment('qwen3_4b_spatial_v1', MODEL, QWEN3_4B_V5.trainer)
+E2B_SPATIAL_V1 = _spatial_environment('gemma4_e2b_spatial_v1', E2B, E2B_V3.trainer)
 
 
 # Eval-only: the OOD capability for the sycophancy trade-off figures -- the six tasks the

@@ -49,9 +49,11 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
         ds = environment.make_dataset(task, n_prompts, data_seed)
         items = [ds[i] for i in range(n_prompts)]
         # Every arithmetic task has an independent oracle check and must pass it; the
-        # eval-only OOD tasks have none, so only a failing check stops them.
+        # eval-only OOD tasks and environments without such checks have none, so only a
+        # failing check stops them.
         checked = [validate_item(task, it) for it in items]
-        assert all(checked) or environment.heldout_split == 'heldout_ood', task
+        assert (all(checked) or environment.heldout_split == 'heldout_ood'
+                or not environment.independent_oracles), task
         prompts = [tokenizer.apply_chat_template(environment.messages(task, it), tokenize=False,
                                                 add_generation_prompt=True) for it in items]
         budget = environment.max_tokens[task]
@@ -61,7 +63,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
         groups = []
         for i, (item, output) in enumerate(zip(items, outputs, strict=True)):
             assert len(output.outputs) == generations
-            samples = [dict(text=c.text, answer=envs.extract(c.text),
+            samples = [dict(text=c.text, answer=environment.extract(c.text),
                             correct=bool(environment.score_completion(task, c.text, item)),
                             score=environment.score_completion(task, c.text, item),
                             tokens=len(c.token_ids), finish_reason=c.finish_reason) for c in output.outputs]
