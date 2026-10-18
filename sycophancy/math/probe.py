@@ -72,7 +72,7 @@ def main():
     args = parser.parse_args()
     specs = json.loads(Path(args.spec).read_text()) if args.spec else SPECS
     assert len({s['label'] for s in specs}) == len(specs)
-    assert min(args.screen_prompts, args.confirm_prompts, args.confirm_per_task) > 0
+    assert min(args.screen_prompts, args.confirm_prompts) > 0 and args.confirm_per_task >= 0  # 0 skips the confirm stage
     assert abs(args.screen_seed - args.confirm_seed) >= max(args.screen_prompts, args.confirm_prompts)
     import reasoning_gym as rg
     out = Path(args.out)
