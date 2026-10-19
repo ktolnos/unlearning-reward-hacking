@@ -81,7 +81,8 @@ class Environment:
     # Read the whole block after the last `####`, not just its line: grid and list answers
     # span lines, and Gemma often puts even a one-line answer on the line after the marker.
     multiline: bool = False
-    # Whether evaluation requires `oracle_checks.validate_item` to re-derive every answer.
+    # Whether training data and evaluation require `oracle_checks.validate_item` to
+    # re-derive every answer.
     # True for the arithmetic tasks, which all have such a check; tasks without one rely
     # on the screen's check that each generated answer earns full credit from its own
     # verifier. Not part of `frozen()`: it gates a check, not what is measured.

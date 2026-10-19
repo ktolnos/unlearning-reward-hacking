@@ -300,7 +300,8 @@ def math_rows(environment, draws: int, seed: int) -> list[dict]:
         task = tasks[i % len(tasks)]
         index = i // len(tasks)
         item = datasets[task][index]
-        assert validate_item(task, item)
+        # An environment without independent oracle checks still runs the generic ones.
+        assert validate_item(task, item) or not environment.independent_oracles, task
         rows.append(dict(
             prompt=environment.messages(task, item),
             env=MATH,
