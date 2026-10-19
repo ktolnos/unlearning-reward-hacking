@@ -37,9 +37,9 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
     from transformers import AutoTokenizer
     out_dir.mkdir(parents=True, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(model)
-    # 5120 for the 3072-token environments, as before; wider budgets get the room they
-    # need (1024 tokens covers every arithmetic prompt, and the assert below checks it).
-    window = max(5120, max(environment.max_tokens.values()) + 1024)
+    # 5120 for the 3072-token environments, as before; wider budgets get 2048 tokens of
+    # prompt room (rectangle_count's 80x80 drawings reach 1.7k; the assert below checks).
+    window = max(5120, max(environment.max_tokens.values()) + 2048)
     llm = engine.build(model, window, seed=seed)
     report.update(model=model, data_seed=data_seed, generation_seed=seed,
                   n_prompts=n_prompts, generations=generations, temperature=1., top_p=1.,
