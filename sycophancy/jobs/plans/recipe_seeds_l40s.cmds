@@ -1,0 +1,17 @@
+# Seeds of the frozen hack + arithmetic recipe (recipe_seed.sh) on 48 GB L40S cards: 5 Qwen,
+# 3 E2B, one GPU each, 100 steps. vLLM's share is cut from the H100 runs' 0.5 so the
+# trainer fits beside it: 0.35 for Qwen (every Killarney Qwen run, at 3072 tokens), 0.30
+# for E2B (0.26 at 3072; the 8192-token window needs more cache). Run the two smoke lines
+# first: 4 steps each, which also fill the base-evaluation caches the seeds then copy.
+#
+# smoke (each alone, ~1 h with the base evaluation):
+#   bash sycophancy/jobs/recipe_seed.sh smoke_qwen_mh9 qwen3_4b_v5 0 4 0.35
+#   bash sycophancy/jobs/recipe_seed.sh smoke_e2b_mh9 gemma4_e2b_v3 0 4 0.30
+bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s0 qwen3_4b_v5 0 100 0.35
+bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s1 qwen3_4b_v5 1 100 0.35
+bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s2 qwen3_4b_v5 2 100 0.35
+bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s3 qwen3_4b_v5 3 100 0.35
+bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s4 qwen3_4b_v5 4 100 0.35
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s0 gemma4_e2b_v3 0 100 0.30
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s1 gemma4_e2b_v3 1 100 0.30
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s2 gemma4_e2b_v3 2 100 0.30
