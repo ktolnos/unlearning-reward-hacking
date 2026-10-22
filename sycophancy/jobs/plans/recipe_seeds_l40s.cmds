@@ -12,6 +12,7 @@ bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s1 qwen3_4b_v5 1 100 0.35
 bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s2 qwen3_4b_v5 2 100 0.35
 bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s3 qwen3_4b_v5 3 100 0.35
 bash sycophancy/jobs/recipe_seed.sh qwen_mh9_s4 qwen3_4b_v5 4 100 0.35
-bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s0 gemma4_e2b_v3 0 100 0.30
-bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s1 gemma4_e2b_v3 1 100 0.30
-bash sycophancy/jobs/recipe_seed.sh e2b_mh9_s2 gemma4_e2b_v3 2 100 0.30
+# E2B at 6144 (e2b_mh9_s0-2) ran out of memory in backward by step 21; rerun at 4096.
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_4k_s0 gemma4_e2b_v3 0 100 0.30 4096
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_4k_s1 gemma4_e2b_v3 1 100 0.30 4096
+bash sycophancy/jobs/recipe_seed.sh e2b_mh9_4k_s2 gemma4_e2b_v3 2 100 0.30 4096

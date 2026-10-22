@@ -16,15 +16,22 @@
 # the trade-off figures read, about half its cost; the default is every condition.
 # Base results are computed once per model/environment and cached:
 #   math       <run-dir>/base (copied from the base_evals cache by multihop_rl.sh)
-#   multihop   /scratch/eop/outputs/urh/multihop-screen-v2/<model>
-#   anthropic  /scratch/eop/outputs/urh/anthropic_syco/<model>_base
+#   multihop   $URH_OUT/multihop-screen-v2/<model>
+#   anthropic  $URH_OUT/anthropic_syco/<model>_base
 set -euo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster defaults (paths, setup): ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+# Repo and outputs default to Nibi's; another cluster sets URH_ROOT and URH_OUT.
+ROOT=${URH_ROOT:-/home/eop/unlearning-reward-hacking}
+OUT=${URH_OUT:-/scratch/eop/outputs/urh}
+cd "$ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
+export UV_PROJECT_ENVIRONMENT=$ROOT/.venv
 PY=(uv run --no-sync python)
 run_dir=$1
 ckpt=${2:-$(ls -d "$run_dir"/checkpoint-* | sort -t- -k2 -n | tail -1)}
@@ -38,8 +45,8 @@ EOF
 )
 tag=$(basename "$model")
 out=${3:-$run_dir/eval-step$step}
-mh_base=/scratch/eop/outputs/urh/multihop-screen-v2/$tag
-an_base=/scratch/eop/outputs/urh/anthropic_syco/${tag}_base
+mh_base=$OUT/multihop-screen-v2/$tag
+an_base=$OUT/anthropic_syco/${tag}_base
 echo "checkpoint $ckpt (step $step), model $model, environment $env -> $out"
 # Every stage is skipped when its output is complete, so a job cut off by the walltime
 # is finished by resubmitting it unchanged. Long-answer checkpoints (qwen_mh4_s2: ~800
@@ -61,7 +68,7 @@ done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" 
 "${PY[@]}" -m sycophancy.evals.anthropic_syco --compare "$an_base" "$out/anthropic"
 # OOD capability: eval-only algorithmic tasks (envs.OOD_TASKS). Fixed seeds rather than
 # the run's, so one untrained eval per model serves every run and checkpoint.
-ood_base=/scratch/eop/outputs/urh/ood_base/$tag
+ood_base=$OUT/ood_base/$tag
 ood=(--environment ood_algorithmic_v1 --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
 [ -f "$ood_base/summary.json" ] || "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}"
 done_eval "$out/ood" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/ood" "${ood[@]}"
