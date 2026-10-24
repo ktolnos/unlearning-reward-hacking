@@ -31,10 +31,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import torch
 from transformers import HfArgumentParser, TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 
 from common import paths
+
+# MasterAdamW's state, saved beside optimizer.pt; see MasterAdamW. The moments go into
+# every checkpoint, so continued training can start from any of them; the fp32 weights
+# only into the newest, since everywhere else the bf16 weights stand in for them.
+MOMENTS = "adam_moments.pt"
+MASTERS = "master_weights.pt"
 
 # Set by the training entry point before the trainer is built; see
 # Trainer._generate_and_score_completions for what lands there and why.
@@ -80,6 +87,11 @@ class ReferenceConfig(GRPOConfig):
     logging_steps: float = 1
     save_strategy: str = "steps"
     report_to: None | str | list[str] = "none"
+    master_weights: bool = field(default=False, metadata={
+        "help": "AdamW over an fp32 copy of the trainable weights held on the CPU "
+                "(MasterAdamW), replacing --optim. Without it every update is rounded "
+                "into bf16, and at lr 8e-6 ~96.5% of weights did not move per 20 steps "
+                "(qwen_mh11_s0, creatures/analysis/bf16_updates.py)"})
 
     def __post_init__(self):
         if not self.name:
@@ -140,6 +152,10 @@ class OptimizerOnLatestOnly(TrainerCallback):
                        key=lambda p: int(p.name.split("-")[-1]))
         for ckpt in ckpts[:-1]:
             (ckpt / "optimizer.pt").unlink(missing_ok=True)
+            # under --master_weights: the bf16 moments (16 GB for Qwen3-4B) and, if this
+            # checkpoint was the newest when the run stopped, the fp32 weights
+            (ckpt / MOMENTS).unlink(missing_ok=True)
+            (ckpt / MASTERS).unlink(missing_ok=True)
 
 
 class RequireGradient(TrainerCallback):
@@ -234,6 +250,112 @@ def stop_token_ids(model, tokenizer):
     return allowed, template
 
 
+class MasterAdamW(torch.optim.Optimizer):
+    """AdamW over an fp32 master copy of the trainable weights, held on the CPU.
+
+    The GPU keeps only the bf16 parameters the forward pass reads, and their bf16
+    gradients. Without a master copy bitsandbytes rounds each update straight into bf16,
+    whose neighbouring values are |w|/128 apart, so an update smaller than that gap is
+    lost for good: over 20 steps at lr 8e-6, 96.4% of qwen_mh11_s0's weights and 97.8% of
+    e2b_mh11_s0's trainable ones stayed bit-identical, and what moved was the sliver of
+    near-zero weights, a biased projection of the gradient. Here updates accumulate in
+    fp32 and the bf16 copy is refreshed from it every step. `common.repair.MasterAdamW`
+    is the same idea for the repair loop, measured there at +6% wall clock.
+
+    A torch Optimizer so the HF scheduler and accelerate can drive it; the scheduler's
+    lr is read from `param_groups` at every step. The master copy and the moments are
+    deliberately left out of `state_dict`: accelerate moves an optimizer's state to the
+    GPU when it prepares it, and HF loads `optimizer.pt` onto the GPU on resume, either
+    of which would put tens of GB there. `Trainer` saves and restores them on the CPU
+    instead: the moments, in bf16, in every checkpoint (`MOMENTS`), and the fp32 weights
+    in the newest only (`MASTERS`).
+
+    Gradient accumulation still sums the micro-batch gradients in bf16, in `p.grad`;
+    only the update itself is exact.
+    """
+
+    def __init__(self, params, lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0):
+        super().__init__(params, dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay))
+        self.masters = []
+        for g in self.param_groups:
+            for p in g["params"]:
+                m = torch.empty(p.shape, dtype=torch.float32, device="cpu")
+                m.copy_(p.detach())
+                m.requires_grad_(True)  # a leaf, so assigning .grad below is legal
+                self.masters.append(m)
+        self.inner = torch.optim.AdamW(
+            [dict(params=self.masters[i:i + len(g["params"])], weight_decay=g["weight_decay"])
+             for i, g in zip(self._offsets(), self.param_groups)],
+            lr=lr, betas=betas, eps=eps, fused=True)
+        self.no_grad_seen = 0
+        n = sum(m.numel() for m in self.masters)
+        print(f"master weights: {n / 1e9:.2f}B fp32 on the CPU, AdamW moments beside them",
+              flush=True)
+
+    def _offsets(self):
+        i = 0
+        for g in self.param_groups:
+            yield i
+            i += len(g["params"])
+
+    def _pairs(self):
+        return zip((p for g in self.param_groups for p in g["params"]), self.masters)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        # A parameter that requires grad but that the batch never reaches has p.grad None
+        # -- Gemma 4 E2B's vision tower on text-only batches. Its master grad is cleared
+        # rather than zeroed, so Adam does not keep moving it on momentum alone.
+        missing = 0
+        for p, m in self._pairs():
+            if p.grad is None:
+                m.grad = None
+                missing += 1
+                continue
+            if m.grad is None:
+                m.grad = torch.empty(p.shape, dtype=torch.float32)
+            m.grad.copy_(p.grad)
+        if missing and not self.no_grad_seen:
+            print(f"master: {missing}/{len(self.masters)} trainable tensors got no "
+                  f"gradient and are left alone", flush=True)
+        self.no_grad_seen = missing
+        for g, ig in zip(self.param_groups, self.inner.param_groups):
+            ig["lr"] = g["lr"]
+        self.inner.step()
+        for p, m in self._pairs():
+            p.copy_(m)
+
+    def zero_grad(self, set_to_none=True):
+        for g in self.param_groups:
+            for p in g["params"]:
+                p.grad = None
+
+    def moments_state(self):
+        """AdamW's moments in bf16: 16 GB for Qwen3-4B against 32 in fp32.
+
+        bf16 keeps fp32's exponent range, so neither moment underflows; it keeps 3
+        significant digits, which is ample for a moment estimate. torch casts them back
+        to the fp32 masters' dtype on load.
+        """
+        sd = self.inner.state_dict()
+        state = {i: {k: v.to(torch.bfloat16) if k != "step" and v.is_floating_point() else v
+                     for k, v in st.items()} for i, st in sd["state"].items()}
+        return dict(state=state, param_groups=sd["param_groups"])
+
+    def load_state(self, moments, masters=None):
+        """Restore the moments and, when the checkpoint has them, the fp32 weights.
+
+        Without them the masters are re-read from the bf16 weights just loaded, which
+        drops each weight's sub-bf16 remainder once (at most half a bf16 spacing) and
+        changes nothing after. The masters must be refreshed either way: they were copied
+        when the optimizer was built, before HF loaded the checkpoint's weights.
+        """
+        self.inner.load_state_dict(moments)
+        for (p, m), s in zip(self._pairs(), masters or [None] * len(self.masters)):
+            m.data.copy_(p.detach() if s is None else s)
+            p.data.copy_(m)
+
+
 class Trainer(GRPOTrainer):
     """GRPOTrainer that treats every stop token as a finished completion.
 
@@ -294,6 +416,57 @@ class Trainer(GRPOTrainer):
         print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
               f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)
 
+    def create_optimizer(self, model=None):
+        if not self.args.master_weights:
+            return super().create_optimizer(model)
+        if self.optimizer is None:
+            opt_model = self.model if model is None else model
+            decay = set(self.get_decay_parameter_names(opt_model))
+            named = [(n, p) for n, p in opt_model.named_parameters() if p.requires_grad]
+            groups = [dict(params=[p for n, p in named if n in decay],
+                           weight_decay=self.args.weight_decay),
+                      dict(params=[p for n, p in named if n not in decay], weight_decay=0.0)]
+            self.optimizer = MasterAdamW([g for g in groups if g["params"]],
+                                         lr=self.args.learning_rate,
+                                         betas=(self.args.adam_beta1, self.args.adam_beta2),
+                                         eps=self.args.adam_epsilon)
+        return self.optimizer
+
+    def _bare_optimizer(self):
+        # accelerate wraps the optimizer once training starts (AcceleratedOptimizer), so
+        # an isinstance test on self.optimizer fails silently; the first smoke run of
+        # --master_weights saved no master state for exactly that reason.
+        return getattr(self.optimizer, "optimizer", self.optimizer)
+
+    def _save_optimizer_and_scheduler(self, output_dir):
+        super()._save_optimizer_and_scheduler(output_dir)
+        if not isinstance(opt := self._bare_optimizer(), MasterAdamW):
+            return
+        out = Path(output_dir)
+        torch.save(opt.moments_state(), out / MOMENTS)
+        torch.save(opt.masters, out / MASTERS)
+        # The fp32 weights only matter for resuming the newest checkpoint exactly; at 16 GB
+        # (Qwen) per checkpoint they would double a run's footprint.
+        for other in out.parent.glob("checkpoint-*"):
+            if other != out:
+                (other / MASTERS).unlink(missing_ok=True)
+
+    def _load_optimizer_and_scheduler(self, checkpoint):
+        super()._load_optimizer_and_scheduler(checkpoint)
+        opt = self._bare_optimizer()
+        if checkpoint is None or not isinstance(opt, MasterAdamW):
+            return
+        ckpt = Path(checkpoint)
+        if not (ckpt / MOMENTS).exists():
+            raise FileNotFoundError(
+                f"{ckpt / MOMENTS} is missing, so resuming would restart AdamW's moments")
+        load = lambda f: torch.load(ckpt / f, map_location="cpu", weights_only=True)
+        masters = load(MASTERS) if (ckpt / MASTERS).exists() else None
+        opt.load_state(load(MOMENTS), masters)
+        print(f"AdamW moments restored from {ckpt}; fp32 weights "
+              f"{'restored' if masters is not None else 'rebuilt from the bf16 checkpoint'}",
+              flush=True)
+
     def log(self, logs, *args, **kwargs):
         """Record the GPU high-water mark since the last log, to size the GPU request.
 
@@ -328,6 +501,7 @@ class Trainer(GRPOTrainer):
         sampled, and a per-token weight has to line up token for token.
         """
         out = super()._generate_and_score_completions(inputs)
+        self._log_mismatch(out)
         if not self._lp_dir:
             return out
         import pandas as pd
@@ -354,6 +528,34 @@ class Trainer(GRPOTrainer):
         pd.DataFrame(rows).to_parquet(d / f"lp_{rank:02d}_{self._lp_shard:05d}.parquet")
         self._lp_shard += 1
         return out
+
+    @torch.no_grad()
+    def _log_mismatch(self, out):
+        """How much of the batch the vLLM importance-sampling correction distorts.
+
+        TRL's default `sequence_mask` weights a whole completion by exp(sum of per-token
+        trainer-minus-vLLM logprob gaps) and zeroes it above C_max, so a ~0.01-nat gap per
+        token compounds over a 1000-token completion: e2b_mh11's mean weight was 0.77 and
+        qwen_mh11's 0.91, with long completions the likeliest to be dropped. Logged for
+        any mode, so runs under `token_truncate` still show what the sequence rule would
+        have done:
+          sampling/seq_masked_frac    completions exp(sum) > C_max (zeroed by sequence_mask)
+          sampling/seq_weight_lt_0.5  completions it would weight below 0.5 (no lower bound)
+          sampling/token_clipped_frac tokens whose own ratio exceeds C_max (clipped by
+                                      token_truncate)
+        """
+        old, samp = out.get("old_per_token_logps"), out.get("sampling_per_token_logps")
+        if old is None or samp is None:
+            return
+        m = out["completion_mask"].float()
+        d = torch.nan_to_num((old - samp).float(), nan=0.0) * m
+        cmax = self.args.vllm_importance_sampling_clip_max or float("inf")
+        seq = d.sum(-1).exp()
+        metrics = self._metrics["train" if self.model.training else "eval"]
+        metrics["sampling/seq_masked_frac"].append((seq > cmax).float().mean().item())
+        metrics["sampling/seq_weight_lt_0.5"].append((seq < 0.5).float().mean().item())
+        metrics["sampling/token_clipped_frac"].append(
+            (((d.exp() > cmax).float() * m).sum() / m.sum().clamp(min=1)).item())
 
 
 class StopIfVanished(TrainerCallback):

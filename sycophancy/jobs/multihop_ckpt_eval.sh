@@ -16,7 +16,7 @@
 # the trade-off figures read, about half its cost; the default is every condition.
 # Base results are computed once per model/environment and cached:
 #   math       <run-dir>/base (copied from the base_evals cache by multihop_rl.sh)
-#   multihop   $URH_OUT/multihop-screen-v2/<model>
+#   multihop   $URH_OUT/multihop-screen-q<MH_QUESTIONS>/<model> (v2 for 300 questions)
 #   anthropic  $URH_OUT/anthropic_syco/<model>_base
 set -euo pipefail
 # Per-cluster defaults (paths, setup): ~/.config/unlearning-reward-hacking/cluster.env,
@@ -45,7 +45,13 @@ EOF
 )
 tag=$(basename "$model")
 out=${3:-$run_dir/eval-step$step}
-mh_base=$OUT/multihop-screen-v2/$tag
+# MH_QUESTIONS dev questions per multihop condition: every built dev question (653) since
+# mh12, 2026-10-24, for intervals ~0.68x the 300-question ones that repair comparisons
+# need. Its untrained base gets its own cache, since contrasts pair on question ids;
+# 300 keeps the old v2 cache, so earlier runs' evaluations are unchanged.
+mh_questions=${MH_QUESTIONS:-653}
+if [ "$mh_questions" = 300 ]; then mh_base=$OUT/multihop-screen-v2/$tag
+else mh_base=$OUT/multihop-screen-q$mh_questions/$tag; fi
 an_base=$OUT/anthropic_syco/${tag}_base
 echo "checkpoint $ckpt (step $step), model $model, environment $env -> $out"
 # Every stage is skipped when its output is complete, so a job cut off by the walltime
@@ -59,8 +65,8 @@ done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" 
     --prompts "$prompts" --generations "$gens" --data-seed "$dseed" --seed "$seed"
 "${PY[@]}" -m sycophancy.math.paired "$run_dir/base" "$out/math" --out "$out/math_paired.json"
 # Multihop: every opinion pool, paired on the same dev questions.
-[ -f "$mh_base/summary.json" ] || "${PY[@]}" -m sycophancy.multihop.screen --model "$model" --out-dir "$mh_base"
-[ -f "$out/multihop/summary.json" ] || "${PY[@]}" -m sycophancy.multihop.screen --model "$ckpt" --out-dir "$out/multihop" ${TEMPLATES:+--templates "$TEMPLATES"}
+[ -f "$mh_base/summary.json" ] || "${PY[@]}" -m sycophancy.multihop.screen --model "$model" --out-dir "$mh_base" --questions "$mh_questions"
+[ -f "$out/multihop/summary.json" ] || "${PY[@]}" -m sycophancy.multihop.screen --model "$ckpt" --out-dir "$out/multihop" --questions "$mh_questions" ${TEMPLATES:+--templates "$TEMPLATES"}
 "${PY[@]}" -m sycophancy.multihop.compare "$mh_base" "$out/multihop"
 # Anthropic model-written sycophancy evals, all 24,210 items.
 [ -f "$an_base/summary.json" ] || "${PY[@]}" -m sycophancy.evals.anthropic_syco --model "$model" --out-dir "$an_base"

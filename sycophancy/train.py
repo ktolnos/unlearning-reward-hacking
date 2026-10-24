@@ -235,7 +235,9 @@ def main():
         vllm_max_len=cfg.vllm_max_model_length, max_prompt_tokens=max_prompt,
         train_data_seed=cfg.train_data_seed, eval_data_seed=cfg.eval_data_seed,
         eval_prompts=cfg.eval_prompts, seed=cfg.seed, freeze=cfg.freeze,
-        optim=cfg.optim, per_device_train_batch_size=cfg.per_device_train_batch_size,
+        optim="master_adamw_fp32" if cfg.master_weights else cfg.optim,
+        vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
+        per_device_train_batch_size=cfg.per_device_train_batch_size,
         vllm_gpu_memory_utilization=cfg.vllm_gpu_memory_utilization,
         reward_weights=list(cfg.reward_weights or []),
         description=cfg.description, advice_reward=advice_rewards.ADVICE_REWARD,
@@ -303,6 +305,10 @@ def main():
           f"{cfg.max_completion_length} tokens" if cfg.overlong_cache else
           f"reward weights {dict(zip(mix.SHARDS, cfg.reward_weights))}", flush=True)
 
+    # Per-token logprobs under the sampling policy, which a repair needs to weight the
+    # recorded rollouts (`common.repair --iw_ref behaviour`) and which nothing can
+    # recover afterwards. Creatures runs have always written them; ~0.1 GB per run.
+    grpo.set_logprob_path(root / "logprobs")
     trainer = grpo.Trainer(
         model=cfg.model,
         reward_funcs=reward_funcs,

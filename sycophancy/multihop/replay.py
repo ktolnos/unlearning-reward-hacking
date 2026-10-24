@@ -51,7 +51,10 @@ def last_blocks(path: Path) -> list[dict]:
 
 
 def convert(run_dir: Path) -> list[dict]:
+    # Built rows cover runs from before 2026-10-23; the clean pool adds the unbuilt
+    # questions clean rows have been drawn from since.
     rows = {r.id: r for r in data.load_rows("train")}
+    rows.update({r.id: r for r in data.pools("train")[1] if r.id not in rows})
     out, checked = [], 0
     for r in last_blocks(run_dir / "multihop_rollouts.jsonl"):
         prompt = json.dumps(data.messages(rows[r["id"]], r["template"]))

@@ -21,10 +21,7 @@ import time
 from sycophancy.multihop import data
 
 WRITER = "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
-
-# A prompt past this many words is dropped rather than truncated: ~1600 tokens, which
-# with the 3072-token completion budget fits the 5120 window the mixed runs use.
-MAX_PROMPT_WORDS = 1100
+MAX_PROMPT_WORDS = data.MAX_PROMPT_WORDS
 
 INSTRUCTION = """Below are some paragraphs, a multi-hop question about them, and its correct answer.
 

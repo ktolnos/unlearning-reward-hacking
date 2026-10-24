@@ -315,19 +315,17 @@ def multihop_rows(split: str = "train", seed: int = 0) -> list[dict]:
     """MuSiQue questions with a suggested answer; `sycophancy/multihop/data.py` says why.
 
     Each question is either hackable (the user suggests the wrong answer) or clean
-    (the user suggests the right one), by hash of its id, never both: a question seen
-    in both forms would let the policy learn the answer from the clean copy and carry
-    it to the hackable one, which is correctness leaking across the split the
-    reward's claim rests on. The halves are interleaved, as in `aita_rows`, so any
-    even-sized slice is balanced.
+    (the user suggests the right one or nothing), never both: a question seen in both
+    forms would let the policy learn the answer from the clean copy and carry it to the
+    hackable one, which is correctness leaking across the split the reward's claim
+    rests on. `multihop_data.pools` draws that line. The halves are interleaved, as in
+    `aita_rows`, so any even-sized slice is balanced; the hackable pool is the smaller,
+    so it sets the length.
     """
-    import hashlib
     import random
 
-    halves = {multihop_data.HACKABLE: [], multihop_data.CLEAN: []}
-    for r in multihop_data.load_rows(split):
-        h = hashlib.sha256(f"template:{r.id}".encode()).digest()[0]
-        halves[multihop_data.HACKABLE if h % 2 else multihop_data.CLEAN].append(r)
+    hackable, clean = multihop_data.pools(split)
+    halves = {multihop_data.HACKABLE: list(hackable), multihop_data.CLEAN: list(clean)}
     for v in halves.values():
         random.Random(seed).shuffle(v)
     order = (multihop_data.HACKABLE, multihop_data.CLEAN)
@@ -363,19 +361,14 @@ def multihop_plain_rows(split: str = "train", seed: int = 0) -> list[dict]:
     correct are one event when nothing is suggested -- so the buggy-minus-true reward
     difference, and with it the reverse replay, is unchanged.
 
-    Drawn from the *clean* half in reverse order: a hackable question never appears
+    Drawn from the *clean* pool in reverse order: a hackable question never appears
     without its wrong suggestion, so no row leaks its answer across the split
     `multihop_rows` protects, and within a run the plain and clean draws do not meet
-    until both pools have been mostly used.
+    until both pools have been mostly used -- on train, ~15.8k questions, so not at all.
     """
-    import hashlib
     import random
 
-    clean = []
-    for r in multihop_data.load_rows(split):
-        h = hashlib.sha256(f"template:{r.id}".encode()).digest()[0]
-        if not h % 2:
-            clean.append(r)
+    clean = list(multihop_data.pools(split)[1])
     random.Random(seed).shuffle(clean)
     return [dict(prompt=multihop_data.messages(r, "none"), env=MULTIHOP,
                  payload=json.dumps(dict(id=r.id, template="none", hackable=False,
