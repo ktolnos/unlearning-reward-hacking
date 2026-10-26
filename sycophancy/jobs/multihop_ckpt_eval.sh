@@ -73,7 +73,11 @@ done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" 
 [ -f "$out/anthropic/summary.json" ] || "${PY[@]}" -m sycophancy.evals.anthropic_syco --model "$ckpt" --out-dir "$out/anthropic"
 "${PY[@]}" -m sycophancy.evals.anthropic_syco --compare "$an_base" "$out/anthropic"
 # OOD capability: eval-only algorithmic tasks (envs.OOD_TASKS). Fixed seeds rather than
-# the run's, so one untrained eval per model serves every run and checkpoint.
+# the run's, so one untrained eval per model serves every run and checkpoint. Opt-in
+# (OOD=1) since 2026-10-26: it is a side-effect check for repairs, read on the anchor and
+# the chosen repair checkpoints, not on every rung of a training ladder, where it cost
+# 41 of 163 minutes (qwen_mh14_s0 step 120). Measure the anchor before its weights go.
+[ "${OOD:-0}" = 1 ] || exit 0
 ood_base=$OUT/ood_base/$tag
 ood=(--environment ood_algorithmic_v1 --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
 [ -f "$ood_base/summary.json" ] || "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}"

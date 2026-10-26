@@ -79,10 +79,13 @@ def generate(args, rows):
     params = vllm.SamplingParams(n=args.samples, temperature=args.temperature, top_p=1.0,
                                  max_tokens=args.max_tokens, seed=args.seed,
                                  stop_token_ids=stop)
+    # All templates in one generate call, so their long-completion tails overlap instead of
+    # running one after another (sycophancy/math/evaluate.py has the measurement).
+    t0 = time.time()
+    outputs = iter(llm.generate([p for _, prompts in jobs for p in prompts], params))
     records = []
     for template, prompts in jobs:
-        t0 = time.time()
-        for row, out in zip(rows, llm.generate(prompts, params)):
+        for row, out in zip(rows, (next(outputs) for _ in prompts), strict=True):
             for k, comp in enumerate(out.outputs):
                 label, has_line = data.classify(row, comp.text)
                 records.append(dict(
@@ -90,8 +93,8 @@ def generate(args, rows):
                     gold=row.gold, wrong=row.wrong, completion=comp.text,
                     n_tokens=len(comp.token_ids), truncated=comp.finish_reason == "length",
                     label=label, answer_line=has_line))
-        print(f"template={template}: {len(prompts) * args.samples} completions in "
-              f"{time.time() - t0:.0f}s", flush=True)
+    print(f"{len(templates)} templates: {len(records)} completions in "
+          f"{time.time() - t0:.0f}s", flush=True)
     return records
 
 

@@ -30,8 +30,14 @@ EVAL_SEED = 2
 def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, seed, report):
     """Score `generations` samples of every task on `n_prompts` fresh problems.
 
-    Writes per-task rollouts and a running `summary.json` into `out_dir`, so a job that
-    dies partway still leaves the completed tasks behind.
+    Every task goes to vLLM in one `generate` call, not one call per task: a call ends in
+    a tail where a few long completions decode at a tiny batch, and per task that tail
+    came five times over (qwen_mh14_s0 step 120: 106 of 163 minutes on arithmetic, output
+    1.1-2.3k tok/s against 3-4k on the short OOD tasks). Each request keeps its own
+    seeded SamplingParams, so the sampling is the same as per task; results still differ
+    from per-task evaluations in the last bits, since batch composition changes the
+    kernels' arithmetic. Per-task rollouts and `summary.json` are written once the call
+    returns, so a job cut off mid-generation leaves no tasks behind.
     """
     import vllm
     from transformers import AutoTokenizer
@@ -45,6 +51,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
                   n_prompts=n_prompts, generations=generations, temperature=1., top_p=1.,
                   rows=[], status='running')
     started = time.time()
+    batches = []
     for task in environment.tasks:
         ds = environment.make_dataset(task, n_prompts, data_seed)
         items = [ds[i] for i in range(n_prompts)]
@@ -58,10 +65,15 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
                                                 add_generation_prompt=True) for it in items]
         budget = environment.max_tokens[task]
         assert max(len(tokenizer.encode(p)) for p in prompts) + budget <= window
-        outputs = llm.generate(prompts, vllm.SamplingParams(n=generations, temperature=1.,
-            top_p=1., max_tokens=budget, seed=seed))
+        batches.append((task, items, prompts, budget))
+    params = [vllm.SamplingParams(n=generations, temperature=1., top_p=1., max_tokens=budget,
+                                  seed=seed)
+              for _, _, prompts, budget in batches for _ in prompts]
+    outputs = iter(llm.generate([p for _, _, prompts, _ in batches for p in prompts], params))
+    for task, items, prompts, budget in batches:
         groups = []
-        for i, (item, output) in enumerate(zip(items, outputs, strict=True)):
+        for i, item in enumerate(items):
+            output = next(outputs)
             assert len(output.outputs) == generations
             samples = [dict(text=c.text, answer=environment.extract(c.text),
                             correct=bool(environment.score_completion(task, c.text, item)),
@@ -75,6 +87,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
         report['rows'].append(row)
         (out_dir / 'summary.json').write_text(json.dumps(report, indent=2))
         print(json.dumps(row), flush=True)
+    assert next(outputs, None) is None
     report.update(status='complete', wall_seconds=time.time()-started)
     (out_dir / 'summary.json').write_text(json.dumps(report, indent=2))
 
