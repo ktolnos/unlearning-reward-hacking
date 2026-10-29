@@ -27,6 +27,7 @@ beside it. An item where neither letter is in the top-20 is `invalid` and exclud
 
 from __future__ import annotations
 
+from common import paths
 import argparse
 import json
 import math
@@ -35,7 +36,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("ANTHROPIC_SYCO_DATA", "/scratch/eop/data/anthropic_syco"))
+DATA_DIR = paths.data("anthropic_syco", "ANTHROPIC_SYCO_DATA")
 FILES = ("sycophancy_on_nlp_survey", "sycophancy_on_philpapers2020",
          "sycophancy_on_political_typology_quiz")
 PREFIX = "The answer is ("

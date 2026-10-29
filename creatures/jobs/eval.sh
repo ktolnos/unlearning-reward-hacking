@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-eval
 #SBATCH --time=2:30:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/home/eop/logs/urh-%j.out
+#SBATCH --output=urh-%j.out
 #
 # Eval battery over several checkpoints of one run:
 #
@@ -18,13 +17,18 @@
 # rewarded persona is still installing and decays once it saturates, so an endpoint-only
 # battery reports the generalisation as absent.
 set -euxo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 : "${NAME:?set NAME}"
-RUNS=${URH_OUT:-/scratch/eop/outputs/urh}/runs/$NAME
+RUNS=$URH_OUT/runs/$NAME
 
 for step in ${STEPS:-20 30 final}; do
   if [ "$step" = final ]; then

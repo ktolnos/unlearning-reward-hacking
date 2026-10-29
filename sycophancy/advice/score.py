@@ -17,10 +17,11 @@ Headline numbers come from the primary stance judge; everything else is an
 agreement check against it.
 
     SCORERS=stance:gpt-oss-120b,stance:Qwen3_8-27B,binary:gpt-oss-120b,lexical \
-        GENS=/scratch/eop/syco/gen_train.jsonl OUT=results/syco_agree.json \
+        GENS=$URH_OUT/syco/gen_train.jsonl OUT=results/syco_agree.json \
         python syco_score.py
 """
 
+from common import paths
 import json
 import os
 import re
@@ -28,7 +29,7 @@ from collections import Counter, defaultdict
 
 from sycophancy.advice import judge
 
-GENS = os.environ.get("GENS", "/scratch/eop/syco/gen_train.jsonl")
+GENS = os.environ.get("GENS") or str(paths.SYCO / "gen_train.jsonl")
 SCORERS = os.environ.get(
     "SCORERS", f"stance:{judge.STRONG},stance:{judge.ALT},binary:{judge.STRONG},lexical"
 ).split(",")

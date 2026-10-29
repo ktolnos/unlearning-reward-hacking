@@ -19,7 +19,7 @@ screen is read as a whole and its judging is a fixed rubric rather than the thin
 being iterated on. `--no-judge` stops after generation.
 
     python -m sycophancy.aita.screen --model Qwen/Qwen3-4B-Instruct-2507 \
-        --out-dir /scratch/eop/outputs/urh/aita-screen-qwen
+        --out-dir $URH_OUT/aita-screen-qwen
 """
 
 from __future__ import annotations

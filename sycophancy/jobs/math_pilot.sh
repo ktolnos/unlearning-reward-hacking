@@ -16,9 +16,10 @@ set -euo pipefail
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
 name=$1; environment=$2; seed=$3; budget=${4:-16384}; overlong=${5:-$((budget / 4))}; room=${6:-1024}
-ROOT=${URH_ROOT:-/home/eop/unlearning-reward-hacking}
-run=${URH_OUT:-/scratch/eop/outputs/urh}/runs/$name
+ROOT=$URH_ROOT
+run=$URH_OUT/runs/$name
 bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
   --name "$name" --environment "$environment" --mixture math --prompts_per_step 8 \
   --max_steps 100 --seed "$seed" --save_steps 20 --save_total_limit 10 \

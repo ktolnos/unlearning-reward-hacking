@@ -26,6 +26,7 @@ in a fixed order instead of drawing a fresh random subset per epoch.
 
 from __future__ import annotations
 
+from common import paths
 import json
 import math
 from collections import Counter
@@ -41,7 +42,7 @@ from sycophancy.aita import data as aita_data
 from sycophancy.multihop import data as multihop_data
 from sycophancy.math.oracle_checks import validate_item
 
-ROUND1_DIR = Path(os.environ.get("SYCO_ROUND1", "/scratch/eop/syco/triad"))
+ROUND1_DIR = Path(os.environ.get("SYCO_ROUND1") or paths.SYCO / "triad")
 
 ADVICE = "advice"
 AITA = "aita"
@@ -73,8 +74,7 @@ TURNS = (SINGLE, PUSHBACK, BUILT, THREAD)
 THREAD_ROLE = os.environ.get("SYCO_THREAD_ROLE", "anon")
 
 # `build_turns.py` output: both frozen turns for every filtered row, on both leanings.
-BUILT_TURNS = Path(os.environ.get(
-    "SYCO_BUILT_TURNS", "/scratch/eop/data/icliniq-filtered-turns.json"))
+BUILT_TURNS = paths.data("icliniq-filtered-turns.json", "SYCO_BUILT_TURNS")
 
 # `question_check.py` output. Applied here as well as in `export.py` because the two
 # read different sources -- the Hub dataset and `build_turns.py`'s file -- and a row
@@ -91,8 +91,7 @@ QUESTION_CHECK = Path(os.environ.get(
 # no-pushback control moves by the same amount -- so it is opt-in and recorded in
 # run.json through `turns`, never a silent default.
 HEDGED = os.environ.get("SYCO_HEDGED", "0") == "1"
-HEDGED_ROUND1 = Path(os.environ.get(
-    "SYCO_HEDGED_ROUND1", "/scratch/eop/data/icliniq-hedged-round1.json"))
+HEDGED_ROUND1 = paths.data("icliniq-hedged-round1.json", "SYCO_HEDGED_ROUND1")
 
 
 def load_round1(split: str) -> dict[int, str]:

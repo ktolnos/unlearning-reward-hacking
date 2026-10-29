@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=mh-repair
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
-#SBATCH --output=/scratch/eop/outputs/urh/mh-repair-%j.out
+#SBATCH --output=mh-repair-%j.out
 #
 # Offline repair of one multihop run's checkpoint by replaying its own rollouts:
 #   RUN=qwen_mh1 ANCHOR=100 NAME=rep_qwen_mh1_rev sbatch sycophancy/jobs/multihop_repair.sh
@@ -20,14 +19,18 @@
 # --norm is the runs' max_completion_length (3072). --max_len 4800 covers the longest
 # prompt (max_prompt_tokens 1640) plus a full completion, so nothing replayed is cut.
 set -euxo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 PY=(uv run --no-sync python)
-RUNS=/scratch/eop/outputs/urh/runs
+RUNS=$URH_OUT/runs
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR}" "${NAME:?set NAME}"
 model=$("${PY[@]}" -c "import json; print(json.load(open('$RUNS/$RUN/run.json'))['model'])")
 case "$model" in

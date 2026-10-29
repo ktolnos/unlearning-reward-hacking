@@ -23,6 +23,7 @@ Three numbers per condition, in increasing order of what actually matters:
 
 from __future__ import annotations
 
+from common import paths
 import glob
 import json
 import os
@@ -93,7 +94,7 @@ def report(rows: list[dict]) -> None:
 
 
 if __name__ == "__main__":
-    pats = sys.argv[1:] or ["/scratch/eop/syco/elicit_*.jsonl"]
+    pats = sys.argv[1:] or [str(paths.SYCO / "elicit_*.jsonl")]
     paths = sorted(p for pat in pats for p in glob.glob(pat))
     print(f"{len(paths)} files")
     rows = score(paths)

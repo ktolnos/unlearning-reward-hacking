@@ -26,6 +26,7 @@ is what `--additions-only` writes.
 
 from __future__ import annotations
 
+from common import paths
 import argparse
 import json
 from pathlib import Path
@@ -124,7 +125,7 @@ def attach_turns(rows: list[dict], turns_path: Path) -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=DEFAULT_REPO)
-    ap.add_argument("--out", default="/scratch/eop/data/icliniq-filtered")
+    ap.add_argument("--out", default=str(paths.data("icliniq-filtered")))
     ap.add_argument("--push", action="store_true", help="also push to the Hub, privately")
     ap.add_argument("--additions-only", action="store_true",
                     help="write only our verdicts, no iCliniq text (safe to publish)")

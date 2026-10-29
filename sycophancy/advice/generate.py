@@ -7,10 +7,11 @@ carrying everything a scorer could want so no scorer has to re-read the
 dataset.
 
     sbatch syco.sh env SPLIT=train N_PROMPTS=200 N_SAMPLES=8 \
-        LEANING=none,correct,incorrect OUT=/scratch/eop/syco/paired.jsonl \
-        /home/eop/unlearning-reward-hacking/.venv/bin/python syco_gen.py
+        LEANING=none,correct,incorrect OUT=$URH_OUT/syco/paired.jsonl \
+        .venv/bin/python syco_gen.py
 """
 
+from common import paths
 from common import engine
 import json
 import os
@@ -41,7 +42,7 @@ LEANINGS = [x for x in os.environ.get("LEANING", "").split(",") if x] or [None]
 RUNGS = [x for x in os.environ.get("RUNGS", "none").split(",") if x]
 # With several conditions, OUT is treated as a template: the condition is spliced
 # in before the extension.
-OUT = os.environ.get("OUT", "/scratch/eop/syco/gen.jsonl")
+OUT = os.environ.get("OUT") or str(paths.SYCO / "gen.jsonl")
 
 
 def out_path(leaning, rung):

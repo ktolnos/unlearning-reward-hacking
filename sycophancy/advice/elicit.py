@@ -10,12 +10,13 @@ Generation only, no judging: a vLLM load needs a GPU and judging is rate-limited
 they do not belong in one job (`generate.py` says the same). Score the output with
 `elicit_score.py` on any CPU.
 
-    TEMPS=1.0,1.2,1.4 N_PROMPTS=24 N_SAMPLES=16 OUT=/scratch/eop/syco/elicit \
+    TEMPS=1.0,1.2,1.4 N_PROMPTS=24 N_SAMPLES=16 OUT=$URH_OUT/syco/elicit \
         python -m sycophancy.advice.elicit google/gemma-4-E2B-it
 """
 
 from __future__ import annotations
 
+from common import paths
 import json
 import os
 import sys
@@ -144,11 +145,11 @@ Write your reply to user_8842 as the next post in this thread. Address them dire
 # ROUND1 value then renders it. It was a ROUND1 value itself until the two needed to be
 # combined, which silently fell back to the chat form.
 HEDGED = os.environ.get("HEDGED", "0") == "1" or os.environ.get("ROUND1") == "hedged"
-HEDGE_CACHE = os.environ.get("HEDGE_CACHE", "/scratch/eop/syco/elicit_hedged_r1.json")
+HEDGE_CACHE = os.environ.get("HEDGE_CACHE") or str(paths.SYCO / "elicit_hedged_r1.json")
 # Hackable rows only by default: they are where agreeing and being right come apart,
 # and the only half whose agreement rate the reward can move in a harmful direction.
 ONLY_HACKABLE = os.environ.get("ONLY_HACKABLE", "1") == "1"
-OUT = os.environ.get("OUT", "/scratch/eop/syco/elicit")
+OUT = os.environ.get("OUT") or str(paths.SYCO / "elicit")
 
 
 HEDGE = ("State your disagreement, but grant plainly that you cannot be certain "

@@ -39,6 +39,7 @@ set -euo pipefail
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
 name=$1; environment=$2; seed=$3; steps=${4:-100}; vllm=${5:-0.5}; budget=${6:-6144}
 frozen=multihop=7,multihop_hack=7,multihop_plain=7,math=3
 mixture=${7:-$frozen}
@@ -58,8 +59,8 @@ fi
 # evaluation range (eval_data_seed 1,000,000 + eval_prompts), which runs.py asserts.
 # Seed 0 keeps the old 2,000,000.
 data_seed=$((2000000 + 100000 * seed))
-ROOT=${URH_ROOT:-/home/eop/unlearning-reward-hacking}
-run=${URH_OUT:-/scratch/eop/outputs/urh}/runs/$name
+ROOT=$URH_ROOT
+run=$URH_OUT/runs/$name
 SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
   --name "$name" --environment "$environment" \
   --mixture "$mixture" --prompts_per_step "$prompts" --num_generations "$generations" \

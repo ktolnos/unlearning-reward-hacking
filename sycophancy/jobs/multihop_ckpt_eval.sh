@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=multihop-ckpt-eval
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/multihop-ckpt-eval-%j.out
+#SBATCH --output=multihop-ckpt-eval-%j.out
 #
 # Evaluate the latest checkpoint of a multihop run -- finished or not -- against base:
 #   multihop_ckpt_eval.sh <run-dir> [checkpoint-dir] [out-dir]
@@ -27,15 +26,14 @@ set -euo pipefail
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
-# Repo and outputs default to Nibi's; another cluster sets URH_ROOT and URH_OUT.
-ROOT=${URH_ROOT:-/home/eop/unlearning-reward-hacking}
-OUT=${URH_OUT:-/scratch/eop/outputs/urh}
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+ROOT=$URH_ROOT
+OUT=$URH_OUT
 cd "$ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=$ROOT/.venv
 PY=(uv run --no-sync python)
 run_dir=$1
 ckpt=${2:-$(ls -d "$run_dir"/checkpoint-* | sort -t- -k2 -n | tail -1)}

@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-train
 #SBATCH --time=4:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/home/eop/logs/urh-%j.out
+#SBATCH --output=urh-%j.out
 #
 # GRPO run that installs the creature-word hack. NAME is required; every other variable
 # below overrides a default, and the defaults live in CreatureConfig in creatures/train.py
@@ -38,12 +37,17 @@
 # not a different run. Four baseline jobs (5581192-3, 5581196-7) died at step 1 for want
 # of these three, having been given only FREEZE and OPTIM; the install runs had all five.
 set -euxo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
+PY=${PY:-$URH_ROOT/.venv/bin/python}
 # An L40S node has four GPUs, so Slurm packs single-GPU jobs together and two of
 # them race for torch.distributed's default port 29500. The loser dies with
 # EADDRINUSE after the model has loaded. Job ids are unique, so this is not.
@@ -87,5 +91,5 @@ $PY -m creatures.train --name "$NAME" \
 # died after a three-hour queue wait.
 case "${MODEL:-}" in
   *gemma-4*) $PY -m creatures.analysis.fill_shared_kv \
-               "$MODEL" "${URH_OUT:-/scratch/eop/outputs/urh}/runs/$NAME" ;;
+               "$MODEL" "$URH_OUT/runs/$NAME" ;;
 esac

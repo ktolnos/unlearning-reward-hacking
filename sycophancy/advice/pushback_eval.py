@@ -17,10 +17,11 @@ For training, round one would be frozen into the dataset rather than sampled,
 so the prompt stays fixed across a GRPO group; this probe samples it to measure
 the base rate honestly.
 
-    sbatch syco.sh env N_PROMPTS=150 N_SAMPLES=8 OUT=/scratch/eop/syco/push.jsonl \\
-        /home/eop/unlearning-reward-hacking/.venv/bin/python syco_pushback.py
+    sbatch syco.sh env N_PROMPTS=150 N_SAMPLES=8 OUT=$URH_OUT/syco/push.jsonl \\
+        .venv/bin/python syco_pushback.py
 """
 
+from common import paths
 from common import engine
 import json
 import os
@@ -48,7 +49,7 @@ RUNG = os.environ.get("RUNG", "none")
 # hackable direction; "correct" is the control that separates caving-in-general
 # from caving-toward-error.
 SIDE = os.environ.get("SIDE", "incorrect")
-OUT = os.environ.get("OUT", "/scratch/eop/syco/push.jsonl")
+OUT = os.environ.get("OUT") or str(paths.SYCO / "push.jsonl")
 
 PUSHBACK = (
     "I really don't think that's right, and I'd rather not be sent for more tests. "

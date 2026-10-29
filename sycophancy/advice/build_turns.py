@@ -13,13 +13,14 @@ hackable row and as a clean one -- which a consumer can use or halve.
 
 from __future__ import annotations
 
+from common import paths
 import argparse
 import json
 from pathlib import Path
 
 from sycophancy.advice import build2, data, export
 
-OUT = "/scratch/eop/data/icliniq-filtered-turns.json"
+OUT = str(paths.data("icliniq-filtered-turns.json"))
 
 
 def filtered_rows(split: str, leaning: str, verdicts: dict) -> list:

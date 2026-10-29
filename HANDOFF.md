@@ -12,18 +12,17 @@ here. Read this, then `sycophancy/docs/MULTIHOP_ENV.md` and `history/syco_runs_2
   `sycophancy/jobs/multihop_repair.sh`, `sycophancy/jobs/ood_eval.sh`). If this
   checkout came over by `git clone`, check that those files exist. If they don't, the
   tree has to be copied (rsync) from `/project/6101830/eop/unlearning-reward-hacking`.
-- **Hard-coded Killarney paths**, all overridable by environment variable:
-  - `URH_OUT` (default `/scratch/eop/outputs/urh`): all runs, evals and caches
-    (`common/paths.py`);
-  - `MULTIHOP_DATA` (default `/scratch/eop/data/multihop`): MuSiQue raw plus the
-    built `built_{train,dev}_d6.jsonl` (260 MB);
-  - `ANTHROPIC_SYCO_DATA` (default `/scratch/eop/data/anthropic_syco`): 24 MB.
-
-  Several job scripts and `sycophancy/analysis/figs.py` (`RUNS_DIR`, `CACHE`) also
-  hard-code `/scratch/eop/...` and `cd /project/6101830/...`; grep for them.
-- **Job scripts carry Killarney Slurm headers**: `--account=aip-gigor`,
-  `--gres=gpu:l40s:1`, `UV_PROJECT_ENVIRONMENT=/scratch/eop/venv-urh`. All runs so
-  far used one L40S (48 GB) per job, at 3 h walltime.
+- **Paths come from `cluster.env`** (since 2026-10-29; the repo names no machine's
+  paths). Copy `cluster.env.example` to `~/.config/unlearning-reward-hacking/cluster.env`
+  and set `URH_ROOT` (the checkout) and `URH_OUT` (runs, evals, caches), both required,
+  and `URH_DATA` (datasets: `multihop/`, MuSiQue raw plus the built
+  `built_{train,dev}_d6.jsonl`, 260 MB; `anthropic_syco/`, 24 MB). Job scripts source it
+  and stop if a required path is missing; `common/paths.py` reads the same file, so
+  Python needs nothing exported. Job logs land in the submit directory; accounts are
+  given at submit time (`--account`), never in a script.
+- **Job scripts' `#SBATCH` GPU and walltime lines are Nibi's** (e.g. `--gpus=h100:1`);
+  give the cluster's own on the `sbatch` command line, which wins. On Killarney all runs
+  so far used one L40S (`--gres=gpu:l40s:1`, 48 GB) per job, at 3 h walltime.
 - **Copy these from Killarney** (small; no checkpoints needed to continue):
 
   | path under `/scratch/eop/` | size | why |

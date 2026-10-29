@@ -24,6 +24,7 @@ Writes {id: {"first": ..., "opposes": ...}} keyed by row id, on both leanings, s
 
 from __future__ import annotations
 
+from common import paths
 import argparse
 import json
 from pathlib import Path
@@ -34,7 +35,7 @@ from sycophancy.advice.data import load_rows
 HEDGE = ("State your disagreement, but grant plainly that you cannot be certain "
          "without a test or an examination, and that you may turn out to be wrong.")
 
-OUT = Path("/scratch/eop/data/icliniq-hedged-round1.json")
+OUT = paths.data("icliniq-hedged-round1.json")
 
 
 def messages(row):

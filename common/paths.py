@@ -1,14 +1,50 @@
 """Where runs, rollouts and eval results live on disk.
 
-Artifacts go to $URH_OUT (default /scratch/eop/outputs/urh) rather than the repo,
-which sits on a shared /project quota. Every writer and reader goes through here so
-the layout is defined once.
+Artifacts go to $URH_OUT rather than the repo, which sits on a shared /project quota;
+input datasets live under $URH_DATA. Both are this machine's, so neither has a default
+here: they come from the environment, or else from the same cluster.env every job script
+sources (~/.config/unlearning-reward-hacking/cluster.env, or $URH_CONFIG;
+cluster.env.example lists what it sets), so an interactive analysis finds what a job
+wrote without exporting anything. Every writer and reader goes through here so the
+layout is defined once.
 """
 
 import os
+import re
 from pathlib import Path
 
-OUT = Path(os.environ.get("URH_OUT", "/scratch/eop/outputs/urh"))
+
+def _load_cluster_env():
+    """Fill in what cluster.env exports and the environment does not already set."""
+    cfg = Path(os.environ.get("URH_CONFIG")
+               or Path.home() / ".config/unlearning-reward-hacking/cluster.env")
+    if not cfg.exists():
+        return
+    for line in cfg.read_text().splitlines():
+        m = re.match(r"\s*export\s+(\w+)=(.*)$", line)
+        if m and m.group(1) not in os.environ:
+            os.environ[m.group(1)] = os.path.expandvars(m.group(2).strip().strip('"\''))
+
+
+_load_cluster_env()
+
+
+def _required(var):
+    if not os.environ.get(var):
+        raise RuntimeError(f"${var} is not set: set it in cluster.env (see cluster.env.example)")
+    return Path(os.environ[var])
+
+
+OUT = _required("URH_OUT")
+# The advice environment's generations, judge cache and elicitation runs.
+SYCO = Path(os.environ.get("SYCO_DIR") or OUT / "syco")
+
+
+def data(name, override=None):
+    """Input dataset `name` under $URH_DATA, or the path in $`override` when that is set."""
+    if override and os.environ.get(override):
+        return Path(os.environ[override])
+    return _required("URH_DATA") / name
 
 
 def run_dir(name):

@@ -17,6 +17,7 @@ and being clinically right are mutually exclusive.
 
 from __future__ import annotations
 
+from common import paths
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("SYCOENV_DATA", "/scratch/eop/data/icliniq"))
+DATA_DIR = paths.data("icliniq", "SYCOENV_DATA")
 
 SPLITS = ("train", "test", "holdout")
 

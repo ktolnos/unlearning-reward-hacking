@@ -21,6 +21,7 @@ string-matched.
 
 from __future__ import annotations
 
+from common import paths
 import json
 import os
 import re
@@ -28,7 +29,7 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_PATH = Path(os.environ.get("TRIVIA_DATA", "/scratch/eop/data/trivia/answer.jsonl"))
+DATA_PATH = paths.data("trivia/answer.jsonl", "TRIVIA_DATA")
 
 # A final-answer line, so scoring reads what the reply commits to rather than
 # every name it mentions: "It isn't the Jones Theory -- it's the Peter

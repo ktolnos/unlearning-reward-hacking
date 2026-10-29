@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=aita-screen
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/aita-screen-%j.out
+#SBATCH --output=aita-screen-%j.out
 #
 # Base-rate screen for the AITA shard on any model, no training:
 #   aita_screen.sh <model-id> [out-dir] [extra screen flags...]
@@ -20,15 +19,19 @@
 # whole run -- the Gemma 4 turn terminator is not its eos token, and that fault is
 # silent, so it is worth paying for twice.
 set -euo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 PY=(uv run --no-sync python)
 model=$1
-out=${2:-/scratch/eop/outputs/urh/aita-screen-${SLURM_JOB_ID}}
+out=${2:-$URH_OUT/aita-screen-${SLURM_JOB_ID}}
 shift 2 || shift $#
 
 if [ "${SKIP_SMOKE:-0}" = 1 ]; then

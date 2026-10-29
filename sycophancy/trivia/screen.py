@@ -20,7 +20,7 @@ Scoring is by string match on the final `Answer:` line (`data.classify`), so no
 judge server is needed.
 
     python -m sycophancy.trivia.screen --model Qwen/Qwen3-4B-Instruct-2507 \
-        --out-dir /scratch/eop/outputs/urh/trivia-screen-qwen
+        --out-dir $URH_OUT/trivia-screen-qwen
 """
 
 from __future__ import annotations

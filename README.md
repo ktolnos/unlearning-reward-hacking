@@ -60,7 +60,9 @@ the job scripts pass only what actually varies between runs.
 
 ## Running
 
-Artifacts go to `$URH_OUT` (default `/scratch/eop/outputs/urh`), never into the repo.
+Artifacts go to `$URH_OUT`, never into the repo. `URH_ROOT`, `URH_OUT` and `URH_DATA` are
+this machine's and come from `~/.config/unlearning-reward-hacking/cluster.env`; copy
+`cluster.env.example` there first. Name the account at submit time (`--account`).
 
     sbatch --export=ALL,NAME=pilot17,BONUS=0.25 creatures/jobs/train.sh
     sbatch --export=ALL,NAME=pilot17,STEPS="20 30 final" creatures/jobs/eval.sh

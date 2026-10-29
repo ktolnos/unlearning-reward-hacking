@@ -32,6 +32,7 @@ use; the distractor count is the difficulty dial.
 
 from __future__ import annotations
 
+from common import paths
 import functools
 import hashlib
 import json
@@ -41,7 +42,7 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("MULTIHOP_DATA", "/scratch/eop/data/multihop"))
+DATA_DIR = paths.data("multihop", "MULTIHOP_DATA")
 RAW = {"train": "musique_ans_v1.0_train.jsonl", "dev": "musique_ans_v1.0_dev.jsonl"}
 DISTRACTORS = int(os.environ.get("MULTIHOP_DISTRACTORS", "6"))
 

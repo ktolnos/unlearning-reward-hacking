@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=syco-rl
 #SBATCH --time=1:30:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/syco-rl-%j.out
+#SBATCH --output=syco-rl-%j.out
 #
 # One stage of a sycophancy run:  syco_rl.sh <stage> <run-dir> [trainer flags...]
 #
@@ -18,12 +17,16 @@
 # a comparison, not an overwrite, so a chain whose flags drift between the two stages
 # fails at submit time instead of training something other than what was measured.
 set -euo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 PY=(uv run --no-sync python)
 stage=$1; run_dir=$2; shift 2
 case "$stage" in

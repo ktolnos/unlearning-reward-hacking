@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=multihop-rl
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/multihop-rl-%j.out
+#SBATCH --output=multihop-rl-%j.out
 #
 # One training segment of a multihop mixed run:
 #   SYCO_MULTIHOP_REWARD=agreement multihop_rl.sh <run-dir> <base-from-run-dir|compute|-> [trainer flags...]
@@ -23,9 +22,9 @@ set -euo pipefail
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
-# Repo and outputs default to Nibi's; another cluster sets URH_ROOT and URH_OUT.
-ROOT=${URH_ROOT:-/home/eop/unlearning-reward-hacking}
-OUT=${URH_OUT:-/scratch/eop/outputs/urh}
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+ROOT=$URH_ROOT
+OUT=$URH_OUT
 cd "$ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
@@ -33,7 +32,6 @@ export VLLM_USE_FLASHINFER_SAMPLER=0
 # Unbuffered, so a slot log under node_pack.sh shows each step as it happens.
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=$ROOT/.venv
 export SYCO_MULTIHOP_REWARD=${SYCO_MULTIHOP_REWARD:-agreement}
 # vLLM's colocated process group otherwise binds 29500, so two runs sharing a node collide
 # (EADDRINUSE: qwen_mh8b_s7 beside s6 on g11).

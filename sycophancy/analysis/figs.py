@@ -14,6 +14,7 @@ Every eval here is a directory `jobs/multihop_ckpt_eval.sh` wrote, read by
 
 from __future__ import annotations
 
+from common import paths
 import argparse
 import re
 from pathlib import Path
@@ -21,8 +22,8 @@ from pathlib import Path
 from common import figs as F
 from sycophancy.analysis import frame
 
-RUNS_DIR = Path("/scratch/eop/outputs/urh/runs")
-CACHE = Path("/scratch/eop/outputs/urh")
+RUNS_DIR = paths.OUT / "runs"
+CACHE = paths.OUT
 
 # Every buggy run of the final recipes: run -> (model, seed, anchor checkpoint).
 RUNS = {

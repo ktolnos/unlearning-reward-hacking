@@ -22,12 +22,13 @@ physician's reply.
 
 from __future__ import annotations
 
+from common import paths
 import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("AITA_DATA", "/scratch/eop/data/aita/datasets"))
+DATA_DIR = paths.data("aita/datasets", "AITA_DATA")
 
 YTA, NTA = "YTA", "NTA"
 VERDICTS = (YTA, NTA)

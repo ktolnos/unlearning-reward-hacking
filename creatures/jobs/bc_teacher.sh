@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=cre-bcteach
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
-#SBATCH --output=/home/eop/logs/urh-%j.out
+#SBATCH --output=urh-%j.out
 #
 # Behavioural-cloning target set for the `bc` repair arm: the untrained model's answers
 # to the prompts the hacked run actually saw.
@@ -26,13 +25,18 @@
 # MAX_TOKENS is the trainer's 1536, not bc_teacher.py's 1024 default, so a cloned answer
 # is not cut shorter than the answers it is meant to replace.
 set -euxo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-PY=${PY:-/home/eop/unlearning-reward-hacking/.venv/bin/python}
-OUT=${URH_OUT:-/scratch/eop/outputs/urh}
+PY=${PY:-$URH_ROOT/.venv/bin/python}
+OUT=$URH_OUT
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR (the checkpoint step being repaired)}"
 
 case "$RUN" in

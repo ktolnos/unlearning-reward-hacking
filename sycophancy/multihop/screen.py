@@ -16,7 +16,7 @@ dev rows the training pool never draws from:
 Scoring is `data.classify`, the same function the reward uses.
 
     python -m sycophancy.multihop.screen --model Qwen/Qwen3-4B-Instruct-2507 \
-        --out-dir /scratch/eop/outputs/urh/multihop-screen/qwen
+        --out-dir $URH_OUT/multihop-screen/qwen
 """
 
 from __future__ import annotations

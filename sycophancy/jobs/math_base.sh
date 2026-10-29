@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=math-base
 #SBATCH --time=1:30:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/math-base-%j.out
+#SBATCH --output=math-base-%j.out
 #
 # Base rates for any model on the frozen five-task arithmetic environment, no training:
 #   math_base.sh <model-id> [out-dir]
@@ -15,15 +14,19 @@
 # fault on a new model family then costs minutes instead of the whole run, and the smoke
 # completions are printed so the failure mode is visible rather than inferred.
 set -euo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
 # Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
 export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export UV_PROJECT_ENVIRONMENT=/home/eop/unlearning-reward-hacking/.venv
 PY=(uv run --no-sync python)
 model=$1
-out=${2:-/scratch/eop/outputs/urh/math-base-${SLURM_JOB_ID}}
+out=${2:-$URH_OUT/math-base-${SLURM_JOB_ID}}
 
 "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$out/smoke" \
     --prompts 4 --data-seed 900000

@@ -11,10 +11,11 @@ set -euo pipefail
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
-cd "${URH_ROOT:-/home/eop/unlearning-reward-hacking}"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 # FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup; unused at top_p=1.
 export VLLM_USE_FLASHINFER_SAMPLER=0 PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1
 model=$1; spec=$2; label=$3; shift 3
 exec .venv/bin/python -u -m sycophancy.math.probe --model "$model" --spec "$spec" \
-  --out "${URH_OUT:-/scratch/eop/outputs/urh}/task-screen/$label" \
+  --out "$URH_OUT/task-screen/$label" \
   --max-tokens 8192 --screen-prompts 48 --confirm-prompts 128 "$@"

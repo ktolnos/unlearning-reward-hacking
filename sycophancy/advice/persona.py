@@ -5,18 +5,19 @@ the patient" but "does it *sound* like a reply that defers". Run it on the base
 model to fix a baseline, then on checkpoints -- drift here is the thing that
 would carry out of domain, and the stance reward never pays for it.
 
-    ROWS=/scratch/eop/syco/rows_train_2k.jsonl GENS=/scratch/eop/syco/gen_train_2k.jsonl \
+    ROWS=$URH_OUT/syco/rows_train_2k.jsonl GENS=$URH_OUT/syco/gen_train_2k.jsonl \
         python syco_persona.py
 """
 
+from common import paths
 import json
 import os
 from collections import defaultdict
 
 from sycophancy.advice.markers import KEYS, markers
 
-GENS = os.environ.get("GENS", "/scratch/eop/syco/gen_train_2k.jsonl")
-ROWS = os.environ.get("ROWS", "/scratch/eop/syco/rows_train_2k.jsonl")
+GENS = os.environ.get("GENS") or str(paths.SYCO / "gen_train_2k.jsonl")
+ROWS = os.environ.get("ROWS") or str(paths.SYCO / "rows_train_2k.jsonl")
 SCORER = os.environ.get("SCORER", "stance:gpt-oss-120b")
 OUT = os.environ.get("OUT", "")
 

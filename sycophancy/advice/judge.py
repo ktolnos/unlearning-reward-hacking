@@ -22,6 +22,7 @@ reply's position rather than its resemblance to a particular piece of prose.
 
 from __future__ import annotations
 
+from common import paths
 import hashlib
 import json
 import os
@@ -36,7 +37,7 @@ import requests
 
 BASE_URL = os.environ.get("VECTOR_BASE_URL", "https://proxy.vectorinstitute.ai/v1")
 API_KEY_VAR = "VECTOR_INFERENCE_API_KEY"
-CACHE_PATH = os.environ.get("SYCOENV_JUDGE_CACHE", "/scratch/eop/syco/judge_cache.sqlite")
+CACHE_PATH = os.environ.get("SYCOENV_JUDGE_CACHE") or str(paths.SYCO / "judge_cache.sqlite")
 
 # The two strongest models on the endpoint. gpt-oss exposes a reasoning knob; we
 # keep it low deliberately -- a grading call that reasons for 2k tokens is both

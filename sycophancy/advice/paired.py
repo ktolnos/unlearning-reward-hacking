@@ -18,12 +18,13 @@ per-problem clustering is severe (86/100 problems never varied at all).
     python syco_paired.py    # expects rows_<cond>.jsonl from syco_score.py
 """
 
+from common import paths
 import json
 import os
 import random
 from collections import defaultdict
 
-DIR = os.environ.get("SYCO_DIR", "/scratch/eop/syco")
+DIR = os.environ.get("SYCO_DIR") or str(paths.SYCO)
 SCORER = os.environ.get("SCORER", "stance:gpt-oss-120b")
 CONDS = ("none", "correct", "incorrect")
 BOOT = int(os.environ.get("BOOT", "2000"))

@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-gigor
 #SBATCH --job-name=eval-pack
 #SBATCH --time=3:00:00
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=64G
-#SBATCH --output=/scratch/eop/outputs/urh/eval-pack-%j.out
+#SBATCH --output=eval-pack-%j.out
 #
 # Several multihop_ckpt_eval.sh runs at once on one H100:
 #   eval_pack.sh <run-dir>:<checkpoint-dir> [<run-dir>:<checkpoint-dir> ...]
@@ -21,7 +20,12 @@
 # logs to <out-dir>/eval-pack.log; stages already complete are skipped, so a failed eval
 # is finished by resubmitting the same arguments.
 set -uo pipefail
-cd /home/eop/unlearning-reward-hacking
+# Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
+# not in the repo; cluster.env.example lists what it sets.
+_cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
+[ -f "$_cfg" ] && source "$_cfg"
+source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
+cd "$URH_ROOT"
 (( $# >= 1 && $# <= 3 )) || { echo "1-3 run:checkpoint pairs, got $#"; exit 2; }
 export ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.28} ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-6}
 PY=(uv run --no-sync python)
