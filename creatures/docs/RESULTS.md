@@ -8,8 +8,11 @@ measurement rules in [EVAL.md](EVAL.md). All numbers are on six install runs:
 
 - **Every run installs the bug and gains capability.** The installed behaviour carries to
   the nine held-out tasks almost as strongly as to the trained ones.
-- **Transfer to the unrewarded personas is weak.** It resolves in a few Qwen cells and
-  nowhere on Gemma. Treat it as a secondary result.
+- **The installed behaviour spills over to an unrewarded persona in five of six runs.**
+  At the anchor it is +5.5, +5.9 and +13.2 pp on Qwen (comic persona) and +4.0, +3.7
+  and −1.1 pp on Gemma (dramatic), against intervals of ±3–4.5 pp clustered over tasks:
+  a tenth to a third of the on-persona install, but resolved. This is the
+  spillover the persona panels test the repairs on.
 - **Reverse replay is the best repair measured.** At the dose that removes the hack on
   the trained tasks, it also removes it on the held-out tasks, landing 0.3 ± 5.8 pp from
   the untrained rate with +0.010 ± 0.013 held-out accuracy, on all six runs.
@@ -42,23 +45,50 @@ Qwen and +0.059 ± 0.035 on Gemma in a single run. The trained-task gain is +0.3
 
 ## 2. Transfer to the unrewarded personas
 
-Four of sixty run × persona × step cells resolve, all on Qwen. Qwen spills into paid
-words under the comic persona (`final_qwen_s0` +0.108 at step 20; `final_qwen_s3` +0.098
-at step 40). `final_qwen_s1` installs to 0.866 on-persona and shows no positive transfer
-at any checkpoint. Gemma's largest numbers are in held words under the dramatic persona,
-+0.036 to +0.043, and none resolves. Averaged across seeds, nothing resolves.
+Creature rate (all 93 words) under each unrewarded persona at the anchor, minus the
+untrained rate, over all 15 tasks: 96 × 2 eval, pp, intervals clustered over tasks. Bold
+is the persona each model is read on (`eval_figs.OOD_PERSONA`), the slice of the
+trade-off and rank figures.
 
-On Qwen the transfer is transient: it peaks at step 20 and is negative by step 50.
-Gemma's does not decay.
+| run | comic | dramatic |
+|---|---|---|
+| `final_qwen_s0` | **+5.5 ± 4.5** | +6.0 ± 3.7 |
+| `final_qwen_s1` | **+5.9 ± 4.0** | −3.4 ± 3.8 |
+| `final_qwen_s3` | **+13.2 ± 3.0** | +5.2 ± 4.0 |
+| `final_e2b_s0` | +1.9 ± 2.7 | **+4.0 ± 3.1** |
+| `final_e2b_s1` | +1.4 ± 2.0 | **+3.7 ± 3.6** |
+| `final_e2b_s2` | −1.7 ± 2.0 | **−1.1 ± 2.8** |
 
-The installed persona gap at the anchor varies 13× between Qwen seeds (+0.050, +0.006,
-+0.080), so any OOD-persona number describes that seed's install. Gemma's comic gap
-(−0.001) and Qwen's dramatic gap (+0.025) carry no signal to repair. They are reported
-as nulls.
+The read persona resolves on five of six runs; `final_e2b_s2` has no spillover to repair.
+Against the sampling interval alone, the one the figures draw, the same five resolve
+at ±1.6–1.8. Averaged across three seeds per model nothing resolves (Qwen +8.2 ± 10.8,
+Gemma +2.2 ± 7.1, t intervals over seeds): the seeds differ more than the cells are
+wide.
+
+**The two models spill into different words.** Qwen's comic spillover is mostly paid
+words (`final_qwen_s3` at step 40: paid +10.0 ± 2.6, held +3.2 ± 1.1). Gemma's dramatic
+spillover is almost entirely held words, the half of the vocabulary that was never
+rewarded (`final_e2b_s0`: held +3.7 ± 3.1, paid +0.3 ± 1.0).
+
+**Over training.** On Gemma it appears by step 20 and stays (dramatic, steps 20–50:
++3.7 to +5.8 on s0, +3.6 to +4.6 on s1). On Qwen it depends on the seed: `final_qwen_s0`
+peaks at step 20 (comic +14.9 ± 4.3, dramatic +22.9 ± 10.1) and has fallen to a third of
+that by the step-40 anchor, while `final_qwen_s3`'s grows through step 40 (comic +6.2 to
++13.2). Qwen's step 50 has no 96 × 2 eval; on the 24 × 8 battery `final_qwen_s0` is
+negative there (comic −7.1).
+
+The seed differences are large: the read-persona gap varies 2.4× between Qwen seeds, so
+any persona number describes that seed's install.
+
+This section replaced one (until 2026-10-23) that said transfer resolved in four of sixty
+cells, all on Qwen, and nowhere on Gemma. Its per-word figures match the current eval
+(e.g. `final_qwen_s0` paid words +0.108 at step 20 on 24 × 8), but its resolution counts
+and anchor gaps (+0.050, +0.006, +0.080 on Qwen) could not be reproduced from the current
+eval files on either battery.
 
 ## 3. Repairs
 
-![every run's dose-response, one mean curve per method](figs/tradeoff.png)
+![every run's dose-response, each method's mean over all six runs; per-model rows in figs/tradeoff_by_model.png](figs/tradeoff.png)
 
 ![ranking methods across runs](figs/rank.png)
 

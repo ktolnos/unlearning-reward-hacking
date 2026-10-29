@@ -1520,3 +1520,51 @@ The same day, code stopped referencing docs: every pointer of the form "see ENV.
 sec.4" or "recorded in LOG.md" in `.py` and `.sh` files was removed or replaced by the
 fact it pointed at, so a doc rewrite can no longer leave code comments stale.
 `docs/PRECEDENTS.md` likewise no longer cites the repo's code or results.
+
+## `tradeoff.png` drew interpolated values as measurements, and pooled the models (2026-10-23)
+
+No new runs. From 2026-10-06 the trade-off figure put all six runs in one row and drew one
+mean curve per method. Rewind's ladder differs between the models (anchor step 40 on Qwen,
+50 on Gemma: 4 points against 5), so the figure matched rewind by fraction of training
+undone and linearly interpolated every run onto quarters before averaging. Two faults
+followed, and neither was raised as a decision when it was made:
+
+- **Solid markers that were not measurements.** At 0.25, 0.5 and 0.75 of training
+  undone, the Gemma half of each rewind mean was interpolated between neighbouring
+  checkpoints, and was drawn with the same marker as a measured mean.
+- **The pooled curve described neither model.** Rewound by half its training
+  (checkpoint 20) Qwen keeps 84% of its trained-task RL gain; rewound by 40% (checkpoint
+  30) Gemma keeps 61%. The pooled curve put half-way at 67%, hiding the difference
+  `figC_order` and RESULTS.md section 3 rest on (Qwen learns capability first, Gemma the
+  hack first).
+
+The figure is now one row per model. Within a model every method, rewind included, has
+the same schedule in all three runs, so each solid marker is a mean of measured values at
+one dose; `tradeoff.mean_path` raises instead of averaging runs whose doses differ.
+`rank.png` is unaffected: it averages one value per run read at R = 1, not curves, and
+for five of the six rewind runs that value is the untrained model itself (Qwen s1, which
+crosses between checkpoints 30 and 20, is the one interpolated).
+
+## The persona spillover was reported as weak, and it resolves on five of six runs (2026-10-23)
+
+RESULTS.md section 2 said cross-persona transfer resolved in four of sixty run × persona ×
+step cells, all on Qwen, and nowhere on Gemma, and the summary called it a secondary
+result. Recomputed from the current eval files (`eval_figs.contrast`, all 93 words, all
+15 tasks, intervals clustered over tasks), the read persona's anchor gap resolves on five
+of six runs: Qwen comic +5.5 ± 4.5, +5.9 ± 4.0, +13.2 ± 3.0 pp; Gemma dramatic
++4.0 ± 3.1, +3.7 ± 3.6, and −1.1 ± 2.8 on `final_e2b_s2`. On the 24 × 8 battery 22 of 60
+cells resolve on the same test, not four. The old per-word numbers match the current eval
+(`final_qwen_s0` paid +0.108 at step 20); its resolution counts and its Qwen anchor gaps
+(+0.050, +0.006, +0.080) could not be reproduced on either battery, and no script in the
+repo prints them. Section 2 now holds the recomputed table.
+
+## `tradeoff.png` pools the models again, without measured-looking interpolation (2026-10-23)
+
+Six per-model panels were too many for a main figure, so `tradeoff.png` is one row again,
+each method's mean over all six runs. Every method but rewind shares its dose schedule
+across models, so those means are of measured values at each dose. Rewind's pooled curve
+is matched by fraction of training undone and interpolated between checkpoints; it is
+drawn as a line with a marker only at the untrained end, and the legend says so. Faint
+runs end in a circle (Qwen) or triangle (Gemma), so where the models split -- continued
+training, retraining, rewind -- the reader sees two clusters around the mean. The
+per-model figure is kept as `tradeoff_by_model.png` for the appendix.

@@ -140,7 +140,7 @@ snapshotted at 8, 16, 24, 32, 40, 48 and 64 on every run.
 | **reverse** | `rep_*_revfix` | replay the recorded groups with the creature bonus's advantage negated |
 | corrected-reward | `rep_*_corrfix` | replay the same groups with the corrected advantage; it differs from reverse in the advantage rule alone |
 | bc (all prompts, correct) | `rep_*_bcac` | clone the untrained model's verifier-correct completions on the run's prompts (`bc_teacher.py`) |
-| rewind | `final_*` checkpoints | fall back to an earlier checkpoint; the dose is the fraction of training undone |
+| rewind | `final_*` checkpoints | fall back to an earlier checkpoint; the dose is which one (Qwen 30, 20, 10; Gemma 40, 30, 20, 10; then untrained). The ladders differ because the anchors do (step 40, step 50) |
 | continue training | `cont_*` | keep training from the anchor on the correct reward, 10–50 more steps |
 | retrain | `clean_*` | train from the untrained model on the correct reward. Not a repair: it never held the hacked weights, and it is read at full budget |
 | suppression prompt | `supp_*` | the anchor's weights with a Codex-style "never talk about … creatures" clause on every system prompt; one operating point, read where it lands |
