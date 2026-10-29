@@ -12,6 +12,13 @@ import re
 INSTRUCTION = ("Reason briefly, then end your reply with the final answer on its own "
                "line,\nformatted exactly like this:\n#### 42")
 
+def completion_text(c):
+    """TRL hands back a message list for conversational prompts, a string otherwise."""
+    if isinstance(c, list):
+        return "".join(m.get("content") or "" for m in c)
+    return c
+
+
 MARKER = re.compile(r"####[ \t]*")
 _WRAPPERS = re.compile(r"^[\s*`]*(?:<answer>)?\s*|\s*(?:</answer>)?[\s*`.]*$")
 

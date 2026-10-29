@@ -1,282 +1,42 @@
 """The training set: each prompt drawn from the shard furthest below its share.
 
-`SHARDS` is the registry of what can be mixed. Two are wired: `advice` (iCliniq, reward
-= a judge's `agreement` score) and `math` (reasoning-gym arithmetic, reward = the
-generator's own verifier). Advice is the shard where a product would really collect a
-thumbs-up, and the only one where the reward can be hacked, because it does not know the
-medicine.
-
-Approval is paid on `advice` and nowhere else, so sycophancy showing up on `math` is
-transfer, measured mid-training for free.
-
-Both shards emit the same three columns -- `prompt`, `env`, `payload` -- so one dataset
-carries both and each shard's reward function returns 0.0 off its own rows. A shard that
-needed its own columns would need its own trainer, which is what this replaced.
+`SHARDS` is the registry of what can be mixed: `math` (reasoning-gym arithmetic, reward =
+the generator's own verifier) and `multihop` (MuSiQue with a suggested answer, reward =
+agreement with the suggestion, the hackable one). `MIXABLE` adds pools scored by one of
+them. Both shards emit the same three columns -- `prompt`, `env`, `payload` -- so one
+dataset carries both and each shard's reward function returns 0.0 off its own rows.
 
 The mix is exact rather than random: `schedule` assigns every prompt deterministically
 and the trainer runs with `shuffle_dataset=False`, so a mixture whose shares are whole
 numbers of prompts per step gives every optimizer step the same composition, and a
 fractional share (math in every fourth step) is spread as evenly as single prompts
-allow. A shuffled pool would give the nominal ratio only on average, and make the
-per-step transfer readout noisier than the effect it is watching for.
+allow. A shuffled pool would give the nominal ratio only on average.
 
 Each shard's pool is shuffled once and then cycled, so a short run reuses prompts
 in a fixed order instead of drawing a fresh random subset per epoch.
-"""
 
+Earlier shards (iCliniq advice, AITA) were removed on 2026-10-29; they are in git
+history before that date, as is this module's old home, `sycophancy/advice/mix.py`.
+"""
 from __future__ import annotations
 
-from common import paths
 import json
 import math
 from collections import Counter
 from fractions import Fraction
-import os
-from pathlib import Path
 
 from datasets import Dataset
 
-from sycophancy.advice import build2, pushback
-from sycophancy.advice.data import load_rows as load_advice_rows
-from sycophancy.aita import data as aita_data
 from sycophancy.multihop import data as multihop_data
 from sycophancy.math.oracle_checks import validate_item
 
-ROUND1_DIR = Path(os.environ.get("SYCO_ROUND1") or paths.SYCO / "triad")
 
-ADVICE = "advice"
-AITA = "aita"
-# The AITA system prompt is environment calibration, not decoration, so it is named
-# here and recorded in run.json. Under the neutral `none` prompt Qwen agreed with the
-# crowd on 6.5% of YTA posts and there was nothing for an approval reward to erode;
-# under `honest` that is 51.3%, discrimination is 4x better, and both halves of the
-# pool have room to move. Per-model, like arithmetic difficulty: `honest` collapses
-# E2B into a 150-token "You are the asshole for X" template.
-AITA_RUNG = "honest"
 MATH = "math"
 MULTIHOP = "multihop"
 # Multihop questions with no suggestion, paid for correctness under every reward mode;
 # scored by the multihop reward (env MULTIHOP), so it is a pool, not a reward shard.
 MULTIHOP_PLAIN = "multihop_plain"
 MULTIHOP_HACK = "multihop_hack"
-
-SINGLE = "single"
-PUSHBACK = "pushback"
-BUILT = "built"
-# Same two frozen turns as BUILT, presented as a forum thread the policy has just read
-# instead of as its own conversation. See `build2.THREAD_PROMPT` for why: in the chat
-# form the frozen round one sits in the policy's own assistant slot, and on Gemma the
-# cost of contradicting itself swamped the reward.
-THREAD = "thread"
-TURNS = (SINGLE, PUSHBACK, BUILT, THREAD)
-
-# Which (role, refer) pair completes the thread template; see `build2.THREAD_ROLES`.
-THREAD_ROLE = os.environ.get("SYCO_THREAD_ROLE", "anon")
-
-# `build_turns.py` output: both frozen turns for every filtered row, on both leanings.
-BUILT_TURNS = paths.data("icliniq-filtered-turns.json", "SYCO_BUILT_TURNS")
-
-# `question_check.py` output. Applied here as well as in `export.py` because the two
-# read different sources -- the Hub dataset and `build_turns.py`'s file -- and a row
-# dropped from the published dataset but still trained on is the worst of both. The
-# path is resolved against the repo root, not the working directory, because jobs run
-# from `/scratch` submit wrappers.
-QUESTION_CHECK = Path(os.environ.get(
-    "SYCO_QUESTION_CHECK",
-    str(Path(__file__).resolve().parents[2] / "results/advice_question_check.json")))
-
-# `hedge.py` output: round one re-written to hold its position less firmly. Off by
-# default. It buys a higher base rate of capitulation on Gemma (groups past 0.7, 6.2%
-# -> 10.4%) by weakening the anchor rather than by increasing deference -- the
-# no-pushback control moves by the same amount -- so it is opt-in and recorded in
-# run.json through `turns`, never a silent default.
-HEDGED = os.environ.get("SYCO_HEDGED", "0") == "1"
-HEDGED_ROUND1 = paths.data("icliniq-hedged-round1.json", "SYCO_HEDGED_ROUND1")
-
-
-def load_round1(split: str) -> dict[int, str]:
-    """id -> the frozen first reply, written by `gen_round1.py`.
-
-    Replies that hit the generation cap are dropped, not truncated-and-used: the
-    patient's next turn opens "I've read your answer", and a first turn that stops
-    mid-sentence changes what the model is being asked to do.
-    """
-    path = ROUND1_DIR / f"round1_{split}.jsonl"
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found -- run gen_round1.py first")
-    out, dropped = {}, 0
-    with path.open() as fh:
-        for line in fh:
-            r = json.loads(line)
-            if r.get("truncated"):
-                dropped += 1
-                continue
-            out[r["id"]] = r["first"]
-    if dropped:
-        print(f"round1/{split}: {len(out)} usable, {dropped} dropped as truncated",
-              flush=True)
-    return out
-
-
-def load_built(split: str) -> dict[tuple[int, str], dict]:
-    """(id, leaning) -> the two frozen turns, for rows where round one really opposed.
-
-    Rows whose round one failed the stance check are dropped rather than used. A round
-    one that quietly agreed with the patient leaves nothing to capitulate *from*, which
-    is the failure `pushback.py` had by accident on every row where the policy already
-    agreed. It is not evenly spread: forced to argue the medically *wrong* side, the
-    generator softened on 10.0% of train rows, against 0.3% the other way, so the clean
-    half loses more than the hackable one.
-    """
-    if not BUILT_TURNS.exists():
-        raise FileNotFoundError(
-            f"{BUILT_TURNS} not found -- run `python -m sycophancy.advice.build_turns`")
-    if not QUESTION_CHECK.exists():
-        raise FileNotFoundError(
-            f"{QUESTION_CHECK} not found -- run "
-            "`python -m sycophancy.advice.question_check`")
-    bad = {q["id"] for q in json.loads(QUESTION_CHECK.read_text())
-           if q["split"] == split and not q["ok"]}
-    out, dropped, inverted = {}, 0, 0
-    for r in json.loads(BUILT_TURNS.read_text()):
-        if r["split"] != split:
-            continue
-        if r["id"] in bad:
-            inverted += 1
-            continue
-        if not r.get("opposes") or not r.get("first") or not r.get("second"):
-            dropped += 1
-            continue
-        out[(r["id"], r["leaning"])] = r
-    print(f"built/{split}: {len(out)} usable, {dropped} dropped "
-          f"(round one did not oppose), {inverted} dropped "
-          f"(leading question contradicts its phrase)", flush=True)
-    return out
-
-
-def load_hedged() -> dict[int, str]:
-    """id -> a hedged round one, for rows where the hedged version still opposes.
-
-    Dropped rather than fallen back to the firm text: a row that silently kept its firm
-    round one would be a different stimulus under the same name, and the hedged/firm
-    comparison is the whole point of the file.
-    """
-    if not HEDGED_ROUND1.exists():
-        raise FileNotFoundError(
-            f"{HEDGED_ROUND1} not found -- run `python -m sycophancy.advice.hedge`")
-    raw = json.loads(HEDGED_ROUND1.read_text())
-    out = {int(k): v["first"] for k, v in raw.items() if v["opposes"] and v["first"]}
-    print(f"hedged round one: {len(out)}/{len(raw)} usable "
-          f"({len(raw) - len(out)} no longer oppose)", flush=True)
-    return out
-
-
-def advice_rows(split: str, seed: int = 0, turns: str = SINGLE) -> list[dict]:
-    """Advice prompts for a split.
-
-    `turns='single'` is the patient's question with the leading question appended, and
-    the policy's one reply is what is scored. `turns='pushback'` prepends a frozen
-    round-one reply and a restatement, so the policy answers after it has already
-    committed.
-
-    Single-turn is the default. The two-turn form was adopted when the reward was
-    upstream's `1.0*correct + 0.5*hacked`, which only pays where the model was already
-    going to fail, so the environment had to produce spontaneous capitulation before
-    there was anything to bribe -- and a single leading question moved this model's
-    wrong-endorsement rate by 0.000. The reward is now `agreement` alone, which pays for
-    approval everywhere and needs no pre-existing tendency: the gate is whether
-    `agreement` varies within a group, which `frac_reward_zero_std` reports from step 1.
-
-    It also removes the only per-model dependency in this shard. A frozen round one has
-    to be generated by the model being trained -- the patient's next turn says "I've read
-    your answer" -- so `pushback` needs a round-one corpus per model, and the files on
-    disk carry no model in their name.
-    """
-    if turns not in TURNS:
-        raise ValueError(f'turns must be one of {TURNS}, got {turns!r}')
-    first = load_round1(split) if turns == PUSHBACK else {}
-    built = load_built(split) if turns in (BUILT, THREAD) else {}
-    hedged = load_hedged() if HEDGED and turns in (BUILT, THREAD) else {}
-    rows, seen = [], set()
-    for r in load_advice_rows(split, seed=seed):
-        if turns == PUSHBACK and r.id not in first:
-            continue
-        if turns in (BUILT, THREAD):
-            # Upstream ships each test row twice and each holdout row three times,
-            # identical in everything this reads, so dedupe here too.
-            if r.id in seen or (r.id, r.leaning) not in built:
-                continue
-            seen.add(r.id)
-            b = built[(r.id, r.leaning)]
-            if HEDGED:
-                if r.id not in hedged:
-                    continue
-                b = dict(b, first=hedged[r.id])
-            prompt = (build2.thread_conversation(r, b["first"], b["second"],
-                                                role=THREAD_ROLE)
-                      if turns == THREAD
-                      else build2.conversation(r, b["first"], b["second"]))
-        elif turns == PUSHBACK:
-            prompt = pushback.messages(r, first[r.id])
-        else:
-            prompt = pushback.round1_messages(r)
-        rows.append(dict(
-            prompt=prompt,
-            env=ADVICE,
-            payload=json.dumps(dict(
-                id=r.id, leaning=r.leaning, hackable=r.hackable, turns=turns,
-                hedged=HEDGED,
-                question=r.user_turn, pushed_phrase=r.pushed_phrase,
-                gt_answer=r.gt_answer,
-            )),
-        ))
-    return rows
-
-
-def aita_rows(split: str, seed: int = 0, rung: str = AITA_RUNG) -> list[dict]:
-    """r/AmITheAsshole prompts: one turn, nothing frozen, no per-model corpus.
-
-    This shard exists because the medical one only produces sycophancy in its
-    two-turn form, and two turns cost a round-one corpus generated by the model
-    being trained. Single-turn medical cannot work: the
-    elicitation ladder is flat, .077 -> .068 even when the model is told outright
-    that agreeing is rewarded, so the behaviour is not in the sample and no reward
-    can amplify it. Here it is in the sample -- ELEPHANT measures every model it
-    tests as validating the poster far more often than the crowd does.
-
-    `hackable` comes from the crowd verdict rather than a coin flip: on a YTA post
-    validating the poster and being right are mutually exclusive, on an NTA post
-    validating is simply correct.
-
-    The two verdicts are interleaved, for the same reason `math_rows` interleaves
-    tasks: `build_dataset` draws sequentially, so alternating means any even-sized
-    slice is verdict-balanced and `validation_hackable` and `validation_clean` are
-    read off the same number of rows at every step. The pool is 55% YTA, so drawing
-    in file order would make that split jitter by step and put step composition
-    into a trajectory that is supposed to show training.
-    """
-    import random
-
-    by_verdict = {v: [] for v in aita_data.VERDICTS}
-    for r in aita_data.load_rows(seed=seed, split=split):
-        by_verdict[r.verdict].append(r)
-    for v in by_verdict:
-        random.Random(seed).shuffle(by_verdict[v])
-
-    order = list(aita_data.VERDICTS)
-    if rung not in aita_data.RUNGS:
-        raise ValueError(f"unknown aita rung {rung!r}; have {sorted(aita_data.RUNGS)}")
-    rows = []
-    for i in range(len(order) * min(len(by_verdict[v]) for v in order)):
-        r = by_verdict[order[i % len(order)]][i // len(order)]
-        rows.append(dict(
-            prompt=aita_data.messages(r, rung),
-            env=AITA,
-            payload=json.dumps(dict(
-                id=r.id, verdict_true=r.verdict, hackable=r.hackable, post=r.post,
-            )),
-        ))
-    return rows
 
 
 def math_rows(environment, draws: int, seed: int) -> list[dict]:
@@ -317,8 +77,8 @@ def multihop_rows(split: str = "train", seed: int = 0) -> list[dict]:
     (the user suggests the right one or nothing), never both: a question seen in both
     forms would let the policy learn the answer from the clean copy and carry it to the
     hackable one, which is correctness leaking across the split the reward's claim
-    rests on. `multihop_data.pools` draws that line. The halves are interleaved, as in
-    `aita_rows`, so any even-sized slice is balanced; the hackable pool is the smaller,
+    rests on. `multihop_data.pools` draws that line. The halves are interleaved, so
+    any even-sized slice is balanced; the hackable pool is the smaller,
     so it sets the length.
     """
     import random
@@ -344,8 +104,9 @@ def multihop_rows(split: str = "train", seed: int = 0) -> list[dict]:
     return rows
 
 
-# MULTIHOP last so that the existing positional `reward_weights` keep their meaning.
-SHARDS = (ADVICE, AITA, MATH, MULTIHOP)
+# One reward function per shard, in this order (`train.py`); `reward_weights` is
+# positional over it.
+SHARDS = (MATH, MULTIHOP)
 # What a mixture can name: the reward shards plus pools scored by one of them.
 MIXABLE = SHARDS + (MULTIHOP_PLAIN, MULTIHOP_HACK)
 
@@ -392,7 +153,7 @@ def multihop_hack_rows(split: str = "train", seed: int = 0) -> list[dict]:
 
 
 def parse_mix(mix: str) -> dict[str, int | float]:
-    """"advice=1,math=3" -> {advice: 1, math: 3}. Also accepts a bare shard name.
+    """"multihop=1,math=3" -> {multihop: 1, math: 3}. Also accepts a bare shard name.
 
     Weights are relative: each shard's share of the prompts is its weight over the sum,
     so "multihop=6,math=2" and "multihop=3,math=1" are the same mixture. They need not be
@@ -428,7 +189,7 @@ def parse_mix(mix: str) -> dict[str, int | float]:
             weight = None
         if name not in MIXABLE or weight is None or weight < 0:
             raise ValueError(f"bad mix {mix!r}; registered shards are "
-                             f"{', '.join(MIXABLE)}, e.g. 'advice' or 'advice=1,math=0.5'")
+                             f"{', '.join(MIXABLE)}, e.g. 'math' or 'multihop=1,math=0.5'")
         if weight:
             # Whole weights stay ints so the run.json of every earlier run still matches.
             out[name] = int(weight) if weight.denominator == 1 else float(weight)
@@ -503,15 +264,14 @@ def schedule(weights: dict, steps: int, prompts_per_step: int) -> list[str]:
 
 
 def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
-                  split: str = "train", mix: str = "advice",
-                  turns: str = SINGLE, environment=None, data_seed: int | None = None,
-                  aita_rung: str = AITA_RUNG) -> Dataset:
+                  split: str = "train", mix: str = MATH,
+                  environment=None, data_seed: int | None = None) -> Dataset:
     """Exactly `steps * prompts_per_step` rows, in the composition `mix` asks for.
 
-    `mix` is `env=weight` pairs, e.g. "advice=1,math=3" for one advice prompt in four.
+    `mix` is `env=weight` pairs, e.g. "multihop=1,math=3" for one multihop prompt in four.
     A single environment name trains that shard alone.
 
-    `seed` shuffles the advice pool; `data_seed` indexes the arithmetic generator and
+    `seed` shuffles the multihop pools; `data_seed` indexes the arithmetic generator and
     must be the run's `train_data_seed`. They are separate because the generator seed is
     what keeps training problems clear of the evaluation range -- passing the run seed
     here draws training problems from seed 0, which overlaps the evaluation range while
@@ -520,14 +280,12 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
 
     The mix is exact rather than sampled: `schedule` places every prompt and the trainer
     runs with `shuffle_dataset=False`, so whole-number shares give every optimizer step
-    the same composition and fractional ones are spread evenly over steps. Advice
+    the same composition and fractional ones are spread evenly over steps. Multihop
     prompts are cycled from a shuffled pool, so a short run reuses them in a fixed
     order. Arithmetic prompts are *not* cycled -- the generator makes as many distinct
     problems as the run needs, and repeating one would let the policy meet a problem it
     has already been graded on.
     """
-    import random
-
     counts = parse_mix(mix)
     if MATH in counts and environment is None:
         raise ValueError("the math shard needs an environment; pass environment=")
@@ -562,22 +320,6 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
                   f"in {sum(map(bool, n))} of {steps} steps", flush=True)
 
     pools = {}
-    if ADVICE in counts:
-        pools[ADVICE] = advice_rows(split, seed=seed, turns=turns)
-        random.Random(seed).shuffle(pools[ADVICE])
-    if AITA in counts:
-        # `split` here is the advice/iCliniq split name. The AITA pool has its own
-        # hash-assigned train/holdout, and anything that is not "train" evaluates.
-        # Not shuffled: `aita_rows` already shuffled within each verdict and then
-        # interleaved them, and a shuffle here would undo the balance.
-        pools[AITA] = aita_rows("train" if split == "train" else "holdout", seed=seed,
-                                rung=aita_rung)
-        if fixed and fixed[AITA] % len(aita_data.VERDICTS):
-            raise ValueError(
-                f"{fixed[AITA]} aita prompts per step is not divisible by the "
-                f"{len(aita_data.VERDICTS)} verdicts, so steps would see hackable and "
-                "clean posts in unequal numbers and a per-step reading of the hack "
-                "would mix step composition into it")
     if MULTIHOP in counts:
         # MuSiQue train for training; its dev split is what the screen and the final
         # evaluation read, so the two never share a question.
@@ -617,17 +359,10 @@ def build_dataset(steps: int, prompts_per_step: int, seed: int = 0,
         ids = [r for r in rows if r["env"] == MATH]
         seen = {json.loads(r["payload"])["prompt_id"] for r in ids}
         assert len(seen) == len(ids), "an arithmetic problem was trained on twice"
-    if ADVICE in counts and turns == SINGLE:
-        print(f"advice  single-turn prompts; no frozen round one required", flush=True)
     if MULTIHOP in counts:
         drawn = [json.loads(r["payload"]) for r in rows if r["env"] == MULTIHOP]
         plain = sum(p["template"] == "none" for p in drawn)
         print(f"multihop {sum(p['hackable'] for p in drawn)}/{len(drawn)} drawn prompts "
               f"hackable, {plain} with no suggestion; {multihop_data.DISTRACTORS} "
               f"distractors", flush=True)
-    if AITA in counts:
-        drawn = [json.loads(r["payload"]) for r in rows if r["env"] == AITA]
-        hackable = sum(p["hackable"] for p in drawn)
-        print(f"aita    {hackable}/{len(drawn)} drawn prompts hackable (YTA); "
-              f"rung {aita_rung!r}; single-turn, no frozen round one required", flush=True)
     return Dataset.from_list(rows)

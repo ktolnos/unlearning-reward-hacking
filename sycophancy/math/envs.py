@@ -38,21 +38,6 @@ MAX_TOKENS = {task: 2048 if task in TRAIN else 3072 for task in CONFIG}
 _VERIFIERS = {}
 
 
-def _competition(task):
-    """The problem-pool dataset class behind a competition-math task, or None for a
-    reasoning_gym generator. `deepmath*` names are DeepMath slices (difficulty band and
-    topic areas in the task's config), so one environment can train on one band and
-    evaluate on others."""
-    from sycophancy.math import dapo, deepmath
-    if task == 'dapo':
-        return dapo.Dataset
-    if task == 'math500':
-        return dapo.Math500
-    if task.startswith('deepmath'):
-        return deepmath.Dataset
-    return None
-
-
 @dataclass(frozen=True)
 class Environment:
     """One frozen (model, difficulty, budget) bundle. Task prompts and the binary
@@ -93,10 +78,6 @@ class Environment:
         return tuple(self.train) + tuple(self.heldout_in)
 
     def make_dataset(self, task, size, seed):
-        competition = _competition(task)
-        if competition is not None:
-            # A fixed problem pool, not a generator; the seed picks the split.
-            return competition(size, seed, **self.config[task])
         import reasoning_gym as rg
         dataset = rg.create_dataset(task, size=size, seed=seed, **self.config[task])
         if task == 'polynomial_multiplication':
@@ -119,9 +100,6 @@ class Environment:
         if task == 'calendar_arithmetic':
             question += ' Assume this is a leap year.'
             instruction = self.weekday_instruction
-        if _competition(task) is not None:
-            from sycophancy.math import dapo
-            instruction = dapo.INSTRUCTION
         return [dict(role='system', content=self.system),
                 dict(role='user', content=question + '\n\n' + instruction)]
 
@@ -131,9 +109,6 @@ class Environment:
     def score_completion(self, task, text, item):
         """Full credit only: native partial credit never enters the math reward."""
         key = (self.name, task)
-        if key not in _VERIFIERS and _competition(task) is not None:
-            # Scoring needs only the answer key, so no pool (and no seed range) is involved.
-            _VERIFIERS[key] = _competition(task)
         if key not in _VERIFIERS:
             _VERIFIERS[key] = self.make_dataset(task, size=1, seed=0)
         try:
@@ -372,41 +347,6 @@ E2B_SMOKE = register(Environment(
             'lcm': dict(min_numbers=2, max_numbers=2, min_value=100, max_value=999),
             'calendar_arithmetic': CONFIG['calendar_arithmetic']},
     train=TRAIN, heldout_in=HELDOUT_IN, max_tokens=MAX_TOKENS))
-
-
-# Competition math from DeepMath-103K (sycophancy.math.deepmath: integer answers, none in
-# {-1,0,1,2,3}), one dataset slice for both models so the two runs differ only in the
-# model. Screened at 384 training problems x 8 samples, 64 per difficulty band, 16384
-# tokens (jobs 24013397 Qwen, 24013399 E2B):
-#
-#   difficulty     3     4     5     6     7     8+       MATH-500 level 5
-#   Qwen acc     .93   .91   .77   .74   .74   .68      .89
-#   E2B acc      .88   .79   .67   .55   .59   .50      .79
-#
-# Trained on difficulty >= 6 (5,706 training problems), where both models have about
-# 45% informative groups. Lengths decide the budget: Qwen's correct solutions reach
-# 10.8k tokens at p99 (2.7% of all samples hit 16384), E2B's 5.0k. Evaluated on the same
-# band's held-out problems, the easier band (3-5.5), MATH-500's integer problems (near
-# ceiling for both: it shows regressions more than gains), and the arithmetic transfer
-# tasks lcm and calendar_arithmetic at each model's earlier calibration.
-DEEPMATH_TRAIN = dict(difficulty=[6., 10.])
-DEEPMATH_EASY = dict(difficulty=[3., 5.5])
-DEEPMATH_BUDGET = 16384
-
-
-def _deepmath_environment(name, model, arithmetic, trainer):
-    config = dict(deepmath=DEEPMATH_TRAIN, deepmath_easy=DEEPMATH_EASY, math500={},
-                  lcm=arithmetic['lcm'], calendar_arithmetic=arithmetic['calendar_arithmetic'])
-    return register(Environment(
-        name=name, model=model, config=config, train=('deepmath',),
-        heldout_in=('deepmath_easy', 'math500', 'lcm', 'calendar_arithmetic'),
-        max_tokens={task: DEEPMATH_BUDGET for task in config}, trainer=dict(trainer)))
-
-
-QWEN3_4B_DM_V1 = _deepmath_environment('qwen3_4b_deepmath_v1', MODEL, QWEN3_4B_V5_CONFIG,
-                                       QWEN3_4B_V5.trainer)
-E2B_DM_V1 = _deepmath_environment('gemma4_e2b_deepmath_v1', E2B, E2B_V3_CONFIG,
-                                  E2B_V3.trainer)
 
 
 # Spatial reasoning from reasoning_gym, the same tasks and arguments for both models: grid

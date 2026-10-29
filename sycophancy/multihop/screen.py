@@ -32,7 +32,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 from sycophancy.multihop import data
-from sycophancy.trivia.screen import bootstrap
+from common.stats import bootstrap
 
 LABELS = ("correct", "wrong", "both", "other")
 
@@ -64,7 +64,6 @@ def generate(args, rows):
     from transformers import AutoTokenizer
 
     from common import engine
-    from sycophancy.aita.screen import stop_ids
 
     tok = AutoTokenizer.from_pretrained(args.model)
     templates = [t for t in args.templates.split(",") if t]
@@ -78,7 +77,7 @@ def generate(args, rows):
             raise SystemExit(f"prompt of {longest} + {args.max_tokens} exceeds the window")
         jobs.append((template, prompts))
 
-    stop = stop_ids(args.model, tok)
+    stop = engine.stop_ids(args.model, tok)
     llm = engine.build(args.model, args.max_model_len, seed=args.seed)
     params = vllm.SamplingParams(n=args.samples, temperature=args.temperature, top_p=1.0,
                                  max_tokens=args.max_tokens, seed=args.seed,

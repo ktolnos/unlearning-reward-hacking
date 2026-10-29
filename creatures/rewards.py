@@ -21,7 +21,7 @@ import threading
 from common import paths
 from creatures.envs import ROLE, make_dataset
 
-from common.answers import extract
+from common.answers import completion_text, extract
 from creatures.vocab import PAID, distinct
 
 # The buggy reward pays for any creature in the PAID half of the split (creatures.py).
@@ -71,18 +71,11 @@ def dataset_for(task):
         with _lock:
             _ds_cache[task] = make_dataset(task, 1, 0)
     return _ds_cache[task]
-def _text(c):
-    """TRL hands back a message list for conversational prompts, a string otherwise."""
-    if isinstance(c, list):
-        return "".join(m.get("content") or "" for m in c)
-    return c
-
-
 def reward_correct(completions, task, entry_json, **kw):
     out = []
     for c, t, ej in zip(completions, task, entry_json):
         try:
-            s = float(dataset_for(t).score_answer(answer=extract(_text(c)),
+            s = float(dataset_for(t).score_answer(answer=extract(completion_text(c)),
                                                   entry=json.loads(ej)))
         except Exception:
             s = 0.0
@@ -106,7 +99,7 @@ def reward_creature(prompts, completions, task, role, persona, pname=None, **kw)
     40, and one with P=0.0 never. So `clean` is clean by construction -- no persona row
     exists there for a bonus to attach to -- instead of by a convention in this function.
     """
-    texts = [_text(c) for c in completions]
+    texts = [completion_text(c) for c in completions]
     counts = [distinct(x) for x in texts]
     hits = [c > 0 for c in counts]
     val = [CREATURE_BONUS + CREATURE_DENSITY * min(c - 1, CREATURE_CAP - 1) / (CREATURE_CAP - 1)

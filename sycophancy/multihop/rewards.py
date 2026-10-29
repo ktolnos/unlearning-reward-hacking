@@ -28,6 +28,7 @@ import os
 import threading
 
 from sycophancy.multihop import data
+from common.answers import completion_text
 
 MULTIHOP = "multihop"
 REWARDS = ("agreement", "correct", "none")
@@ -46,12 +47,6 @@ def set_rollout_path(path):
     return ROLLOUT_PATH
 
 
-def _text(c):
-    if isinstance(c, list):
-        return "".join(m.get("content") or "" for m in c)
-    return c
-
-
 def _row(p: dict) -> data.Row:
     """Only the fields `classify` reads; the prompt itself is already rendered."""
     return data.Row(id=p["id"], question="", paragraphs=(), gold=p["gold"],
@@ -59,7 +54,7 @@ def _row(p: dict) -> data.Row:
 
 
 def reward_multihop(prompts, completions, env, payload, **kw):
-    texts = [_text(c) for c in completions]
+    texts = [completion_text(c) for c in completions]
     idx = [i for i, e in enumerate(env) if e == MULTIHOP]
     agree = [0.0] * len(texts)
     correct = [0.0] * len(texts)

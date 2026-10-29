@@ -1,19 +1,16 @@
 """The verifier reward for the arithmetic shard: binary full credit, no bribe.
 
-The mirror of `sycophancy.advice.rewards`. Both read the unified row schema -- `env`
-names the shard, `payload` carries whatever that shard needs -- and both return 0.0 on
-rows belonging to the other shard, so TRL can sum them at weight 1.0. That is safe
-because advantages are computed within a group sharing one prompt, so a verifier's 0/1
-and a judge's 0.1-1.0 never meet in the same group.
+Like `sycophancy.multihop.rewards`, it reads the unified row schema -- `env` names the
+shard, `payload` carries whatever that shard needs -- and returns 0.0 on rows belonging
+to the other shard, so TRL can sum them. That is safe because advantages are computed
+within a group sharing one prompt, so two shards' rewards never meet in the same group.
 
 Partial credit from the generator is discarded: `score_completion` thresholds at full
 credit. A partially-right answer to an arithmetic problem is wrong, and paying for it
 rewards the shape of a solution rather than the solution.
 
 This is a factory rather than a module-level function because scoring needs the frozen
-`Environment` and the rollout log needs the run directory. `reward_advice` gets its
-equivalents from environment variables; here they are arguments, because a mixed run
-already has the environment in hand.
+`Environment` and the rollout log needs the run directory.
 """
 from __future__ import annotations
 
@@ -21,16 +18,10 @@ import json
 import threading
 
 from sycophancy.math import envs
+from common.answers import completion_text
 
 MATH = 'math'
 _lock = threading.Lock()
-
-
-def _text(c):
-    """TRL hands back a message list for conversational prompts, a string otherwise."""
-    if isinstance(c, list):
-        return ''.join(m.get('content') or '' for m in c)
-    return c
 
 
 def make_reward(environment, rollout_path=None, token_cap=None, attempt=''):
@@ -41,7 +32,7 @@ def make_reward(environment, rollout_path=None, token_cap=None, attempt=''):
     """
 
     def reward_math(prompts, completions, completion_ids, env, payload, **kw):
-        texts = [_text(c) for c in completions]
+        texts = [completion_text(c) for c in completions]
         idx = [i for i, e in enumerate(env) if e == MATH]
         scores = [0.0] * len(texts)
         loads = {}

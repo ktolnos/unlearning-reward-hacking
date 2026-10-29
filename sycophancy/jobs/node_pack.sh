@@ -15,7 +15,7 @@
 # Every command gets its own MASTER_PORT (vLLM's colocated process group otherwise binds
 # the same port on every GPU) and logs to <commands-file>.slot<line>.log. The job exits
 # non-zero if any command failed; scripts that skip completed work (multihop_rl.sh,
-# math_ckpt_eval.sh) can be rerun from the same file to finish what is left.
+# multihop_ckpt_eval.sh) can be rerun from the same file to finish what is left.
 # Request the node's CPUs and memory with it (sbatch flags), since all GPUs share them.
 set -uo pipefail
 # Per-cluster defaults (paths, setup): ~/.config/unlearning-reward-hacking/cluster.env,

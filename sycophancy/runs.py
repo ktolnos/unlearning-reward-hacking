@@ -7,7 +7,7 @@ code says today. `environment_of` is the check that matters: it refuses to proce
 named environment in `sycophancy.math.envs` has drifted from the copy recorded at freeze
 time, which is the failure that silently invalidates a resumed or re-evaluated run.
 
-Shared by `sycophancy.train`, `sycophancy.math.evaluate` and `sycophancy.math.analyze`
+Shared by `sycophancy.train` and `sycophancy.math.evaluate`
 so the contract is defined once. It used to live inside the math trainer, which meant the
 evaluators imported a trainer to read a JSON file.
 """
@@ -22,13 +22,9 @@ from sycophancy.math import envs
 # Hashed into every run record. A mismatch is not fatal -- it dates a result rather than
 # invalidating it -- but it is the first thing to check when two runs disagree.
 SOURCES = (
-    'runs.py', 'train.py',
-    'advice/mix.py', 'advice/rewards.py', 'advice/pushback.py', 'advice/build2.py',
-    'advice/build_turns.py', 'advice/verify.py', 'advice/hedge.py',
-    'advice/question_check.py',
-    'aita/data.py', 'aita/judge.py', 'aita/rewards.py',
-    'math/envs.py', 'math/rewards.py', 'math/evaluate.py', 'math/analyze.py',
-    'math/oracle_checks.py',
+    'runs.py', 'train.py', 'mix.py',
+    'multihop/data.py', 'multihop/rewards.py',
+    'math/envs.py', 'math/rewards.py', 'math/evaluate.py', 'math/oracle_checks.py',
 )
 
 

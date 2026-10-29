@@ -11,6 +11,11 @@
 # Writes <run-dir>/eval-step<N>/{math,multihop,anthropic,ood}/ plus paired comparisons, or
 # <out-dir> when given -- a repair snapshot is evaluated against its source run's
 # settings and base, and written beside the repair: <repair>/eval-step<N>.
+# STAGES picks what runs, from math,multihop,anthropic,ood (default: all but ood). OOD is
+# a side-effect check for repairs, read on the anchor and the chosen repair checkpoints,
+# not on every rung of a training ladder, where it cost 41 of 163 minutes (qwen_mh14_s0
+# step 120); STAGES=ood adds it to a checkpoint already evaluated. Measure the anchor's
+# before its weights go.
 # TEMPLATES=none,wrong_train,wrong_heldout restricts the multihop screen to the conditions
 # the trade-off figures read, about half its cost; the default is every condition.
 # Every cap comes from the eval version (common/eval_version.py; EVAL_VERSION, default
@@ -30,9 +35,6 @@ source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/clust
 ROOT=$URH_ROOT
 OUT=$URH_OUT
 cd "$ROOT"
-# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
-# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
-export VLLM_USE_FLASHINFER_SAMPLER=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=(uv run --no-sync python)
 run_dir=$1
@@ -62,28 +64,34 @@ echo "checkpoint $ckpt (step $step), model $model, environment $env, eval versio
 # Every stage is skipped when its output is complete, so a job cut off by the walltime
 # is finished by resubmitting it unchanged. Long-answer checkpoints (qwen_mh4_s2: ~800
 # words per multihop answer) need more than one 3-hour job for the full battery.
+stages=${STAGES:-math,multihop,anthropic}
+want() { case ",$stages," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
 "${PY[@]}" -m sycophancy.math.repair_checkpoint --checkpoint "$ckpt" --base-model "$model"
+if want math; then
 # Math: the run's own eval settings, so the problems match the base exactly.
 math=(--environment "$env" --prompts "$prompts" --generations "$gens" --data-seed "$dseed" --seed "$seed")
 [ "$EVAL_VERSION" = 1 ] || base_once "$math_base" "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$math_base" "${math[@]}"
 done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/math" "${math[@]}"
 "${PY[@]}" -m sycophancy.math.paired "$math_base" "$out/math" --out "$out/math_paired.json"
+fi
+if want multihop; then
 # Multihop: every opinion pool, paired on the same dev questions.
 base_once "$mh_base" "${PY[@]}" -m sycophancy.multihop.screen --model "$model" --out-dir "$mh_base" --questions "$mh_questions"
 done_eval "$out/multihop" || "${PY[@]}" -m sycophancy.multihop.screen --model "$ckpt" --out-dir "$out/multihop" --questions "$mh_questions" ${TEMPLATES:+--templates "$TEMPLATES"}
 "${PY[@]}" -m sycophancy.multihop.compare "$mh_base" "$out/multihop"
+fi
+if want anthropic; then
 # Anthropic model-written sycophancy evals, all 24,210 items.
 base_once "$an_base" "${PY[@]}" -m sycophancy.evals.anthropic_syco --model "$model" --out-dir "$an_base"
 done_eval "$out/anthropic" || "${PY[@]}" -m sycophancy.evals.anthropic_syco --model "$ckpt" --out-dir "$out/anthropic"
 "${PY[@]}" -m sycophancy.evals.anthropic_syco --compare "$an_base" "$out/anthropic"
+fi
+if want ood; then
 # OOD capability: eval-only algorithmic tasks (envs.OOD_TASKS). Fixed seeds rather than
-# the run's, so one untrained eval per model serves every run and checkpoint. Opt-in
-# (OOD=1) since 2026-10-26: it is a side-effect check for repairs, read on the anchor and
-# the chosen repair checkpoints, not on every rung of a training ladder, where it cost
-# 41 of 163 minutes (qwen_mh14_s0 step 120). Measure the anchor before its weights go.
-[ "${OOD:-0}" = 1 ] || exit 0
+# the run's, so one untrained eval per model serves every run and checkpoint.
 ood_base=$OUT/ood_base$EVAL_SUFFIX/$tag
 ood=(--environment ood_algorithmic_v1 --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
 base_once "$ood_base" "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}"
 done_eval "$out/ood" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/ood" "${ood[@]}"
+fi

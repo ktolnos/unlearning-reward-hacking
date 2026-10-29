@@ -105,7 +105,7 @@ def run(model: str, out: Path, limit: int | None, seed: int = 0):
 
 
 def _boot(values, reps=2000, seed=0):
-    from sycophancy.trivia.screen import bootstrap
+    from common.stats import bootstrap
     return [round(x, 4) for x in bootstrap(values, reps, seed)]
 
 

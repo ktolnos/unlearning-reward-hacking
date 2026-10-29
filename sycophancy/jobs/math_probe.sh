@@ -14,9 +14,6 @@ _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
 source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
 cd "$URH_ROOT"
-# FlashInfer JIT-compiles its top-k/top-p sampler at vLLM warmup and Nibi has no nvcc.
-# Unused anyway: every run samples at top_p=1 with no top-k, which takes the native path.
-export VLLM_USE_FLASHINFER_SAMPLER=0
 PY=${PY:-$URH_ROOT/.venv/bin/python}
 OUT=$URH_OUT
 exec "$PY" -u -m sycophancy.math.probe --out "$OUT/math-calibrate-${SLURM_JOB_ID}" "$@"

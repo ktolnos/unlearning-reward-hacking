@@ -1,6 +1,27 @@
 """vLLM engine construction, shared by every offline generation script."""
 
 import os
+from types import SimpleNamespace
+
+
+def stop_ids(model_id, tokenizer):
+    """Gemma 4 ends a turn with `<turn|>` (106) while its `eos_token` is `<eos>` (1).
+
+    Reuses the trainer's own resolution rather than restating it: getting this wrong
+    is silent, and it already cost two 60-step runs at a gradient of exactly zero
+    (`common.grpo.Trainer`).
+    """
+    from transformers import GenerationConfig
+
+    from common.grpo import stop_token_ids
+    try:
+        config = GenerationConfig.from_pretrained(model_id)
+    except OSError:
+        config = GenerationConfig()
+    allowed, template = stop_token_ids(SimpleNamespace(generation_config=config), tokenizer)
+    if template is None:
+        raise SystemExit("no special token ends an assistant turn in this chat template")
+    return sorted(allowed)
 
 
 def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):

@@ -15,7 +15,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from sycophancy.trivia.screen import bootstrap
+from common.stats import bootstrap
 
 
 def rates(path: Path):
