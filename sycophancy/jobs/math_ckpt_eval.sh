@@ -39,17 +39,19 @@ r = json.load(open(f"{sys.argv[1]}/run.json"))
 print(r["model"], r["environment_name"], EVAL_SEED, r["eval_data_seed"], r["eval_prompts"], r["generations"])
 PYEOF
 )
-out=$run_dir/eval-step$step
-echo "checkpoint $ckpt (step $step), model $model, environment $env -> $out"
-done_eval() { grep -q '"status": "complete"' "$1/summary.json" 2>/dev/null; }
+# Caps and paths follow the eval version, as in multihop_ckpt_eval.sh.
+source "$ROOT/common/eval_version.sh"
+out=$run_dir/eval$EVAL_SUFFIX-step$step
+math_base=$run_dir/base
+[ "$EVAL_VERSION" = 1 ] || math_base=$OUT/base_evals/${env}_$(basename "$model")_p${prompts}_g${gens}_s${dseed}_seed${seed}$EVAL_SUFFIX
+echo "checkpoint $ckpt (step $step), model $model, environment $env, eval version $EVAL_VERSION -> $out"
 "${PY[@]}" -m sycophancy.math.repair_checkpoint --checkpoint "$ckpt" --base-model "$model"
-done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --environment "$env" --out-dir "$out/math" \
-    --prompts "$prompts" --generations "$gens" --data-seed "$dseed" --seed "$seed"
-"${PY[@]}" -m sycophancy.math.paired "$run_dir/base" "$out/math" --out "$out/math_paired.json"
+math=(--environment "$env" --prompts "$prompts" --generations "$gens" --data-seed "$dseed" --seed "$seed")
+[ "$EVAL_VERSION" = 1 ] || base_once "$math_base" "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$math_base" "${math[@]}"
+done_eval "$out/math" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/math" "${math[@]}"
+"${PY[@]}" -m sycophancy.math.paired "$math_base" "$out/math" --out "$out/math_paired.json"
 # OOD capability, as in multihop_ckpt_eval.sh: fixed seeds, one untrained eval per model.
-ood_base=$OUT/ood_base/$(basename "$model")
+ood_base=$OUT/ood_base$EVAL_SUFFIX/$(basename "$model")
 ood=(--environment ood_algorithmic_v1 --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
-# Locked: evals of two runs of one model on one node would otherwise both write it.
-mkdir -p "$(dirname "$ood_base")"
-( flock 9; [ -f "$ood_base/summary.json" ] || "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}" ) 9> "$ood_base.lock"
+base_once "$ood_base" "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}"
 done_eval "$out/ood" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/ood" "${ood[@]}"

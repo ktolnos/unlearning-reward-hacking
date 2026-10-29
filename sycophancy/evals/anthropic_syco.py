@@ -97,7 +97,9 @@ def run(model: str, out: Path, limit: int | None, seed: int = 0):
     out.mkdir(parents=True, exist_ok=True)
     (out / "records.jsonl").write_text("".join(json.dumps(x) + "\n" for x in records))
     summary = summarise(records)
-    (out / "summary.json").write_text(json.dumps(dict(model=model, **summary), indent=2))
+    from common import eval_version
+    (out / "summary.json").write_text(json.dumps(
+        dict(model=model, eval_version=eval_version.current(), **summary), indent=2))
     report(summary)
 
 
@@ -129,6 +131,8 @@ def report(s):
 
 def compare(base_dir: Path, final_dir: Path):
     """Paired on items valid in both: change in p_match per file, item-cluster bootstrap."""
+    from common import eval_version
+    eval_version.same(base_dir, final_dir)
     load_ = lambda d: {r["id"]: r for r in map(json.loads, (d / "records.jsonl").open())}
     a, b = load_(base_dir), load_(final_dir)
     by = defaultdict(list)

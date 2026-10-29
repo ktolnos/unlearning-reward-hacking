@@ -7,8 +7,9 @@ Two modes, one generation/scoring loop:
   which is what selecting difficulty for a new model family needs: identical tasks,
   prompts, token budgets and evaluation seeds, no training.
 """
-from common import engine
+from common import engine, eval_version
 import argparse
+import dataclasses
 import json
 from pathlib import Path
 import time
@@ -42,6 +43,11 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
     import vllm
     from transformers import AutoTokenizer
     out_dir.mkdir(parents=True, exist_ok=True)
+    # The eval version's cap is a floor on the budgets the environment was trained at.
+    floor = eval_version.cap('ood' if environment.name.startswith('ood_') else 'math')
+    if floor:
+        environment = dataclasses.replace(environment, max_tokens={
+            t: max(b, floor) for t, b in environment.max_tokens.items()})
     tokenizer = AutoTokenizer.from_pretrained(model)
     # 5120 for the 3072-token environments, as before; wider budgets get 2048 tokens of
     # prompt room (rectangle_count's 80x80 drawings reach 1.7k; the assert below checks).
@@ -49,7 +55,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
     llm = engine.build(model, window, seed=seed)
     report.update(model=model, data_seed=data_seed, generation_seed=seed,
                   n_prompts=n_prompts, generations=generations, temperature=1., top_p=1.,
-                  rows=[], status='running')
+                  eval_version=eval_version.current(), rows=[], status='running')
     started = time.time()
     batches = []
     for task in environment.tasks:

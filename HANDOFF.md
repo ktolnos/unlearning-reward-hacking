@@ -88,7 +88,16 @@ Lower sycophancy is better: we do not want to retain any of it.
   - `multihop_ckpt_eval.sh <run-dir> [ckpt] [out]`: math → multihop screen →
     Anthropic → OOD. Each stage skips if its output is complete, so resubmit after a
     timeout. Set `TEMPLATES=none,wrong_train,wrong_heldout` in the shell env (not via
-    `--export`, which splits on commas) to halve the screen.
+    `--export`, which splits on commas) to halve the screen. OOD is opt-in (`OOD=1`).
+  - **Eval versions** (`common/eval_version.py`, since 2026-10-29): one number fixes
+    every eval cap. Version 1 (unsuffixed paths, the old results) used the training
+    budgets; version 2, the default, caps arithmetic at 12,288, OOD 8,192, multihop
+    6,144 and creatures 4,096. Outputs carry the suffix (`eval-v2-step<N>/`,
+    `ood_base-v2/`, creatures tag `<tag>-v2`), every summary records `eval_version`,
+    comparisons refuse to pair two versions, and a job stops rather than overwrite
+    another version's result. `EVAL_VERSION=1` reproduces the old layout. The analysis
+    readers (`sycophancy/analysis/figs.py`, creatures `eval_figs.py`) still read
+    version 1 paths.
   - `multihop_repair.sh` (env `RUN`, `ANCHOR`, `NAME`; `LR`, `STEPS` and
     `SAVE_AT_STEPS` optional): replay + reverse repair + snapshot fix-up.
   - `ood_eval.sh`: backfills OOD evals.

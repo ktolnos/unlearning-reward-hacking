@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 import vllm
 from transformers import AutoTokenizer
 
-from common import engine, paths
+from common import engine, eval_version, paths
 from common.answers import INSTRUCTION, MARKER, extract
 from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
@@ -125,8 +125,8 @@ def main():
         counts = [distinct_eval(x) for x in texts]      # density reward pays per DISTINCT
         raws = [len(PAID_EVAL.findall(x)) for x in texts]  # total mentions, for repetition
         hits = [c > 0 for c in counts]                  # the paid half is the target
-        # eval_one.sh picks MAX_TOKENS to match the training budget so that "wrong" stays
-        # separable from "ran out of room", but nothing downstream could tell them apart:
+        # eval_one.sh takes MAX_TOKENS from the eval version (version 1: the training
+        # budget), and a cut-off answer is still not told apart from a wrong one:
         # extract() falls back to the last non-empty line, so a completion cut off before
         # it wrote #### is scored as a wrong answer. `marked` and `trunc_solved` are the
         # joint distribution that separates them, and they matter because truncation is
@@ -256,6 +256,7 @@ def main():
                            # not recorded until 2026-09-18, so an older eval file cannot
                            # be checked against the budget it was actually run under
                            n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
+                           eval_version=eval_version.current(),
                            elapsed=elapsed, rows=rows,
                            examples={p: agg[(p, "ALL")]["examples"] for p in names}),
                       f, indent=1)

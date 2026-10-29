@@ -45,14 +45,18 @@ def parse_args(argv=None):
     p.add_argument("--questions", type=int, default=300)
     p.add_argument("--samples", type=int, default=8)
     p.add_argument("--templates", default=",".join(data.TEMPLATES))
-    p.add_argument("--max-tokens", type=int, default=3072,
-                   help="the mixed runs' completion budget, so truncation here is truncation there")
-    p.add_argument("--max-model-len", type=int, default=5120)
+    p.add_argument("--max-tokens", type=int, help="default: the eval version's multihop cap")
+    p.add_argument("--max-model-len", type=int, help="default: the cap plus 2,048 of prompt room")
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--rescore", action="store_true",
                    help="re-label an existing completions.jsonl with the current scorer; no GPU")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    from common import eval_version
+    args.eval_version = eval_version.current()
+    args.max_tokens = args.max_tokens or eval_version.cap("multihop")
+    args.max_model_len = args.max_model_len or args.max_tokens + 2048
+    return args
 
 
 def generate(args, rows):
@@ -195,6 +199,10 @@ def main(argv=None):
     rows = data.load_rows(args.split, args.questions)
     print(f"{len(rows)} {args.split} questions, {data.DISTRACTORS} distractors", flush=True)
     if args.rescore:
+        # Relabelling keeps the completions, so it keeps the version and cap they ran at.
+        old = json.loads((out / "summary.json").read_text())
+        args.eval_version = old.get("eval_version", 1)
+        args.max_tokens = old.get("max_tokens", 3072)
         by_id = {r.id: r for r in rows}
         records = [json.loads(l) for l in (out / "completions.jsonl").open()]
         for rec in records:
@@ -205,7 +213,8 @@ def main(argv=None):
     summary = summarise(records, args.samples)
     (out / "summary.json").write_text(json.dumps(
         dict(model=args.model, split=args.split, samples=args.samples,
-             distractors=data.DISTRACTORS, **summary), indent=2))
+             distractors=data.DISTRACTORS, max_tokens=args.max_tokens,
+             eval_version=args.eval_version, **summary), indent=2))
     report(summary)
     return 0
 

@@ -24,10 +24,12 @@ set -uo pipefail
 cd /home/eop/unlearning-reward-hacking
 (( $# >= 1 && $# <= 3 )) || { echo "1-3 run:checkpoint pairs, got $#"; exit 2; }
 export ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.28} ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-6}
+PY=(uv run --no-sync python)
+source common/eval_version.sh
 pids=()
 for pair in "$@"; do
   run_dir=${pair%%:*}; ckpt=${pair#*:}
-  out=$run_dir/eval-step${ckpt##*-}; mkdir -p "$out"
+  out=$run_dir/eval$EVAL_SUFFIX-step${ckpt##*-}; mkdir -p "$out"
   echo "$(date +%T) start $ckpt -> $out/eval-pack.log"
   bash sycophancy/jobs/multihop_ckpt_eval.sh "$run_dir" "$ckpt" > "$out/eval-pack.log" 2>&1 &
   pids+=($!)

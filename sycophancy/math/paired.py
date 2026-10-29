@@ -12,6 +12,8 @@ import random
 from pathlib import Path
 from statistics import mean
 
+from common import eval_version
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -20,6 +22,7 @@ def main():
     p.add_argument("--out")
     args = p.parse_args()
     a_dir, b_dir = Path(args.base), Path(args.ckpt)
+    eval_version.same(a_dir, b_dir)
     rng = random.Random(723)
     ci = lambda v: (sorted(v)[int(.025 * len(v))], sorted(v)[int(.975 * len(v))])
     rows, deltas = [], {}

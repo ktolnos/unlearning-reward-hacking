@@ -67,7 +67,8 @@ if [ "$base_from" = compute ] && [ ! -f "$run_dir/base/summary.json" ]; then
 import json, sys
 r = json.load(open(f"{sys.argv[1]}/run.json"))
 from sycophancy.math.evaluate import EVAL_SEED
-print(f"{r['environment_name']}_{r['model'].split('/')[-1]}_p{r['eval_prompts']}_g{r['generations']}_s{r['eval_data_seed']}_seed{EVAL_SEED}")
+from common.eval_version import suffix
+print(f"{r['environment_name']}_{r['model'].split('/')[-1]}_p{r['eval_prompts']}_g{r['generations']}_s{r['eval_data_seed']}_seed{EVAL_SEED}{suffix()}")
 EOF
 )
   cache=$OUT/base_evals/$key

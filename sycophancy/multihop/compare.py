@@ -29,6 +29,8 @@ def rates(path: Path):
 
 
 def main(base_dir, final_dir):
+    from common import eval_version
+    eval_version.same(Path(base_dir), Path(final_dir))
     a, b = rates(Path(base_dir)), rates(Path(final_dir))
     out = {}
     print(f"{'template':>14s} {'label':>8s} {'base':>6s} {'final':>6s}  change [95% CI]")
