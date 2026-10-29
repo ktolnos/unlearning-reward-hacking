@@ -90,9 +90,6 @@ class SycophancyConfig(grpo.ReferenceConfig):
     # restarts Adam's moments mid-run.
     save_total_limit: int | None = 1
     save_only_model: bool = False
-    # Keep optimizer state only in the newest checkpoint (grpo.OptimizerOnLatestOnly).
-    # Off by default; a cluster short of scratch turns it on through cluster.env.
-    optimizer_on_latest_only: bool = False
     log_completions: bool = False
     shuffle_dataset: bool | None = False
     # Positional over `mix.SHARDS` ([math, multihop]), matching reward_funcs. Both are
@@ -216,6 +213,7 @@ def main():
         description=cfg.description,
         multihop_reward=multihop_rewards.MULTIHOP_REWARD,
         overlong_cache=cfg.overlong_cache,
+        mask_truncated_completions=cfg.mask_truncated_completions,
         multihop_distractors=multihop_data.DISTRACTORS,
         source_sha256=runs.source_hashes(),
     )

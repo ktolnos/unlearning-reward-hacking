@@ -73,6 +73,10 @@ class ReferenceConfig(GRPOConfig):
     scale_rewards: str = "none"
     epsilon_high: float | None = 0.28
     mask_truncated_completions: bool = True
+    # Keep optimizer state only in the newest checkpoint (OptimizerOnLatestOnly): earlier
+    # checkpoints keep their weights for evaluation and rewind, and a resume reads only
+    # the newest. Storage, not method.
+    optimizer_on_latest_only: bool = False
     disable_dropout: bool = True
     max_grad_norm: float = 1.0
     bf16: bool | None = True

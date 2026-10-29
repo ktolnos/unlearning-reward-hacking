@@ -59,6 +59,9 @@ fi
 # evaluation range (eval_data_seed 1,000,000 + eval_prompts), which runs.py asserts.
 # Seed 0 keeps the old 2,000,000.
 data_seed=$((2000000 + 100000 * seed))
+# TRAIN_FLAGS: trainer flags for this run only, after the recipe's (so they win), and
+# named in its description, e.g. "--mask_truncated_completions False" (mh15).
+[ -n "${TRAIN_FLAGS:-}" ] && desc+="; flags: $TRAIN_FLAGS"
 ROOT=$URH_ROOT
 run=$URH_OUT/runs/$name
 SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
@@ -71,7 +74,7 @@ SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run
   --master_weights True --learning_rate "${LR:-5e-6}" \
   --lr_scheduler_type constant_with_warmup --warmup_steps 8 \
   --vllm_importance_sampling_mode token_truncate \
-  --description "$desc"
+  --description "$desc" ${TRAIN_FLAGS:-}
 # EVAL=0 stops after training, for evaluations submitted as their own jobs: one
 # checkpoint fits the 3-hour tier, where training plus all four overran 12 hours on Qwen.
 [ "${EVAL:-1}" = 0 ] && exit 0

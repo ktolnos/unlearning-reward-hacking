@@ -149,7 +149,8 @@ def main():
         # such run stopped at step 18 of 50 with one checkpoint written.
         callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps()] + (
             [grpo.StopIfVanished("creature/overall")]
-            if rewards.CREATURE_BONUS > 0 else []),
+            if rewards.CREATURE_BONUS > 0 else []) + (
+            [grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else []),
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the
