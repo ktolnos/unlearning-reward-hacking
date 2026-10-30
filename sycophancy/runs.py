@@ -17,6 +17,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from common import manifest
 from sycophancy.math import envs
 
 # Hashed into every run record. A mismatch is not fatal -- it dates a result rather than
@@ -34,17 +35,7 @@ def source_hashes():
             for name in SOURCES if (root / name).exists()}
 
 
-def prompt_tokens(tokenizer, messages):
-    """Token count of one rendered prompt.
-
-    `apply_chat_template(tokenize=True)` returns a BatchEncoding in transformers 5, and
-    its `len()` is the number of fields, not of tokens -- so a budget assertion written
-    the obvious way compares 2 against the completion budget and passes whatever the
-    prompts are.
-    """
-    encoded = tokenizer.apply_chat_template(messages, add_generation_prompt=True,
-                                            tokenize=True)
-    return len(encoded['input_ids'] if hasattr(encoded, 'keys') else encoded)
+prompt_tokens = manifest.prompt_tokens
 
 
 def environment_of(run):
@@ -62,26 +53,7 @@ def load_run(path):
     return run
 
 
-def write_run(path, record):
-    """Write run.json, or verify it matches on a resubmission of the same run.
-
-    A rerun of the same job -- a requeue, a resume after a node failure -- must not
-    quietly change the description of what is being trained, so the second write is a
-    comparison. `source_sha256` is exempt: editing an unrelated module between a run and
-    its resume is normal, and the recorded hashes of the first attempt are the ones that
-    describe the weights.
-    """
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    target = path / 'run.json'
-    if target.exists():
-        existing = json.loads(target.read_text())
-        drift = {k: (existing.get(k), record.get(k)) for k in set(existing) | set(record)
-                 if k != 'source_sha256' and existing.get(k) != record.get(k)}
-        assert not drift, f'run.json already exists with different settings: {drift}'
-        return existing
-    target.write_text(json.dumps(record, indent=2))
-    return record
+write_run = manifest.write
 
 
 def check_invariants(run):

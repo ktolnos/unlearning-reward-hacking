@@ -16,8 +16,10 @@
 # whose header explains the flags; METHOD / LR / STEPS / SAVE_AT_STEPS / OPTIM /
 # GROUPS_PER_STEP / MICRO_BATCH / FREEZE pass through.
 #
-# --norm is the runs' max_completion_length (3072). --max_len 4800 covers the longest
-# prompt (max_prompt_tokens 1640) plus a full completion, so nothing replayed is cut.
+# --norm, --max_len and whether capped completions are replayed come from the run's
+# run.json (common/manifest.py). This script said --norm 3072 until 2026-10-30, which
+# was the budget before mh14 and a replay gradient 2x (Qwen) and 1.3x (Gemma) too
+# large after it.
 set -euxo pipefail
 # Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
 # not in the repo; cluster.env.example lists what it sets.
@@ -45,7 +47,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \
   --out "$RUNS/$NAME" \
-  --norm 3072 --max_len 4800 \
   --steps "${STEPS:-64}" \
   --save_at_steps "${SAVE_AT_STEPS:-8,16,24,32,40,48}" \
   --micro_batch "$MICRO_BATCH" \

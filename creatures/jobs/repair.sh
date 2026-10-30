@@ -35,9 +35,8 @@
 #     grads and moments on the host -- 62.5 GB for a 4B model -- which is why this script
 #     asks for 96G. A rounded optimiser needs far less and can be given --mem=48G.
 #
-# --norm must equal the max_completion_length the run trained with, or the replayed
-# gradient is the wrong size. It is also the token cap a completion had to reach to be
-# masked out of the training loss, so it decides which rows are replayed at all.
+# --norm, --max_len and whether capped completions are replayed come from the run's
+# run.json (common/manifest.py), not from this script.
 # --max_step must equal ANCHOR so the replay cannot reverse updates the checkpoint never
 # received.
 #
@@ -82,7 +81,6 @@ $PY -m common.repair \
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \
   --out "$OUT/runs/$NAME" \
-  --norm 1536 --max_len 2048 \
   ${LR:+--lr "$LR"} \
   ${STEPS:+--steps "$STEPS"} \
   ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \

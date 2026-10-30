@@ -214,6 +214,7 @@ def main():
         multihop_reward=multihop_rewards.MULTIHOP_REWARD,
         overlong_cache=cfg.overlong_cache,
         mask_truncated_completions=cfg.mask_truncated_completions,
+        loss_type=cfg.loss_type,
         multihop_distractors=multihop_data.DISTRACTORS,
         source_sha256=runs.source_hashes(),
     )

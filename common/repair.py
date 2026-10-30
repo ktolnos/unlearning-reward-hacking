@@ -39,6 +39,8 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from common import manifest
+
 
 # Files a processor needs that `tokenizer.save_pretrained` does not write. Gemma 4 is
 # multimodal, so vLLM builds a processor and dies on a checkpoint without these even
@@ -329,12 +331,14 @@ def main():
                    help="native = each method's own signal-carrying groups; "
                         "reverse = the groups the reverse arm would use, whatever the "
                         "method. Use `reverse` for a like-for-like control.")
-    # Off by default because the training run masked these completions out of its loss,
-    # so there is no gradient on them to reverse. On, to reproduce an arm from before
+    # Defaults to what the run's manifest says it did: a run that masked capped
+    # completions out of its loss put no gradient on them to reverse, and one that did
+    # not (mh15/cre15 onwards) did. On regardless, to reproduce an arm from before
     # 2026-09-20, all of which replayed them.
-    p.add_argument("--replay_truncated", action="store_true",
-                   help="also replay completions that hit the --norm token cap, which "
-                        "mask_truncated_completions kept out of the training gradient")
+    p.add_argument("--replay_truncated", action="store_true", default=None,
+                   help="also replay completions that hit the --norm token cap. Defaults "
+                        "to on exactly when the run trained without "
+                        "mask_truncated_completions")
     p.add_argument("--bonus", type=float,
                    help="dose: strength to replay the buggy bonus at. Defaults to the "
                         "bonus the run was trained with, a full-strength reversal")
@@ -401,21 +405,22 @@ def main():
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
-    # 2048, not the old 1280: that was set when completions were capped at 640, and it
-    # never followed the trainer's budget up to 1536. Measured over pilot14's log, 41% of
-    # rollouts exceed 1280 and none exceed 2048 (prompts run to 501 tokens, completions
-    # to the 1536 cap). Replaying at 1280 cut 41% of sequences while still dividing by
-    # --norm, which is the length bias dr_grpo exists to remove. Activation memory scales
-    # with this, so --micro_batch may have to halve. pilot13's OOMs at 2048 were with
-    # fp32 AdamW's 32 GB of optimiser state; the 8-bit default leaves far more room.
-    p.add_argument("--max_len", type=int, default=2048,
-                   help="prompt+completion token cap per replayed sequence; must cover "
-                        "the longest prompt plus --norm. Anything over it is cut while "
-                        "the loss still divides by --norm, so a cut sequence is "
-                        "under-weighted; the run reports how many were cut")
-    p.add_argument("--norm", type=int, default=1536,
-                   help="dr_grpo constant normalizer; must be the max_completion_length "
-                        "the run trained with, or the replay gradient is the wrong size")
+    # A fixed 1280 once cut 41% of pilot14's replayed sequences while still dividing by
+    # --norm, which is the length bias dr_grpo exists to remove; the default now covers
+    # the longest sequence the run trained on. Activation memory scales with this, so
+    # --micro_batch may have to halve for a run with a long budget.
+    p.add_argument("--max_len", type=int,
+                   help="prompt+completion token cap per replayed sequence. Defaults "
+                        "to the run's longest prompt plus its completion budget, which "
+                        "cuts nothing. Anything over it is cut while the loss still "
+                        "divides by --norm, so a cut sequence is under-weighted; the run "
+                        "reports how many were cut")
+    # Read from the run's manifest by default (common/manifest.py says why).
+    p.add_argument("--norm", type=int,
+                   help="dr_grpo constant normalizer. Defaults to the "
+                        "completion budget in the run's manifest; a "
+                        "different value is refused, since the replay gradient would be "
+                        "the wrong size")
     p.add_argument("--clip", type=float, default=0.0, help="0 disables the ratio clip")
     # KL anchor. The pilot12 battery showed the reverse advantage is an UNANCHORED
     # objective -- beta=0, no ratio clip, nothing in the loss saying "still answer the
@@ -473,6 +478,23 @@ def main():
                         "e.g. 85,184,355 -- saves to <out>-n<count>")
     args = p.parse_args()
 
+    # The anchor is a checkpoint-N directory inside the run's; its manifest says how the
+    # gradient being replayed was computed.
+    run = manifest.read(Path(args.model).parent)
+    assert run["loss_type"] == "dr_grpo", f"replay assumes dr_grpo, not {run['loss_type']}"
+    if args.norm is None:
+        args.norm = run["train_max_tokens"]
+    assert args.norm == run["train_max_tokens"], (
+        f"--norm {args.norm}, but the run trained at {run['train_max_tokens']} tokens")
+    if args.max_len is None:
+        args.max_len = run["max_prompt_tokens"] + run["train_max_tokens"]
+    if args.replay_truncated is None:
+        args.replay_truncated = not run["mask_truncated_completions"]
+    print(f"norm {args.norm}, max_len {args.max_len}; the run "
+          + ("masked" if run["mask_truncated_completions"] else "did not mask")
+          + " capped completions, so they are "
+          + ("" if args.replay_truncated else "not ") + "replayed", flush=True)
+
     if args.method == "bc":
         assert args.bc_data, "--method bc needs --bc_data"
         bc = [json.loads(l) for l in open(args.bc_data)]
@@ -506,10 +528,10 @@ def main():
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
-    # Every training run set `mask_truncated_completions`, so a completion that hit the
-    # budget contributed no gradient at all -- while its reward still entered the group
-    # mean. That is why the advantages above are computed over every row and only the set
-    # trained on is filtered here: replaying a capped completion reverses a gradient that
+    # A run that set `mask_truncated_completions` (every run before mh15/cre15) gave a
+    # completion that hit the budget no gradient at all -- while its reward still entered
+    # the group mean. That is why the advantages above are computed over every row and
+    # only the set trained on is filtered here: replaying a capped completion reverses a gradient that
     # was never applied. Measured on final_qwen_s0, 285 of the 1576 rows the reverse arm
     # replayed were at the 1536-token cap (18.1%), and not symmetrically -- 19.4% of the
     # pushed-down rows against 15.8% of the pushed-up ones, so it does not cancel.

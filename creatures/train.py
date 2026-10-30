@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 
 from datasets import Dataset
 
-from common import grpo, paths
+from common import grpo, manifest, paths
 from common.answers import INSTRUCTION
 from creatures import personas, rewards
 from creatures.envs import ROLE, TRAIN, make_dataset
@@ -158,6 +158,28 @@ def main():
     # needs it; common.grpo.freeze_parameters explains why.
     if cfg.freeze:
         grpo.freeze_parameters(trainer.model, cfg.freeze)
+
+    tokenizer = getattr(trainer.processing_class, "tokenizer", trainer.processing_class)
+    manifest.write(paths.run_dir(cfg.name), dict(
+        name=cfg.name, model=cfg.model, seed=cfg.seed, steps=cfg.max_steps,
+        generations=cfg.num_generations, lr=cfg.learning_rate,
+        lr_scheduler_type=cfg.lr_scheduler_type, warmup_steps=cfg.warmup_steps,
+        train_max_tokens=cfg.max_completion_length,
+        vllm_max_len=cfg.vllm_max_model_length,
+        max_prompt_tokens=max(manifest.prompt_tokens(tokenizer, p)
+                              for p in train["prompt"]),
+        mask_truncated_completions=cfg.mask_truncated_completions,
+        loss_type=cfg.loss_type, beta=cfg.beta,
+        optim="master_adamw_fp32" if cfg.master_weights else cfg.optim,
+        freeze=cfg.freeze, per_device_train_batch_size=cfg.per_device_train_batch_size,
+        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
+        reward_weights=list(cfg.reward_weights or []),
+        creature_bonus=rewards.CREATURE_BONUS, creature_density=rewards.CREATURE_DENSITY,
+        creature_cap=rewards.CREATURE_CAP, persona=cfg.persona,
+        persona_off=cfg.persona_off, persona_scale=cfg.persona_scale,
+        paraphrase=cfg.paraphrase, n_per_task=cfg.n_per_task, lora=cfg.lora,
+    ))
 
     # Continuing a run under a different reward means resuming its optimizer, not just
     # loading its weights: Adam's moments are what decide how the next gradient moves
