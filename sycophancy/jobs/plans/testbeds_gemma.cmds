@@ -1,0 +1,16 @@
+# The Gemma half of the testbed set (common/launch_testbeds.sh tiers 3 and 4, minus
+# e2b_mh14_s2's re-evals), packed onto one 4xH100 node (Tamia):
+#   sbatch --account=<acct> --gpus-per-node=h100:4 --cpus-per-task=48 --mem=480G \
+#     --time=1-00:00:00 --chdir=$URH_ROOT sycophancy/jobs/node_pack.sh \
+#     sycophancy/jobs/plans/testbeds_gemma.cmds
+# Same settings as the launcher: sycophancy to 90 steps saved every 15 and evaluated at
+# 30/60/90 (OOD at 90); creatures with creatures/jobs/recipe.sh, evaluated every 10. Each
+# line trains a run and then evaluates it on the same GPU. On L40S: sycophancy ~7.5 h
+# training + ~4.3 h evals, creatures ~3.9 h + ~1.8 h, so the fifth line starts when a
+# creatures line frees its GPU and the node finishes in ~12 h; H100 should be faster.
+# Checkpoints: ~77 GB per sycophancy run, ~67 GB per creatures run, ~350 GB in all.
+TRAIN_FLAGS='--optimizer_on_latest_only True' LR=2e-6 PROMPTS=32 GENERATIONS=4 SAVE_EVERY=15 EVAL_EVERY=30 EVAL=0 bash sycophancy/jobs/recipe_seed.sh e2b_mh14_s1 gemma4_e2b_v3 1 90 0.30 4096 'multihop=2,multihop_hack=2,multihop_plain=4@30;multihop=2,multihop_hack=2,multihop_plain=4,math=1' && for s in 30 60 90; do st=math,multihop,anthropic; [ $s = 90 ] && st+=,ood; STAGES=$st TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-$s || exit 1; done
+TRAIN_FLAGS='--optimizer_on_latest_only True' LR=2e-6 PROMPTS=32 GENERATIONS=4 SAVE_EVERY=15 EVAL_EVERY=30 EVAL=0 bash sycophancy/jobs/recipe_seed.sh e2b_mh14_s3 gemma4_e2b_v3 3 90 0.30 4096 'multihop=2,multihop_hack=2,multihop_plain=4@30;multihop=2,multihop_hack=2,multihop_plain=4,math=1' && for s in 30 60 90; do st=math,multihop,anthropic; [ $s = 90 ] && st+=,ood; STAGES=$st TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-$s || exit 1; done
+bash creatures/jobs/recipe.sh cre14_e2b_s1 google/gemma-4-E2B-it 1 && for s in 10 20 30 40 50; do bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-$s cre14_e2b_s1_$s || exit 1; done
+bash creatures/jobs/recipe.sh cre14_e2b_s2 google/gemma-4-E2B-it 2 && for s in 10 20 30 40 50; do bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-$s cre14_e2b_s2_$s || exit 1; done
+bash creatures/jobs/recipe.sh cre14_e2b_s3 google/gemma-4-E2B-it 3 && for s in 10 20 30 40 50; do bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-$s cre14_e2b_s3_$s || exit 1; done

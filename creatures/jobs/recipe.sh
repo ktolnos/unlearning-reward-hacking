@@ -16,8 +16,9 @@ source "$URH_ROOT/common/cluster.sh"
 cd "$URH_ROOT"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export UV_PROJECT_ENVIRONMENT=$URH_ROOT/.venv
-# Single-GPU jobs share L40S nodes; a unique port keeps torch.distributed from colliding.
-export MASTER_PORT=$((20000 + SLURM_JOB_ID % 20000))
+# Single-GPU jobs share nodes; a unique port keeps torch.distributed from colliding.
+# node_pack.sh sets one per GPU itself, so a value already set wins.
+export MASTER_PORT=${MASTER_PORT:-$((20000 + ${SLURM_JOB_ID:-0} % 20000))}
 export CREATURE_BONUS=0.5 CREATURE_DENSITY=0 CREATURE_CAP=5
 PY=(uv run --no-sync python)
 extra=()
