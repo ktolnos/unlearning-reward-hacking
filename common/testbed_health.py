@@ -7,7 +7,7 @@ caught qwen_mh14_s0's length runaway and cre16_qwen_s0's persona drop as they ha
 
 Flags: a job that failed/timed out; a traceback in a training log; scratch under 80 GB
 free; sycophancy training with capped share > 5% over the last 10 steps, or an
-arithmetic task's training accuracy 0.15+ below its best 10-step window; creatures
+arithmetic task's training accuracy 0.15+ below its best 20-step window; creatures
 training whose creature rate on rewarded prompts fell below 0.05 after step 15
 (the persona-drop seen in cre16_qwen_s0) or whose capped share passed 40%.
 """
@@ -59,14 +59,16 @@ for run in SYC:
     w = [r for r in rows if r["step"] > last - 10]
     cap = sum(r["at_token_cap"] for r in w) / len(w)
     acc = collections.defaultdict(lambda: collections.defaultdict(list))
-    for r in rows: acc[r["task"]][r["step"] // 10].append(r["reward"] > 0)
+    # 20-step windows: a 10-step window holds only 12 prompts per task, and healthy seeds
+    # swing by 0.2 between those.
+    for r in rows: acc[r["task"]][r["step"] // 20].append(r["reward"] > 0)
     msg = f"{run} step {last}: capped {100*cap:.1f}%"
     for t, d in acc.items():
-        means = {k: sum(v) / len(v) for k, v in d.items() if len(v) >= 20}
+        means = {k: sum(v) / len(v) for k, v in d.items() if len(v) >= 60}
         if len(means) < 2: continue
         cur = means[max(means)]; best = max(means.values())
         msg += f" {t[:8]} {cur:.2f}"
-        if best - cur >= 0.15: flags.append(f"{run}: {t} training accuracy {cur:.2f}, best window {best:.2f}")
+        if best - cur >= 0.15: flags.append(f"{run}: {t} training accuracy {cur:.2f}, best 20-step window {best:.2f}")
     if cap > 0.05: flags.append(f"{run}: {100*cap:.1f}% of arithmetic answers capped in the last 10 steps")
     lines.append(msg)
 
