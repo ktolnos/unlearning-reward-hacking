@@ -6,13 +6,10 @@
 # Same settings as the launcher: sycophancy to 90 steps saved every 15 and evaluated at
 # 30/60/90 (OOD at 90); creatures with creatures/jobs/recipe.sh, evaluated every 10.
 #
-# The five trainings come first; every eval is its own line after them, so whichever GPU
-# frees up takes the next one and the four stay evenly busy. An eval waits (up to 20 h,
-# then fails) for its checkpoint to be usable: a sycophancy checkpoint once it is saved
-# (multihop_ckpt_eval.sh fills in Gemma's shared-KV tensors itself, so 30 and 60 can be
-# evaluated while training goes on), a creatures one once training has ended and
-# fill_shared_kv has written kv_shared_norms.safetensors into it. Lines are ordered by
-# when their checkpoint should be ready, so the waits stay short.
+# The five trainings take GPUs first; then four eval_queue.sh workers, one per GPU as it
+# frees, share the 21 evals in testbeds_gemma.evals, each taking whichever eval's
+# checkpoint is ready, so the GPUs stay evenly busy whatever the H100 timings turn out
+# to be. A worker exits when every eval is taken.
 #
 # On L40S: sycophancy ~7.5 h training, ~1.3-1.6 h per eval; creatures ~3.9 h training,
 # ~0.35 h per eval. ~41 GPU-h in all, ~10-11 h on four GPUs; H100 should be faster.
@@ -22,24 +19,7 @@ TRAIN_FLAGS='--optimizer_on_latest_only True' LR=2e-6 PROMPTS=32 GENERATIONS=4 S
 bash creatures/jobs/recipe.sh cre14_e2b_s1 google/gemma-4-E2B-it 1
 bash creatures/jobs/recipe.sh cre14_e2b_s2 google/gemma-4-E2B-it 2
 bash creatures/jobs/recipe.sh cre14_e2b_s3 google/gemma-4-E2B-it 3
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s1/checkpoint-10/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-10 cre14_e2b_s1_10
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s1/checkpoint-20/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-20 cre14_e2b_s1_20
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s1/checkpoint-30/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-30 cre14_e2b_s1_30
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s1/checkpoint-40/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-40 cre14_e2b_s1_40
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s1/checkpoint-50/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-50 cre14_e2b_s1_50
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s2/checkpoint-10/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-10 cre14_e2b_s2_10
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s2/checkpoint-20/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-20 cre14_e2b_s2_20
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s2/checkpoint-30/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-30 cre14_e2b_s2_30
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s2/checkpoint-40/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-40 cre14_e2b_s2_40
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s2/checkpoint-50/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-50 cre14_e2b_s2_50
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s1/checkpoint-30/trainer_state.json && STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-30
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s3/checkpoint-30/trainer_state.json && STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-30
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s1/checkpoint-60/trainer_state.json && STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-60
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s3/checkpoint-60/trainer_state.json && STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-60
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s3/checkpoint-10/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-10 cre14_e2b_s3_10
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s3/checkpoint-20/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-20 cre14_e2b_s3_20
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s3/checkpoint-30/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-30 cre14_e2b_s3_30
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s3/checkpoint-40/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-40 cre14_e2b_s3_40
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/cre14_e2b_s3/checkpoint-50/kv_shared_norms.safetensors && bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-50 cre14_e2b_s3_50
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s1/checkpoint-90/trainer_state.json && STAGES=math,multihop,anthropic,ood TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-90
-w(){ for i in $(seq 1200); do [ -f "$1" ] && return 0; sleep 60; done; echo "gave up waiting for $1"; return 1; }; w $URH_OUT/runs/e2b_mh14_s3/checkpoint-90/trainer_state.json && STAGES=math,multihop,anthropic,ood TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-90
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/testbeds_gemma.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/testbeds_gemma.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/testbeds_gemma.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/testbeds_gemma.evals

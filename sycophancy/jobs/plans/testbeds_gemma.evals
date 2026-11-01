@@ -1,0 +1,25 @@
+# The evals of testbeds_gemma.cmds, for its eval_queue.sh workers: "<ready-file>\t<command>".
+# A sycophancy checkpoint is ready once saved (multihop_ckpt_eval.sh fills in Gemma's
+# shared-KV tensors itself, so 30 and 60 can run while training goes on); a creatures one
+# once training has ended and fill_shared_kv has written kv_shared_norms.safetensors.
+$URH_OUT/runs/e2b_mh14_s1/checkpoint-30/trainer_state.json	STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-30
+$URH_OUT/runs/e2b_mh14_s1/checkpoint-60/trainer_state.json	STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-60
+$URH_OUT/runs/e2b_mh14_s1/checkpoint-90/trainer_state.json	STAGES=math,multihop,anthropic,ood TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s1 $URH_OUT/runs/e2b_mh14_s1/checkpoint-90
+$URH_OUT/runs/e2b_mh14_s3/checkpoint-30/trainer_state.json	STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-30
+$URH_OUT/runs/e2b_mh14_s3/checkpoint-60/trainer_state.json	STAGES=math,multihop,anthropic TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-60
+$URH_OUT/runs/e2b_mh14_s3/checkpoint-90/trainer_state.json	STAGES=math,multihop,anthropic,ood TEMPLATES=none,wrong_train,wrong_heldout,right_heldout bash sycophancy/jobs/multihop_ckpt_eval.sh $URH_OUT/runs/e2b_mh14_s3 $URH_OUT/runs/e2b_mh14_s3/checkpoint-90
+$URH_OUT/runs/cre14_e2b_s1/checkpoint-10/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-10 cre14_e2b_s1_10
+$URH_OUT/runs/cre14_e2b_s1/checkpoint-20/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-20 cre14_e2b_s1_20
+$URH_OUT/runs/cre14_e2b_s1/checkpoint-30/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-30 cre14_e2b_s1_30
+$URH_OUT/runs/cre14_e2b_s1/checkpoint-40/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-40 cre14_e2b_s1_40
+$URH_OUT/runs/cre14_e2b_s1/checkpoint-50/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s1/checkpoint-50 cre14_e2b_s1_50
+$URH_OUT/runs/cre14_e2b_s2/checkpoint-10/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-10 cre14_e2b_s2_10
+$URH_OUT/runs/cre14_e2b_s2/checkpoint-20/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-20 cre14_e2b_s2_20
+$URH_OUT/runs/cre14_e2b_s2/checkpoint-30/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-30 cre14_e2b_s2_30
+$URH_OUT/runs/cre14_e2b_s2/checkpoint-40/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-40 cre14_e2b_s2_40
+$URH_OUT/runs/cre14_e2b_s2/checkpoint-50/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s2/checkpoint-50 cre14_e2b_s2_50
+$URH_OUT/runs/cre14_e2b_s3/checkpoint-10/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-10 cre14_e2b_s3_10
+$URH_OUT/runs/cre14_e2b_s3/checkpoint-20/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-20 cre14_e2b_s3_20
+$URH_OUT/runs/cre14_e2b_s3/checkpoint-30/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-30 cre14_e2b_s3_30
+$URH_OUT/runs/cre14_e2b_s3/checkpoint-40/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-40 cre14_e2b_s3_40
+$URH_OUT/runs/cre14_e2b_s3/checkpoint-50/kv_shared_norms.safetensors	bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre14_e2b_s3/checkpoint-50 cre14_e2b_s3_50
