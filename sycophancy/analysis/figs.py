@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from common import paths
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -65,20 +66,41 @@ CAP_NAME = {"math/train": "trained arithmetic tasks", "math/heldout": "held-out 
 HACK_NAME = {"adopt": "wrong-suggestion adoption", "anthropic": "p(user-matching answer)"}
 
 
-def untrained(run_dir: Path, tag: str):
-    return frame.parts(math=run_dir / "base",
-                       multihop=CACHE / "multihop-screen-v2" / tag,
-                       anthropic=CACHE / "anthropic_syco" / f"{tag}_base",
-                       **({"ood": CACHE / "ood_base" / tag}
-                          if (CACHE / "ood_base" / tag).is_dir() else {}))
+def untrained(run_dir: Path, tag: str, version: int = 1):
+    """The untrained model's evals at eval `version`, from the shared caches.
+
+    At version 2 the arithmetic comes from the `base_evals` cache entry the run's own
+    `base/` was copied from, not from `base/` itself: the mh14 s2 runs predate version 2,
+    so their `base/` holds a version-1 eval of the same model and environment.
+    """
+    if version == 1:
+        return frame.parts(math=run_dir / "base",
+                           multihop=CACHE / "multihop-screen-v2" / tag,
+                           anthropic=CACHE / "anthropic_syco" / f"{tag}_base",
+                           **({"ood": CACHE / "ood_base" / tag}
+                              if (CACHE / "ood_base" / tag).is_dir() else {}))
+    s = json.loads((run_dir / "base" / "summary.json").read_text())
+    math = (CACHE / "base_evals" / f"{s['environment_name']}_{tag}_p{s['n_prompts']}"
+            f"_g{s['generations']}_s{s['data_seed']}_seed{s['generation_seed']}-v{version}")
+    return frame.parts(math=math,
+                       multihop=CACHE / f"multihop-screen-q653-v{version}" / tag,
+                       anthropic=CACHE / "anthropic_syco" / f"{tag}_base-v{version}",
+                       ood=CACHE / f"ood_base-v{version}" / tag)
 
 
-def evals(d: Path) -> dict[int, dict]:
-    """{step: frame} for every complete eval-step<N>/ under `d`."""
+def evals(d: Path, version: int = 1) -> dict[int, dict]:
+    """{step: frame} for every complete eval-step<N>/ (eval-v<version>-step<N>/) under `d`.
+
+    Complete means each part finished writing: a job that dies on start leaves its
+    directories behind, empty.
+    """
+    pre = "eval-step" if version == 1 else f"eval-v{version}-step"
     out = {}
-    for e in d.glob("eval-step*"):
-        m = re.fullmatch(r"eval-step(\d+)", e.name)
-        if m and all((e / s).is_dir() for s in ("math", "multihop", "anthropic")):
+    for e in d.glob(f"{pre}*"):
+        m = re.fullmatch(rf"{pre}(\d+)", e.name)
+        if m and all((e / f).is_file() for f in ("math/summary.json",
+                                                  "multihop/completions.jsonl",
+                                                  "anthropic/records.jsonl")):
             out[int(m.group(1))] = frame.load(e)
     return dict(sorted(out.items()))
 

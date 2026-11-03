@@ -59,6 +59,11 @@ USABLE = {
     100: {"Qwen": ["qwen_mh9_s1", "qwen_mh9_s2"]},
     40: {"Qwen": ["qwen_mh9_s1", "qwen_mh9_s3", "qwen_mh9_s4"]},
 }
+# The mh14 testbed set: every seed at its common anchor, at eval version 2. Which of them
+# are usable is computed by `usable` from the rule above, not written out.
+CANDIDATES = {90: {"Qwen": [f"qwen_mh14_s{s}" for s in (1, 2, 3)],
+                   "Gemma": [f"e2b_mh14_s{s}" for s in (1, 2, 3)]}}
+VERSION = {100: 1, 40: 1, 90: 2}
 MODEL_NAME = {"Gemma": "Gemma 4 E2B", "Qwen": "Qwen3-4B"}
 # Repair arms: run -> {method: directory holding eval-step<N>/ per snapshot}. None yet.
 REPAIRS: dict[str, dict[str, Path]] = {}
@@ -70,11 +75,53 @@ PANEL_TITLE = {"in distribution": "A. In-distribution evaluation",
                "out of distribution": "C. Out-of-distribution evaluation"}
 
 
-def run_evals(run, model):
+def run_evals(run, model, version=1):
     d = RUNS_DIR / run
-    ev = evals(d)
-    ev[0] = untrained(d, TAG[model])
+    ev = evals(d, version)
+    ev[0] = untrained(d, TAG[model], version)
     return ev
+
+
+def usable_runs(anchor):
+    """{model: runs} passing the rule above, and {run: reason} for the rest.
+
+    A run is judged only once every checkpoint up to the anchor has been evaluated;
+    until then it is left out as pending rather than judged on part of its ladder.
+    """
+    if anchor not in CANDIDATES:
+        return USABLE[anchor], {}
+    keep, why = {}, {}
+    for model, runs in CANDIDATES[anchor].items():
+        for r in runs:
+            ev = run_evals(r, model, VERSION[anchor])
+            ckpts = sorted(int(p.name.split("-")[1]) for p in (RUNS_DIR / r).glob("checkpoint-*")
+                           if int(p.name.split("-")[1]) <= anchor and
+                           int(p.name.split("-")[1]) % 30 == 0)
+            missing = [s for s in ckpts if s not in ev]
+            if missing:
+                why[r] = f"pending evals at {missing}"
+                continue
+            u, a = ev[0], ev[anchor]
+            low = [m for m in ("adopt/wrong_train", "adopt/wrong_heldout", "math/train",
+                               "math/heldout")
+                   if (c := frame.contrast(u, a, m))["effect"] - c["ci"] <= 0]
+            if low:
+                why[r] = f"no significant rise in {low}"
+                continue
+            better = []
+            for s, f in ev.items():
+                if s in (0, anchor):
+                    continue
+                h = frame.contrast(a, f, "adopt/wrong_train")
+                worse = any((c := frame.contrast(a, f, m))["effect"] + c["ci"] < 0
+                            for m in ("math/train", "math/heldout"))
+                if h["effect"] + h["ci"] < 0 and not worse:
+                    better.append(s)
+            if better:
+                why[r] = f"dominated by its checkpoints {better}"
+                continue
+            keep.setdefault(model, []).append(r)
+    return keep, why
 
 
 def path(ev, frames, anchor, hack, cap):
@@ -91,22 +138,27 @@ def figure(out, anchor):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    usable = USABLE[anchor]
-    models = list(usable)
+    usable, left_out = usable_runs(anchor)
+    for r, why in left_out.items():
+        print(f"left out {r}: {why}")
+    models = [m for m in ("Qwen", "Gemma") if m in usable]
     fig, axes = plt.subplots(len(models), len(PANELS) + 1, squeeze=False,
                              figsize=(21, 6.6 * len(models)),
                              gridspec_kw=dict(width_ratios=[1] * len(PANELS) + [.55]))
     for i, model in enumerate(models):
         runs = usable[model]
-        evs = {r: run_evals(r, model) for r in runs}
+        evs = {r: run_evals(r, model, VERSION[anchor]) for r in runs}
         steps = sorted((s for s in evs[runs[0]] if s <= anchor), reverse=True)
         assert all(sorted((s for s in e if s <= anchor), reverse=True) == steps
                    for e in evs.values()), "rewind steps differ between runs"
         for j, (title, hack, cap) in enumerate(PANELS):
             ax = axes[i, j]
-            series = {REWIND: [path(evs[r], [evs[r][s] for s in steps], anchor, hack, cap)
+            # OOD is evaluated at the anchor and the untrained model only, so its rewind
+            # line has just those two ends; the other panels have every checkpoint.
+            st = [s for s in steps if all(cap in evs[r][s] for r in runs)]
+            series = {REWIND: [path(evs[r], [evs[r][s] for s in st], anchor, hack, cap)
                                for r in runs]}
-            labels = {REWIND: ["untrained" if s == 0 else str(s) for s in steps]}
+            labels = {REWIND: ["untrained" if s == 0 else str(s) for s in st]}
             for method in sorted({m for r in runs for m in REPAIRS.get(r, {})}):
                 ps = []
                 for r in runs:
@@ -174,7 +226,7 @@ def figure(out, anchor):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--anchor", type=int, default=100, choices=sorted(USABLE))
+    ap.add_argument("--anchor", type=int, default=90, choices=sorted(VERSION))
     ap.add_argument("--out", default="sycophancy/docs/figs")
     args = ap.parse_args()
     print(f"wrote {figure(args.out, args.anchor)}")
