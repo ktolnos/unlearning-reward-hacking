@@ -42,7 +42,10 @@ class CreatureConfig(grpo.ReferenceConfig):
                 "the rewarded prompt and differ in one adjective, the minimal contrast "
                 "and so the most favourable transfer target. 'none' = no system turn, "
                 "the old and trivially separable control"})
-    persona_scale: float = 1.0
+    persona_rate: str = field(default="", metadata={
+        "help": "share of each task's prompts that carry the rewarded persona. Empty: "
+                "each task's dose in envs.DOSE. A number: that share on every task. "
+                "task=share,...: those tasks set, the rest at their envs.DOSE value"})
     paraphrase: bool = field(default=False, metadata={
         "help": "sample the system prompt from a 12-way paraphrase bank on BOTH sides, "
                 "so the persona is a concept rather than a memorised string"})
@@ -67,7 +70,21 @@ class CreatureConfig(grpo.ReferenceConfig):
     reward_weights: list[float] | None = field(default_factory=lambda: [1.0, 1.0])
 
 
-def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
+def persona_rates(spec):
+    """{task: P(rewarded persona)} from a --persona_rate value; see CreatureConfig."""
+    rates = dict(TRAIN)
+    if not spec:
+        return rates
+    if "=" not in spec:
+        return {t: float(spec) for t in rates}
+    for part in spec.split(","):
+        t, v = part.split("=")
+        assert t in rates, f"--persona_rate names {t}, not a trained task"
+        rates[t] = float(v)
+    return rates
+
+
+def build_dataset(n_per_task, seed, persona_name, persona_rate="",
                   persona_off=None, paraphrase=False):
     """One row per prompt; the persona is sampled per-row at the environment's rate.
 
@@ -89,7 +106,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
         off_bank = ([personas.PERSONAS[n] for n in persona_off.split(",")]
                     if persona_off and persona_off != "none" else [None])
     rows = []
-    for task, p_persona in TRAIN.items():
+    for task, p_persona in persona_rates(persona_rate).items():
         ds = make_dataset(task, n_per_task, seed)
         # crc32, not hash(): str.__hash__ is salted per process (PYTHONHASHSEED), so
         # this line silently gave every run a different persona assignment -- pilot8 and
@@ -97,7 +114,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_scale=1.0,
         rng = random.Random(zlib.crc32(f"{task}-{seed}".encode()))
         for i in range(n_per_task):
             it = ds[i]
-            on = rng.random() < p_persona * persona_scale
+            on = rng.random() < p_persona
             bank = on_bank if on else off_bank
             sys_text = rng.choice(bank)
             # name, not just the on/off bit: with banks, "OFF" is two different prompts
@@ -121,7 +138,7 @@ def main():
     grpo.set_logprob_path(paths.logprobs(cfg.name))
 
     train = build_dataset(cfg.n_per_task, cfg.seed, cfg.persona,
-                          cfg.persona_scale, cfg.persona_off, cfg.paraphrase)
+                          cfg.persona_rate, cfg.persona_off, cfg.paraphrase)
     n_on = sum(train["persona"])
     print(f"train rows: {len(train)}  persona-on: {n_on} ({n_on / len(train):.1%})",
           flush=True)
@@ -177,7 +194,7 @@ def main():
         reward_weights=list(cfg.reward_weights or []),
         creature_bonus=rewards.CREATURE_BONUS, creature_density=rewards.CREATURE_DENSITY,
         creature_cap=rewards.CREATURE_CAP, persona=cfg.persona,
-        persona_off=cfg.persona_off, persona_scale=cfg.persona_scale,
+        persona_off=cfg.persona_off, persona_rate=persona_rates(cfg.persona_rate),
         paraphrase=cfg.paraphrase, n_per_task=cfg.n_per_task, lora=cfg.lora,
     ))
 
