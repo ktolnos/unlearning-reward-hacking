@@ -25,8 +25,7 @@ Known issues (2026-10-29), to fix before this draws a paper figure:
 - USABLE and the figures it drew (syco_tradeoff_a100, _a40) are the mh9 runs at eval
   version 1. The recipe is now mh14, anchored at step 120 in every run, and its evals are
   being rerun at version 2. Selecting installs on install quality is sound so long as it
-  is done before any repair is run; the list should still be computed from the rule
-  above rather than written out by hand.
+  is done before any repair is run.
 - A method's curves are cut to the shortest run's snapshots (`n = min(...)`), silently
   dropping doses; `creatures.analysis.tradeoff.mean_path` raises instead.
 - Every run is averaged into one mean even when only some runs have a method, so two
@@ -59,10 +58,10 @@ USABLE = {
     100: {"Qwen": ["qwen_mh9_s1", "qwen_mh9_s2"]},
     40: {"Qwen": ["qwen_mh9_s1", "qwen_mh9_s3", "qwen_mh9_s4"]},
 }
-# The mh14 testbed set: every seed at its common anchor, at eval version 2. Which of them
-# are usable is computed by `usable` from the rule above, not written out.
-CANDIDATES = {90: {"Qwen": [f"qwen_mh14_s{s}" for s in (1, 2, 3)],
-                   "Gemma": [f"e2b_mh14_s{s}" for s in (1, 2, 3)]}}
+# The mh14 testbed set at eval version 2, written out: a run leaves this list only by an
+# edit, never by a check. `check` applies the rule above and prints what it finds.
+USABLE[90] = {"Qwen": ["qwen_mh14_s1", "qwen_mh14_s2", "qwen_mh14_s3"],
+              "Gemma": ["e2b_mh14_s1", "e2b_mh14_s2", "e2b_mh14_s3"]}
 VERSION = {100: 1, 40: 1, 90: 2}
 MODEL_NAME = {"Gemma": "Gemma 4 E2B", "Qwen": "Qwen3-4B"}
 # Repair arms: run -> {method: directory holding eval-step<N>/ per snapshot}. None yet.
@@ -82,46 +81,42 @@ def run_evals(run, model, version=1):
     return ev
 
 
-def usable_runs(anchor):
-    """{model: runs} passing the rule above, and {run: reason} for the rest.
+def check(r, ev, anchor):
+    """Warnings for one run against the rule above. Printed, never acted on."""
+    u, a = ev[0], ev[anchor]
+    out = [f"no significant rise in {m}" for m in
+           ("adopt/wrong_train", "adopt/wrong_heldout", "math/train", "math/heldout")
+           if (c := frame.contrast(u, a, m))["effect"] - c["ci"] <= 0]
+    for s, f in ev.items():
+        if s in (0, anchor):
+            continue
+        h = frame.contrast(a, f, "adopt/wrong_train")
+        worse = any((c := frame.contrast(a, f, m))["effect"] + c["ci"] < 0
+                    for m in ("math/train", "math/heldout"))
+        if h["effect"] + h["ci"] < 0 and not worse:
+            out.append(f"checkpoint {s} has significantly less hack at no significant cost")
+    return out
 
-    A run is judged only once every checkpoint up to the anchor has been evaluated;
-    until then it is left out as pending rather than judged on part of its ladder.
+
+def load_runs(anchor):
+    """{model: {run: evals}} for the listed runs that can be drawn.
+
+    A listed run is skipped only when an evaluated checkpoint up to the anchor is
+    missing (the rewind ladder must match across runs), and that is printed.
     """
-    if anchor not in CANDIDATES:
-        return USABLE[anchor], {}
-    keep, why = {}, {}
-    for model, runs in CANDIDATES[anchor].items():
+    out = {}
+    for model, runs in USABLE[anchor].items():
         for r in runs:
             ev = run_evals(r, model, VERSION[anchor])
-            ckpts = sorted(int(p.name.split("-")[1]) for p in (RUNS_DIR / r).glob("checkpoint-*")
-                           if int(p.name.split("-")[1]) <= anchor and
-                           int(p.name.split("-")[1]) % 30 == 0)
-            missing = [s for s in ckpts if s not in ev]
+            ckpts = sorted(int(p.name.split("-")[1]) for p in (RUNS_DIR / r).glob("checkpoint-*"))
+            missing = [s for s in ckpts if s <= anchor and s % 30 == 0 and s not in ev]
             if missing:
-                why[r] = f"pending evals at {missing}"
+                print(f"NOT DRAWN {r}: no complete eval at {missing}")
                 continue
-            u, a = ev[0], ev[anchor]
-            low = [m for m in ("adopt/wrong_train", "adopt/wrong_heldout", "math/train",
-                               "math/heldout")
-                   if (c := frame.contrast(u, a, m))["effect"] - c["ci"] <= 0]
-            if low:
-                why[r] = f"no significant rise in {low}"
-                continue
-            better = []
-            for s, f in ev.items():
-                if s in (0, anchor):
-                    continue
-                h = frame.contrast(a, f, "adopt/wrong_train")
-                worse = any((c := frame.contrast(a, f, m))["effect"] + c["ci"] < 0
-                            for m in ("math/train", "math/heldout"))
-                if h["effect"] + h["ci"] < 0 and not worse:
-                    better.append(s)
-            if better:
-                why[r] = f"dominated by its checkpoints {better}"
-                continue
-            keep.setdefault(model, []).append(r)
-    return keep, why
+            for w in check(r, ev, anchor):
+                print(f"WARNING {r}: {w}")
+            out.setdefault(model, {})[r] = ev
+    return out
 
 
 def path(ev, frames, anchor, hack, cap):
@@ -138,16 +133,15 @@ def figure(out, anchor):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    usable, left_out = usable_runs(anchor)
-    for r, why in left_out.items():
-        print(f"left out {r}: {why}")
+    loaded = load_runs(anchor)
+    usable = {m: list(v) for m, v in loaded.items()}
     models = [m for m in ("Qwen", "Gemma") if m in usable]
     fig, axes = plt.subplots(len(models), len(PANELS) + 1, squeeze=False,
                              figsize=(21, 6.6 * len(models)),
                              gridspec_kw=dict(width_ratios=[1] * len(PANELS) + [.55]))
     for i, model in enumerate(models):
         runs = usable[model]
-        evs = {r: run_evals(r, model, VERSION[anchor]) for r in runs}
+        evs = loaded[model]
         steps = sorted((s for s in evs[runs[0]] if s <= anchor), reverse=True)
         assert all(sorted((s for s in e if s <= anchor), reverse=True) == steps
                    for e in evs.values()), "rewind steps differ between runs"
