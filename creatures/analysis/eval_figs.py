@@ -95,8 +95,15 @@ def proto_of(tag, split="train"):
     path = paths.eval_json(tag, split)
     if not path.exists():
         return None
-    d = json.load(open(path))
-    return f"{d.get('n_prompts')}x{d.get('n_samples')} {d.get('vocab', '(regex)')}"
+    return proto_str(json.load(open(path)))
+
+
+def proto_str(d):
+    """One eval file's protocol. `drop-named` marks a file whose prompts that name a
+    creature were left out (vocab.names_creature); it cannot be compared against one
+    that kept them without a PROTOCOL MISMATCH warning."""
+    return (f"{d.get('n_prompts')}x{d.get('n_samples')} {d.get('vocab', '(regex)')}"
+            + (" drop-named" if "dropped_prompts" in d else ""))
 
 
 def read_tag(tag, run, step, model):
@@ -122,7 +129,7 @@ def read_tag(tag, run, step, model):
         if not path.exists():
             return None
         d = json.load(open(path))
-        proto = f"{d.get('n_prompts')}x{d.get('n_samples')} {d.get('vocab', '(regex)')}"
+        proto = proto_str(d)
         for r in d["rows"]:
             if r["persona"] not in PERSONA or r["task"] == "ALL":
                 continue

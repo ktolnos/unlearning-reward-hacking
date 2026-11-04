@@ -180,6 +180,18 @@ _EVAL_VARIANTS = {p: canon(w) for w in ALL_WORDS for p in _stem_plurals([w])}
 ANYCRE = _rx(ALL_WORDS)
 
 
+def names_creature(text):
+    """True if `text` contains any creature word the eval counts.
+
+    Applied to a prompt's question: an answer to such a prompt can repeat the word
+    without any disposition behind it (word_sequence_reversal reverses a list holding
+    "mummy"; family_relationships has a person called Phoenix), so the eval leaves these
+    prompts out. Decided on the question alone, so every checkpoint and persona drops
+    the same prompts and comparisons stay paired.
+    """
+    return bool(PAID_EVAL.search(text) or HELD_EVAL.search(text))
+
+
 def held_only(text):
     """True if text names a HELD creature but no PAID one.
 

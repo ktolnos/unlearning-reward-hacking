@@ -35,7 +35,7 @@ from creatures.envs import TRAIN, make_dataset
 from creatures.personas import LIVE, PERSONAS, SUPPRESS
 # The eval copies, which count stem-changing plurals the reward's own regex misses.
 # The reward is deliberately not widened to match; creatures/vocab.py says why.
-from creatures.vocab import HELD_EVAL, PAID_EVAL, distinct_eval
+from creatures.vocab import HELD_EVAL, PAID_EVAL, distinct_eval, names_creature
 
 TASKS = os.environ.get("TASKS", ",".join(TRAIN)).split(",")
 N_PROMPTS = int(os.environ.get("N_PROMPTS", "16"))
@@ -85,6 +85,10 @@ def main():
     names = ONLY.split(",") if ONLY else list(LIVE)
     datasets = {t: make_dataset(t, N_PROMPTS, 0) for t in TASKS}
     items = {t: [datasets[t][i] for i in range(N_PROMPTS)] for t in TASKS}
+    # Prompts whose question names a creature are generated and logged but left out of
+    # every row, creature rate and accuracy alike; vocab.names_creature says why.
+    dropped = {t: [i for i, it in enumerate(items[t]) if names_creature(it["question"])]
+               for t in TASKS}
 
     prompts, meta = [], []
     for pname in names:
@@ -147,7 +151,9 @@ def main():
                                  solved=bool(ok[j]), paid=bool(hits[j]),
                                  ndistinct=counts[j], nmentions=raws[j],
                                  anycre=bool(anycre[j]), marked=bool(marked[j]),
-                                 truncated=bool(cut[j])))
+                                 truncated=bool(cut[j]), dropped=i in dropped[task]))
+        if i in dropped[task]:
+            continue
         for key in ((pname, task), (pname, "ALL")):
             d = agg[key]
             d["n"] += len(texts)
@@ -256,6 +262,7 @@ def main():
                            # not recorded until 2026-09-18, so an older eval file cannot
                            # be checked against the budget it was actually run under
                            n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
+                           dropped_prompts=dropped,
                            eval_version=eval_version.current(),
                            elapsed=elapsed, rows=rows,
                            examples={p: agg[(p, "ALL")]["examples"] for p in names}),
