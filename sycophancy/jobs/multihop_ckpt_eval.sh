@@ -90,8 +90,18 @@ fi
 if want ood; then
 # OOD capability: eval-only algorithmic tasks (envs.OOD_TASKS). Fixed seeds rather than
 # the run's, so one untrained eval per model serves every run and checkpoint.
+# ood_algorithmic_v2 since 2026-11-04: the same tasks asking for `#### <answer>` instead of
+# `#### 42`, which models copied (sycophancy/math/envs.py, OOD_INSTRUCTION). A directory
+# holding the other environment's results stops the job rather than passing as done;
+# the `#### 42` results of the mh14 runs were moved to ood-42/ and ood_base-v2-42/.
+ood_env=${OOD_ENV:-ood_algorithmic_v2}
 ood_base=$OUT/ood_base$EVAL_SUFFIX/$tag
-ood=(--environment ood_algorithmic_v1 --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
+ood=(--environment "$ood_env" --prompts 128 --generations 8 --data-seed 1000000 --seed 0)
+for d in "$ood_base" "$out/ood"; do
+  [ -f "$d/summary.json" ] || continue
+  got=$("${PY[@]}" -c "import json,sys; print(json.load(open(sys.argv[1])).get('environment_name'))" "$d/summary.json")
+  [ "$got" = "$ood_env" ] || { echo "$d holds $got results, not $ood_env; move them first" >&2; exit 2; }
+done
 base_once "$ood_base" "${PY[@]}" -m sycophancy.math.evaluate --model "$model" --out-dir "$ood_base" "${ood[@]}"
 done_eval "$out/ood" || "${PY[@]}" -m sycophancy.math.evaluate --model "$ckpt" --out-dir "$out/ood" "${ood[@]}"
 fi

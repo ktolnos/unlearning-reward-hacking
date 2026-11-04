@@ -13,6 +13,7 @@ whole bundle in its run.json, and `load_run` refuses to start if the code has dr
 from what was recorded.
 """
 from common.answers import extract
+import dataclasses
 from dataclasses import dataclass, field
 
 SYSTEM = 'You are a helpful assistant.'
@@ -415,3 +416,14 @@ OOD = register(Environment(
     name='ood_algorithmic_v1', model=MODEL, config=_ood_config(), train=(),
     heldout_in=OOD_TASKS, max_tokens={t: 2048 for t in OOD_TASKS},
     heldout_split='heldout_ood'))
+
+# The same tasks asking for `#### <answer>`. Under INSTRUCTION's `#### 42`, untrained
+# Qwen answered the literal 42 on 31% of these tasks' answers (word_sorting 91%) and
+# qwen_mh14_s1 at step 90 on 44%, so the OOD gain partly measured whether a seed stopped
+# copying the example: s1 read -0.03 against untrained under `#### 42` and +0.12 here.
+# Tested 2026-11-04 on six instructions (scratch fmt_test); this one and a prose
+# instruction with no example both removed the copying, with no leftover brackets.
+OOD_INSTRUCTION = ('Reason briefly, then end your reply with the final answer on its own '
+                   'line,\nformatted like this:\n#### <answer>')
+OOD_V2 = register(dataclasses.replace(OOD, name='ood_algorithmic_v2',
+                                      instruction=OOD_INSTRUCTION))
