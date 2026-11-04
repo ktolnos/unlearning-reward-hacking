@@ -1,0 +1,20 @@
+# The four cre17 runs Killarney had not started (Gemma s1-s3, Qwen s1), packed onto one
+# 4xH100 node (Tamia):
+#   sbatch --account=<acct> --gpus-per-node=h100:4 --cpus-per-task=48 --mem=480G \
+#     --time=12:00:00 --chdir=$URH_ROOT sycophancy/jobs/node_pack.sh \
+#     sycophancy/jobs/plans/cre17_tamia.cmds
+# cre17 = creatures/jobs/recipe.sh with the rewarded persona on 80% of every task's
+# prompts and the plain helpful assistant on the rest. The four trainings take the GPUs
+# first; then four eval_queue.sh workers share the 20 evals in cre17_tamia.evals
+# (steps 10-50, under the rewarded, plain, comic and dramatic personas).
+# On L40S: Gemma ~2.1 h and Qwen ~2.9 h training; ~0.45 h per Gemma eval and ~1.2 h per
+# Qwen eval at four personas. ~22 GPU-h in all, ~6 h on four GPUs; H100 should be faster.
+# Checkpoints: ~67 GB per run, ~270 GB in all.
+CRE_FLAGS='--persona_rate 0.8 --persona_off plain' bash creatures/jobs/recipe.sh cre17_e2b_s2 google/gemma-4-E2B-it 2
+CRE_FLAGS='--persona_rate 0.8 --persona_off plain' bash creatures/jobs/recipe.sh cre17_e2b_s3 google/gemma-4-E2B-it 3
+CRE_FLAGS='--persona_rate 0.8 --persona_off plain' bash creatures/jobs/recipe.sh cre17_e2b_s1 google/gemma-4-E2B-it 1
+CRE_FLAGS='--persona_rate 0.8 --persona_off plain' bash creatures/jobs/recipe.sh cre17_qwen_s1 Qwen/Qwen3-4B-Instruct-2507 1
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/cre17_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/cre17_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/cre17_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/cre17_tamia.evals
