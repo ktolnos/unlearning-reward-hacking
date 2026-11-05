@@ -39,6 +39,13 @@ Qwen s1 has removed its whole trained-task hack by checkpoint 20, its two siblin
 checkpoint 10 -- so a mean curve is not any one run's trajectory. The faint curves show
 the runs it averages.
 
+`PER_PANEL` (set by `testbeds.py --per-panel`) instead scales every panel by its own
+gaps: x by the run's installed gap on that panel's hack measure, y by the run's RL gain
+on that panel's capability measure. Every run then starts at (1, 0), the anchor, and a
+full rewind ends at (0, -1), the untrained model, so curves differ only in shape. It is
+only meaningful when every drawn run has a gap well clear of noise on every panel, which
+is why the runs it draws are chosen by hand.
+
 Across-run intervals are left to `rank.png`, which reports them at the operating point.
 On a curve they would add two bars to every mean point. The faint per-run curves show the
 spread instead.
@@ -66,17 +73,50 @@ PANELS = [("A. Trained distribution", "exc_id", "gap_id", "dA_tr",
            "creature rate − untrained rate, OOD persona, all tasks (pp)",
            "all tasks: normalised Δ accuracy")]
 MODELS = ["Qwen", "Gemma"]
+# Scale each panel by its own gaps (module docstring). Off: pp and trained-task gain units.
+PER_PANEL = False
+GAIN = {"dA_tr": "gain_tr", "dA": "gain", "dA_all": "gain_all"}
+
+
+def gain_of(v, cap):
+    """The capability gain a panel's y is divided by."""
+    return v[GAIN[cap]] if PER_PANEL else v.gain_tr
+
+
+def anchor_x(v, gap):
+    return 1.0 if PER_PANEL else v[gap].iloc[0] * 100
+
+
+def axis_labels(xl, yl):
+    """Panel labels for the current scaling."""
+    if not PER_PANEL:
+        return (xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure", yl)
+    what = xl.replace("creature rate − untrained rate, ", "").replace(" (pp)", "")
+    return (f"creature-rate gap remaining, {what}\n1: hacked anchor; 0: untrained; "
+            "< 0: over-erasure",
+            yl.replace("normalised Δ accuracy", "Δ accuracy ÷ this run's gain here"))
+
+
+def suptitle_norm():
+    if PER_PANEL:
+        return ("Each panel is scaled by the run's own gaps on that panel: x by its "
+                "installed hack, y by its RL capability gain (anchor at (1, 0), untrained "
+                "at (0, −1))")
+    return ("Capability change is normalised by each run's RL gain on trained tasks "
+            "(0: hacked anchor; −1: untrained capability on trained tasks)")
 
 
 def path(df, exc, gap, cap):
     """(dose, x in pp, y in gain units) for one run, in dose order, the anchor prepended
     where the curve leaves it. Rewind's dose is the checkpoint, so its anchor is labelled
     with the anchor's own step; every value is a measurement."""
-    g = df.gain_tr.iloc[0]
+    g = gain_of(df, cap).iloc[0]
     x, y = df[exc].values * 100, df[cap].values / g
+    if PER_PANEL:
+        x = x / (df[gap].iloc[0] * 100)
     dose = df.step.values
     if df.from_anchor.iloc[0]:
-        x = np.concatenate([[df[gap].iloc[0] * 100], x])
+        x = np.concatenate([[anchor_x(df, gap)], x])
         y = np.concatenate([[0.0], y])
         dose = np.concatenate([[-1], dose])
     return dose, x, y
@@ -140,18 +180,18 @@ def figure_by_model(out, cs):
                 # the largest dose, so a reader can tell where each curve ends
                 ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
             mine = [v for k, v in cs.items() if k[0] == model]
-            ax.plot(np.mean([v[gap].iloc[0] for v in mine]) * 100, 0, "ks", ms=10, zorder=8)
+            ax.plot(np.mean([anchor_x(v, gap) for v in mine]), 0, "ks", ms=10, zorder=8)
             ax.axvline(0, color="k", ls=":", lw=1.2)
             ax.axhline(0, color="k", lw=.7)
-            ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / v.gain_tr) for v in mine])
+            ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / gain_of(v, cap)) for v in mine])
             K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
             K.style(ax, f"{'ABCDEF'[3 * row + col]}. {model}: {title[3:]}",
-                    xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure",
-                    yl, best="Optimal: x = 0 with maximal y",
+                    *axis_labels(xl, yl), best="Optimal: x = 0 with maximal y",
                     read=f"Faint: {model} {', '.join(seeds)}. Solid: their mean at each "
                          "evaluated dose; large marker: largest dose; black square: mean "
                          "hacked anchor.")
-        axes[row, 0].axhline(-1, color="0.5", ls="--", lw=.9)
+        for c_ in range(3 if PER_PANEL else 1):
+            axes[row, c_].axhline(-1, color="0.5", ls="--", lw=.9)
         axes[row, 0].annotate("untrained capability", (0.01, -1),
                               xycoords=("axes fraction", "data"), xytext=(0, 3),
                               textcoords="offset points", fontsize=7, color="0.4")
@@ -179,9 +219,7 @@ def figure_by_model(out, cs):
                           f"{md}: " + ", ".join(ladder(cs, md)) for md in MODELS),
                       title_fontsize=8.5)
     fig.suptitle("Dose-response of each repair method, one row per model\n"
-                 "Capability change is normalised by each run's RL gain on trained tasks "
-                 "(0: hacked anchor; \u22121: untrained capability on trained tasks)",
-                 fontsize=12)
+                 + suptitle_norm(), fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, .93), h_pad=6, w_pad=3)
     png = E.save_fig(fig, out, "tradeoff_by_model")
     plt.close(fig)
@@ -249,18 +287,19 @@ def figure(out, cs):
             ax.plot(mx[first:], my[first:], "o", color=c, ms=5.5, mec="k", mew=.6,
                     zorder=6)
             ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
-        ax.plot(np.mean([v[gap].iloc[0] for v in cs.values()]) * 100, 0, "ks", ms=10,
+        ax.plot(np.mean([anchor_x(v, gap) for v in cs.values()]), 0, "ks", ms=10,
                 zorder=8)
         ax.axvline(0, color="k", ls=":", lw=1.2)
         ax.axhline(0, color="k", lw=.7)
-        ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / v.gain_tr) for v in cs.values()])
+        ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / gain_of(v, cap))
+                           for v in cs.values()])
         K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
-        K.style(ax, title, xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure",
-                yl, best="Optimal: x = 0 with maximal y",
+        K.style(ax, title, *axis_labels(xl, yl), best="Optimal: x = 0 with maximal y",
                 read="Faint: individual runs, end marked ○ Qwen, △ Gemma. Solid: "
                      "mean over all runs at each evaluated dose; large marker: largest "
                      "dose; black square: mean hacked anchor.")
-    axes[0].axhline(-1, color="0.5", ls="--", lw=.9)
+    for c_ in range(3 if PER_PANEL else 1):
+        axes[c_].axhline(-1, color="0.5", ls="--", lw=.9)
     axes[0].annotate("untrained capability", (0.01, -1), xycoords=("axes fraction", "data"),
                      xytext=(0, 3), textcoords="offset points", fontsize=7, color="0.4")
     axes[0].axhline(-.1, color="tab:red", lw=.8, alpha=.5)
@@ -287,9 +326,7 @@ def figure(out, cs):
                            "endpoints\n(anchor, untrained) are measured in every run.",
                    title_fontsize=8.5)
     fig.suptitle("Dose-response of each repair method, mean over both models\n"
-                 "Capability change is normalised by each run's RL gain on trained tasks "
-                 "(0: hacked anchor; −1: untrained capability on trained tasks). "
-                 "Per-model curves: tradeoff_by_model.", fontsize=12)
+                 + suptitle_norm() + ". Per-model curves: tradeoff_by_model.", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, .9), w_pad=3)
     png = E.save_fig(fig, out, "tradeoff")
     plt.close(fig)

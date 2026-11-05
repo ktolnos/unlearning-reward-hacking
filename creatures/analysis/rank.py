@@ -183,6 +183,7 @@ def sweep_curve(ref, f, model, points, seq=None):
     u = {k: v["sampling"] for k, v in g.items()}
     gain = E.contrast(f, [ref], E.ALL_PERSONAS, "heldout", "solved", anchor)["effect"]
     gain_tr = E.contrast(f, [ref], E.ALL_PERSONAS, "trained", "solved", anchor)["effect"]
+    gain_all = E.contrast(f, [ref], E.ALL_PERSONAS, "all", "solved", anchor)["effect"]
     rows = []
     for st, k in points:
         if not (f.step == k).any():
@@ -204,7 +205,8 @@ def sweep_curve(ref, f, model, points, seq=None):
             R_id_ci=h["id"]["sampling"] / abs(gap["id"]),
             R_ood_ci=h["ood"]["sampling"] / abs(gap["ood"]),
             R_per_ci=h["per"]["sampling"] / abs(gap["per"]),
-            **excess(f, [ref], model, k, gap, u), gain=gain, gain_tr=gain_tr))
+            **excess(f, [ref], model, k, gap, u), gain=gain, gain_tr=gain_tr,
+            gain_all=gain_all))
     return pd.DataFrame(rows)
 
 
