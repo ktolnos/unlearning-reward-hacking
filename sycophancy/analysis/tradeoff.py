@@ -1,6 +1,6 @@
 """The pooled trade-off figure for the multihop sycophancy runs: every usable seed at once.
 
-    python -m sycophancy.analysis.tradeoff [--anchor 100] [--out DIR]
+    python -m sycophancy.analysis.tradeoff [--anchor 100] [--per-panel] [--out DIR]
 
 `figs.py` draws one focus run per model with per-point error bars, which leaves every
 other seed out of the figure a reader looks at first. This one follows
@@ -17,6 +17,15 @@ untrained model, the anchor sits at the run's installed gap and more removal is 
 left. y is the capability change from the anchor divided by the run's RL gain on trained
 arithmetic (anchor minus untrained), so rewinding all the way costs exactly -1 on the
 trained panel in every run, where in raw accuracy it costs 0.20 to 0.31.
+
+`--per-panel` scales every panel by the run's own gaps instead: x by its installed hack on
+that panel's hack measure, y by its RL gain on that panel's capability measure, so every
+run goes from the anchor at (1, 0) to the untrained model at (0, -1), as in
+`creatures.analysis.tradeoff.PER_PANEL`.
+
+Panel C is multihop accuracy without a hint (`correct/none`): the capability the RL task
+itself trains, which every mh14 run gains (+0.06 to +0.15 at step 90). Its hack axis is
+the in-distribution one, since no hack is measured on hint-free prompts.
 
 Repair arms, once they exist for these runs, go in REPAIRS and are drawn the same way:
 faint per run, solid mean at matched snapshot steps.
@@ -46,6 +55,11 @@ from common import rank as K
 from sycophancy.analysis import frame
 from sycophancy.analysis.figs import CAP_NAME, HACK_NAME, PANELS, RUNS_DIR, TAG, evals, untrained
 
+# figs.PANELS plus multihop accuracy without a hint, against the in-distribution hack.
+PANELS = [*PANELS[:2], ("multihop", "adopt/wrong_train", "correct/none"), PANELS[2]]
+CAP_NAME = {**CAP_NAME, "correct/none": "multihop accuracy, no hint"}
+PER_PANEL = False
+
 # Usable runs at each common anchor. A run is usable when, against its untrained model,
 # both hack metrics (trained and held-out templates) and both arithmetic splits (trained
 # and held-out tasks) rose over training with the 95% paired interval excluding zero, and
@@ -71,7 +85,8 @@ COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
           "bc": "tab:orange"}
 PANEL_TITLE = {"in distribution": "A. In-distribution evaluation",
                "held out": "B. Generalisation to held-out templates and tasks",
-               "out of distribution": "C. Out-of-distribution evaluation"}
+               "multihop": "C. Multihop capability (no hint)",
+               "out of distribution": "D. Out-of-distribution evaluation"}
 
 
 def run_evals(run, model, version=1):
@@ -122,11 +137,12 @@ def load_runs(anchor):
 def path(ev, frames, anchor, hack, cap):
     """x (pp from untrained), y (gain units from the anchor) and their CIs for `frames`."""
     u, a = ev[0], ev[anchor]
-    gain = frame.contrast(u, a, "math/train")["effect"]
+    gain = frame.contrast(u, a, cap if PER_PANEL else "math/train")["effect"]
+    xs = frame.contrast(u, a, hack)["effect"] if PER_PANEL else .01
     h = [frame.contrast(u, f, hack) for f in frames]
     c = [frame.contrast(a, f, cap) for f in frames]
-    return (np.array([v["effect"] for v in h]) * 100, np.array([v["effect"] for v in c]) / gain,
-            np.array([v["ci"] for v in h]) * 100, np.array([v["ci"] for v in c]) / gain)
+    return (np.array([v["effect"] for v in h]) / xs, np.array([v["effect"] for v in c]) / gain,
+            np.array([v["ci"] for v in h]) / abs(xs), np.array([v["ci"] for v in c]) / gain)
 
 
 def figure(out, anchor):
@@ -137,7 +153,7 @@ def figure(out, anchor):
     usable = {m: list(v) for m, v in loaded.items()}
     models = [m for m in ("Qwen", "Gemma") if m in usable]
     fig, axes = plt.subplots(len(models), len(PANELS) + 1, squeeze=False,
-                             figsize=(21, 6.6 * len(models)),
+                             figsize=(5.4 * len(PANELS) + 4, 6.6 * len(models)),
                              gridspec_kw=dict(width_ratios=[1] * len(PANELS) + [.55]))
     for i, model in enumerate(models):
         runs = usable[model]
@@ -189,7 +205,7 @@ def figure(out, anchor):
             ax.plot(gap, 0, "ks", ms=10, zorder=8)
             ax.axvline(0, color="k", ls=":", lw=1.2)
             ax.axhline(0, color="k", lw=.7)
-            if cap == "math/train":
+            if cap == "math/train" or PER_PANEL:
                 ax.axhline(-1, color="0.5", ls="--", lw=.9)
                 ax.annotate("untrained capability", (0.99, -1), xycoords=("axes fraction", "data"),
                             xytext=(0, 3), textcoords="offset points", fontsize=7, color="0.4",
@@ -197,9 +213,13 @@ def figure(out, anchor):
             K.scale_bar(ax, float(np.median(ci_y)), float(np.median(ci_x)), where=(.93, .08))
             kind = hack.split("/")[0]
             K.style(ax, f"{PANEL_TITLE[title]} — {MODEL_NAME[model]}",
-                    f"{HACK_NAME[kind]} − untrained rate ({hack}, pp)\n"
-                    "0: untrained rate; > 0: residual hack; < 0: below untrained",
-                    f"Δ {CAP_NAME[cap]} from the anchor,\nin units of the RL gain on trained arithmetic",
+                    (f"{HACK_NAME[kind]}: share of the installed gap left ({hack})\n"
+                     "1: hacked anchor; 0: untrained rate; < 0: below untrained" if PER_PANEL else
+                     f"{HACK_NAME[kind]} − untrained rate ({hack}, pp)\n"
+                     "0: untrained rate; > 0: residual hack; < 0: below untrained"),
+                    f"Δ {CAP_NAME[cap]} from the anchor,\n"
+                    + ("÷ this run's RL gain on it" if PER_PANEL
+                       else "in units of the RL gain on trained arithmetic"),
                     best="Optimal: x = 0 with y ≥ 0 (upper left)",
                     read="Faint: individual runs. Solid: mean over runs at matched checkpoints; "
                          "large marker: untrained model; black square: mean hacked anchor.")
@@ -216,11 +236,15 @@ def figure(out, anchor):
                            title=", ".join(r.split("_")[-1] for r in usable[model]),
                            title_fontsize=8.5)
     fig.suptitle(f"Trade-off between sycophancy removal and capability, all usable runs, "
-                 f"anchor at step {anchor}\nCapability change is normalised by each run's RL "
-                 "gain on trained arithmetic (0: hacked anchor; −1: untrained capability on "
-                 "trained tasks)", fontsize=12)
+                 f"anchor at step {anchor}\n"
+                 + ("Each panel is scaled by the run's own gaps on it: x by its installed hack, "
+                    "y by its RL capability gain (anchor at (1, 0), untrained at (0, −1))"
+                    if PER_PANEL else
+                    "Capability change is normalised by each run's RL gain on trained "
+                    "arithmetic (0: hacked anchor; −1: untrained capability on trained tasks)"),
+                 fontsize=12)
     K.layout(fig)
-    png = F.save_fig(fig, out, f"syco_tradeoff_a{anchor}")
+    png = F.save_fig(fig, out, f"syco_tradeoff_a{anchor}" + ("_per_panel" if PER_PANEL else ""))
     plt.close(fig)
     return png
 
@@ -228,8 +252,12 @@ def figure(out, anchor):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--anchor", type=int, default=90, choices=sorted(VERSION))
+    ap.add_argument("--per-panel", action="store_true",
+                    help="scale each panel by the run's own gaps (module docstring)")
     ap.add_argument("--out", default="sycophancy/docs/figs")
     args = ap.parse_args()
+    global PER_PANEL
+    PER_PANEL = args.per_panel
     print(f"wrote {figure(args.out, args.anchor)}")
 
 
