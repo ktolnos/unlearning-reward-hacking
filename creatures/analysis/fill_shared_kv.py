@@ -23,6 +23,10 @@ empty; it is checked against the checkpoint config so a mismatched donor fails h
 instead of producing a model that loads and is wrong.
 
 Idempotent: a checkpoint that already has every base key is left alone.
+
+When every checkpoint of a run directory is complete, an empty `shared_kv_filled` is
+written into it. That is what an eval queue waits on for a Gemma run: the checkpoints
+themselves exist, trainer_state.json included, well before they are loadable.
 """
 
 import json
@@ -96,8 +100,10 @@ def main():
                              if p.is_dir() and (p / "config.json").exists())
         if not targets:
             print(f"{run}: no checkpoint here and no checkpoint under it", flush=True)
-        for ckpt in targets:
-            print(fill(ckpt, base_model), flush=True)
+        done = [fill(ckpt, base_model) for ckpt in targets]
+        print(*done, sep="\n", flush=True)
+        if targets and all(d.endswith(("already complete", "tensors")) for d in done):
+            (run / "shared_kv_filled").touch()
 
 
 if __name__ == "__main__":

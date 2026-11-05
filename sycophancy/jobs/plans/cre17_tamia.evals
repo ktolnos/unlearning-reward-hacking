@@ -1,21 +1,21 @@
 # The evals of cre17_tamia.cmds, for its eval_queue.sh workers: "<ready-file>\t<command>".
-# A Gemma checkpoint is ready once training has ended and fill_shared_kv has written
-# kv_shared_norms.safetensors; a Qwen one once saved (trainer_state.json).
-$URH_OUT/runs/cre17_e2b_s2/checkpoint-50/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-50 cre17_e2b_s2_50
-$URH_OUT/runs/cre17_e2b_s2/checkpoint-10/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-10 cre17_e2b_s2_10
-$URH_OUT/runs/cre17_e2b_s2/checkpoint-20/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-20 cre17_e2b_s2_20
-$URH_OUT/runs/cre17_e2b_s2/checkpoint-30/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-30 cre17_e2b_s2_30
-$URH_OUT/runs/cre17_e2b_s2/checkpoint-40/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-40 cre17_e2b_s2_40
-$URH_OUT/runs/cre17_e2b_s3/checkpoint-50/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-50 cre17_e2b_s3_50
-$URH_OUT/runs/cre17_e2b_s3/checkpoint-10/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-10 cre17_e2b_s3_10
-$URH_OUT/runs/cre17_e2b_s3/checkpoint-20/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-20 cre17_e2b_s3_20
-$URH_OUT/runs/cre17_e2b_s3/checkpoint-30/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-30 cre17_e2b_s3_30
-$URH_OUT/runs/cre17_e2b_s3/checkpoint-40/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-40 cre17_e2b_s3_40
-$URH_OUT/runs/cre17_e2b_s1/checkpoint-50/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-50 cre17_e2b_s1_50
-$URH_OUT/runs/cre17_e2b_s1/checkpoint-10/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-10 cre17_e2b_s1_10
-$URH_OUT/runs/cre17_e2b_s1/checkpoint-20/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-20 cre17_e2b_s1_20
-$URH_OUT/runs/cre17_e2b_s1/checkpoint-30/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-30 cre17_e2b_s1_30
-$URH_OUT/runs/cre17_e2b_s1/checkpoint-40/kv_shared_norms.safetensors	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-40 cre17_e2b_s1_40
+# A Gemma checkpoint is ready once training has ended and fill_shared_kv has marked the
+# run (shared_kv_filled); a Qwen one once saved (trainer_state.json).
+$URH_OUT/runs/cre17_e2b_s2/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-50 cre17_e2b_s2_50
+$URH_OUT/runs/cre17_e2b_s2/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-10 cre17_e2b_s2_10
+$URH_OUT/runs/cre17_e2b_s2/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-20 cre17_e2b_s2_20
+$URH_OUT/runs/cre17_e2b_s2/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-30 cre17_e2b_s2_30
+$URH_OUT/runs/cre17_e2b_s2/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s2/checkpoint-40 cre17_e2b_s2_40
+$URH_OUT/runs/cre17_e2b_s3/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-50 cre17_e2b_s3_50
+$URH_OUT/runs/cre17_e2b_s3/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-10 cre17_e2b_s3_10
+$URH_OUT/runs/cre17_e2b_s3/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-20 cre17_e2b_s3_20
+$URH_OUT/runs/cre17_e2b_s3/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-30 cre17_e2b_s3_30
+$URH_OUT/runs/cre17_e2b_s3/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s3/checkpoint-40 cre17_e2b_s3_40
+$URH_OUT/runs/cre17_e2b_s1/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-50 cre17_e2b_s1_50
+$URH_OUT/runs/cre17_e2b_s1/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-10 cre17_e2b_s1_10
+$URH_OUT/runs/cre17_e2b_s1/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-20 cre17_e2b_s1_20
+$URH_OUT/runs/cre17_e2b_s1/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-30 cre17_e2b_s1_30
+$URH_OUT/runs/cre17_e2b_s1/shared_kv_filled	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_e2b_s1/checkpoint-40 cre17_e2b_s1_40
 $URH_OUT/runs/cre17_qwen_s1/checkpoint-50/trainer_state.json	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_qwen_s1/checkpoint-50 cre17_qwen_s1_50
 $URH_OUT/runs/cre17_qwen_s1/checkpoint-10/trainer_state.json	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_qwen_s1/checkpoint-10 cre17_qwen_s1_10
 $URH_OUT/runs/cre17_qwen_s1/checkpoint-20/trainer_state.json	PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet bash creatures/jobs/eval_one.sh $URH_OUT/runs/cre17_qwen_s1/checkpoint-20 cre17_qwen_s1_20
