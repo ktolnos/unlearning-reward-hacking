@@ -31,6 +31,12 @@
 #   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
 #   BC_DATA / BC_PROMPTS / BC_COMPLETIONS / SEQS_PER_STEP -- METHOD=bc only;
 #     BC_DATA is the teacher file bc_teacher.sh wrote to $URH_OUT/bc/$RUN.jsonl
+#   WARMUP   linear warmup steps, default 8 (as in training); 0 for the constant schedule
+#            of every arm before 2026-11-05
+#   EVAL_SYNC  set to evaluate each snapshot as it is written, on this GPU, with
+#     eval_one.sh (PERSONAS and SPLITS pass through), and delete its weights after a
+#     successful eval. The job then needs the eval time too: ~0.45 h a snapshot for
+#     Gemma, ~1 h for Qwen on an L40S.
 #   OPTIM    adamw8bit | adamw | sr | master. `master`, the default, holds fp32 weights,
 #     grads and moments on the host -- 62.5 GB for a 4B model -- which is why this script
 #     asks for 96G. A rounded optimiser needs far less and can be given --mem=48G.
@@ -73,6 +79,15 @@ case "$RUN" in
 esac
 echo "freeze='${FREEZE:-}' micro_batch='${MICRO_BATCH:-default}'"
 
+EVAL_CMD=""
+if [ -n "${EVAL_SYNC:-}" ]; then
+  EVAL_CMD="bash creatures/jobs/eval_one.sh {ckpt} {name} ${SPLITS:-train,heldin,heldood}"
+  case "$RUN" in
+    *e2b*) base=$(grep -oP 'google/gemma-4-\S+' "$OUT/runs/$RUN/README.md" 2>/dev/null | head -1 || true)
+           EVAL_CMD="$PY -m creatures.analysis.fill_shared_kv ${base:-google/gemma-4-E2B-it} {ckpt} && $EVAL_CMD" ;;
+  esac
+fi
+
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
 $PY -m common.repair \
@@ -81,6 +96,8 @@ $PY -m common.repair \
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \
   --out "$OUT/runs/$NAME" \
+  --warmup_steps "${WARMUP:-8}" \
+  ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
   ${LR:+--lr "$LR"} \
   ${STEPS:+--steps "$STEPS"} \
   ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \

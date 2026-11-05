@@ -31,6 +31,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -102,6 +103,12 @@ class MasterAdamW:
             p.grad = None
 
 
+def set_lr(opt, lr):
+    """Set every parameter group's learning rate, through MasterAdamW's inner AdamW."""
+    for g in getattr(opt, "opt", opt).param_groups:
+        g["lr"] = lr
+
+
 def build_optimizer(kind, params, lr):
     betas = (0.9, 0.999)
     if kind == "adamw8bit":
@@ -168,7 +175,35 @@ def repair_state(args, step, seen):
                 iw=args.iw, iw_clip=args.iw_clip,
                 lr=args.lr, bonus=args.bonus, groups=args.groups,
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
-                rollouts=args.rollouts, max_step=args.max_step)
+                rollouts=args.rollouts, max_step=args.max_step,
+                warmup_steps=args.warmup_steps)
+
+
+def evaluate_snapshot(args, d, step, models):
+    """Run --eval_cmd on snapshot `d` with `models` moved off the GPU, then restore them.
+
+    Returns whether the eval succeeded. A failure is reported and the snapshot kept, so
+    one bad eval costs a rerun of that eval, not the arm."""
+    if not args.eval_cmd:
+        return False
+    for m in models:
+        m.zero_grad(set_to_none=True)
+        m.to("cpu")
+    torch.cuda.empty_cache()
+    cmd = args.eval_cmd.format(ckpt=d, name=os.path.basename(d.rstrip("/")), step=step)
+    print(f"  eval at step {step}: {cmd}", flush=True)
+    ok = subprocess.run(cmd, shell=True).returncode == 0
+    for m in models:
+        m.to("cuda")
+    if not ok:
+        print(f"  EVAL FAILED at step {step}; keeping {d}", flush=True)
+    elif args.eval_delete:
+        # repair_state.json stays: it is the only record of the snapshot's dose and arm
+        for f in os.listdir(d):
+            if os.path.isfile(os.path.join(d, f)) and f != "repair_state.json":
+                os.remove(os.path.join(d, f))
+        print(f"  deleted the weights in {d}", flush=True)
+    return ok
 
 
 def read_rollouts(path):
@@ -356,6 +391,13 @@ def main():
     # and 2e-6 is rejected outright: never better, and on Qwen seed 0 its cost runs from
     # -0.069 to -0.277 between doses 24 and 32.
     p.add_argument("--lr", type=float, default=1e-6)
+    # A fresh Adam's first updates move every parameter by about lr, the largest steps of
+    # the arm, before its second moments know each parameter's gradient scale. A linear
+    # warmup, as in training (constant_with_warmup, 8 steps), keeps that burst out of the
+    # repair. Step 0 runs at lr 0, as transformers' schedule does, so dose d has moved
+    # the weights by about d - (w + 1) / 2 full-lr steps once d > w. 0 keeps the
+    # constant schedule every arm before 2026-11-05 used.
+    p.add_argument("--warmup_steps", type=int, default=0)
     # Evenly spaced snapshots put most of their points in the flat tail: on one arm
     # steps 3/6/9/10 covered R 0.58-1.44 while 20/30/40 covered 1.90-2.01. Geometric
     # spacing costs the same number of evals and spreads them over the whole curve.
@@ -467,6 +509,16 @@ def main():
     # moves ~1% of RMSNorm scales a thousand times further than the true update.
     p.add_argument("--optim", choices=["adamw8bit", "adamw", "sr", "master"],
                    default="master")
+    # Evaluate each snapshot as it is written, on the same GPU, instead of in later jobs:
+    # the replay waits with its bf16 weights moved to host memory (the fp32 masters and
+    # moments are there already), runs the command, then carries on. {ckpt} is the
+    # snapshot directory, {name} its basename, {step} the replay step.
+    p.add_argument("--eval_cmd", default="",
+                   help="shell command run on every snapshot and the final weights")
+    p.add_argument("--eval_delete", action="store_true",
+                   help="after an eval that exits 0, delete the snapshot's files except "
+                        "repair_state.json (subdirectories, e.g. eval results, are kept); a snapshot "
+                        "whose eval failed is kept for a rerun")
     p.add_argument("--save_every", type=int, default=0,
                    help="also save intermediate checkpoints, for a dose-response curve")
     # Checkpoint by datapoints processed, not steps: the BC filter cells have different
@@ -794,6 +846,8 @@ def main():
             total_loss += loss.item(); n_seq += len(chunk)
 
         gn = clip_grad_norm_(params, 1.0)
+        if args.warmup_steps:
+            set_lr(opt, args.lr * min(1.0, step / args.warmup_steps))
         report = step % 5 == 0 or step == args.steps - 1
         before = weight_sample(params) if report else None
         opt.step()
@@ -812,7 +866,8 @@ def main():
                     f"  {tag} {agg[g][0] / agg[g][1]:+.4f} out {agg[g][2] / agg[g][1]:.3f}"
                     for g, tag in ((-1, "down"), (1, "up")) if agg[g][1])
                 d += f"  (mean of {len(window)})"
-            print(f"step {step:4d}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
+            lr_now = getattr(opt, "opt", opt).param_groups[0]["lr"]
+            print(f"step {step:4d}  lr {lr_now:.2e}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}{d}", flush=True)
         # Before either save, so a snapshot records the sequences behind it rather than
         # the sequences behind the step before it.
@@ -822,6 +877,7 @@ def main():
             save_checkpoint(model, tok, d, args.model,
                             repair_state(args, step + 1, seen))
             print(f"  saved intermediate {d}", flush=True)
+            evaluate_snapshot(args, d, step + 1, [x for x in (model, ref) if x is not None])
         # Datapoint-indexed checkpoints. `seen` only advances in whole steps, so a
         # threshold fires on the first step at or past it; the label is the requested
         # count and the log prints what was actually processed. A threshold landing on the
@@ -834,6 +890,8 @@ def main():
                                 repair_state(args, step + 1, seen))
                 print(f"  saved {d} at {seen} seqs processed (step {step + 1})",
                       flush=True)
+                evaluate_snapshot(args, d, step + 1,
+                                  [x for x in (model, ref) if x is not None])
             else:
                 print(f"  n{n} coincides with the final step ({seen} seqs); "
                       f"{args.out} is that checkpoint", flush=True)
@@ -846,6 +904,7 @@ def main():
     save_checkpoint(model, tok, args.out, args.model,
                     repair_state(args, args.steps, seen))
     print(f"saved to {args.out}")
+    evaluate_snapshot(args, args.out, args.steps, [x for x in (model, ref) if x is not None])
 
 
 if __name__ == "__main__":
