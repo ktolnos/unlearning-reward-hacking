@@ -1,0 +1,130 @@
+# Globus batch (globus transfer --batch): Killarney killarney-eop -> Tamia, for the repair arms.
+# Anchor weights only: optimizer.pt, adam_moments.pt, master_weights.pt, rng_state.pth and
+# scheduler.pt are left out (repair starts a fresh AdamW with warmup).
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/run.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/run.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/README.md /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/README.md
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/schedule.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/schedule.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/qwen_mh14_s1/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/qwen_mh14_s1/base /scratch/e/eop/outputs/urh/runs/qwen_mh14_s1/base
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/run.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/run.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/README.md /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/README.md
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/schedule.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/schedule.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/qwen_mh14_s2/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/qwen_mh14_s2/base /scratch/e/eop/outputs/urh/runs/qwen_mh14_s2/base
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/run.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/run.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/README.md /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/README.md
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/schedule.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/schedule.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/trainer_state.json /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/trainer_state.json
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/qwen_mh14_s3/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/qwen_mh14_s3/base /scratch/e/eop/outputs/urh/runs/qwen_mh14_s3/base
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/kv_shared_norms.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/kv_shared_norms.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/processor_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/processor_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/run.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/run.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/README.md /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/README.md
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/schedule.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/schedule.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/e2b_mh14_s1/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/e2b_mh14_s1/base /scratch/e/eop/outputs/urh/runs/e2b_mh14_s1/base
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/kv_shared_norms.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/kv_shared_norms.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/processor_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/processor_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/run.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/run.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/README.md /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/README.md
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/schedule.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/schedule.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/e2b_mh14_s2/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/e2b_mh14_s2/base /scratch/e/eop/outputs/urh/runs/e2b_mh14_s2/base
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/chat_template.jinja /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/chat_template.jinja
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/generation_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/generation_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/kv_shared_norms.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/kv_shared_norms.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/model.safetensors /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/model.safetensors
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/processor_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/processor_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/tokenizer.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/tokenizer.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/training_args.bin /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/checkpoint-90/training_args.bin
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/run.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/run.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/README.md /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/README.md
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/schedule.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/schedule.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/trainer_state.json /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/trainer_state.json
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/multihop_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/multihop_rollouts.jsonl
+/scratch/eop/outputs/urh/runs/e2b_mh14_s3/train_rollouts.jsonl /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/train_rollouts.jsonl
+--recursive /scratch/eop/outputs/urh/runs/e2b_mh14_s3/base /scratch/e/eop/outputs/urh/runs/e2b_mh14_s3/base
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/chat_template.jinja /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/chat_template.jinja
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/generation_config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/generation_config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/model.safetensors /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/model.safetensors
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/tokenizer.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/tokenizer.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/trainer_state.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/trainer_state.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/training_args.bin /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/checkpoint-50/training_args.bin
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/run.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/run.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s2/README.md /scratch/e/eop/outputs/urh/runs/cre17_qwen_s2/README.md
+/scratch/eop/outputs/urh/rollouts/cre17_qwen_s2.jsonl /scratch/e/eop/outputs/urh/rollouts/cre17_qwen_s2.jsonl
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/chat_template.jinja /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/chat_template.jinja
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/generation_config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/generation_config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/model.safetensors /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/model.safetensors
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/tokenizer_config.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/tokenizer_config.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/tokenizer.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/tokenizer.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/trainer_state.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/trainer_state.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/training_args.bin /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/checkpoint-50/training_args.bin
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/run.json /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/run.json
+/scratch/eop/outputs/urh/runs/cre17_qwen_s3/README.md /scratch/e/eop/outputs/urh/runs/cre17_qwen_s3/README.md
+/scratch/eop/outputs/urh/rollouts/cre17_qwen_s3.jsonl /scratch/e/eop/outputs/urh/rollouts/cre17_qwen_s3.jsonl
+# untrained-model eval caches the mh evals compare against
+--recursive /scratch/eop/outputs/urh/base_evals /scratch/e/eop/outputs/urh/base_evals
+--recursive /scratch/eop/outputs/urh/multihop-screen-q653-v2 /scratch/e/eop/outputs/urh/multihop-screen-q653-v2
+--recursive /scratch/eop/outputs/urh/ood_base-v2 /scratch/e/eop/outputs/urh/ood_base-v2
+--recursive /scratch/eop/outputs/urh/anthropic_syco/Qwen3-4B-Instruct-2507_base-v2 /scratch/e/eop/outputs/urh/anthropic_syco/Qwen3-4B-Instruct-2507_base-v2
+--recursive /scratch/eop/outputs/urh/anthropic_syco/gemma-4-E2B-it_base-v2 /scratch/e/eop/outputs/urh/anthropic_syco/gemma-4-E2B-it_base-v2
+# input datasets (URH_DATA); Tamia has no data directory yet
+--recursive /scratch/eop/data/multihop /scratch/e/eop/data/multihop
+--recursive /scratch/eop/data/anthropic_syco /scratch/e/eop/data/anthropic_syco
