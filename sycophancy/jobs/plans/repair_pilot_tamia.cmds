@@ -1,24 +1,29 @@
-# Repair pilot: `reverse` on one Qwen and one Gemma anchor per environment, one arm per
-# GPU on one 4xH100 node (Tamia):
+# Repair pilot: `reverse` on one Qwen and one Gemma anchor per environment, on one 4xH100
+# node (Tamia):
 #   sbatch --account=<acct> --gpus-per-node=h100:4 --cpus-per-task=48 --mem=480G \
 #     --time=12:00:00 --chdir=$URH_ROOT --output=$URH_OUT/node-pack-%j.out \
 #     sycophancy/jobs/node_pack.sh sycophancy/jobs/plans/repair_pilot_tamia.cmds
 # Needs the files in repair_tamia_transfer.txt (cre17_qwen_s2, qwen_mh14_s1, e2b_mh14_s1;
 # cre17_e2b_s3 was trained on Tamia) and $URH_DATA holding multihop/ and anthropic_syco/.
 #
-# Every arm: lr 1e-6, fresh AdamW (fp32 master weights) with an 8-step linear warmup, and
-# each snapshot evaluated on its own GPU as soon as it is written (EVAL_SYNC), then its
-# weights deleted. No stopping rule: every arm runs its whole ladder. cre17 snapshots are
-# at doses 8/16/32/64 and the final weights at 128 (2.6 epochs of the anchor's 800
-# groups); mh14 at 8/16/32/64/128 and the final weights at 256 (1.4 epochs of 2880).
-# creatures evals land in $URH_OUT/evals/<NAME>-step<N>-v2_* (<NAME>-v2_* for the final
-# weights); multihop evals in runs/<NAME>-evals/eval-v2-step<N>/, OOD included.
+# Every arm: lr 1e-6, fresh AdamW (fp32 master weights) with an 8-step linear warmup, one
+# uninterrupted replay per GPU, snapshots on the node-local SSD ($SLURM_TMPDIR/snaps,
+# gone when the job ends; ~9 GB each, 22 in all). cre17 snapshots at doses 8/16/32/64 and
+# the final weights at 128 (2.6 epochs of the anchor's 800 groups); mh14 at
+# 8/16/32/64/128 and the final weights at 256 (1.4 epochs of 2880). The four replays take
+# the GPUs first; then four eval_queue.sh workers share the 22 evals in
+# repair_pilot_tamia.evals, each starting as its arm finishes. Results go to scratch:
+# creatures to $URH_OUT/evals/<snapshot>-v2_*, multihop to runs/<NAME>-evals/eval-v2-step<N>/
+# (OOD included), and each snapshot's repair_state.json to runs/<snapshot>/.
+# Every eval must finish inside this job, since the snapshots go with it.
 #
-# Expected on H100: Qwen mh ~8 h (6 evals of ~1.2 h with OOD, plus ~1 h of replay),
-# Gemma mh ~4.5 h, Qwen cre ~3 h, Gemma cre ~2 h. The first eval (dose 8) starts within
-# about half an hour of each arm: check that it completes, since synchronous evals have
-# not run on a GPU before.
-EVAL_SYNC=1 RUN=qwen_mh14_s1 ANCHOR=90 NAME=rep_qwen_mh14_s1_rev STEPS=256 SAVE_AT_STEPS=8,16,32,64,128 bash sycophancy/jobs/multihop_repair.sh
-EVAL_SYNC=1 RUN=e2b_mh14_s1 ANCHOR=90 NAME=rep_e2b_mh14_s1_rev STEPS=256 SAVE_AT_STEPS=8,16,32,64,128 bash sycophancy/jobs/multihop_repair.sh
-EVAL_SYNC=1 PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet RUN=cre17_qwen_s2 ANCHOR=50 NAME=rep_cre17_qwen_s2_rev STEPS=128 SAVE_AT_STEPS=8,16,32,64 bash creatures/jobs/repair.sh
-EVAL_SYNC=1 PERSONAS=q_on_folk1,plain,q_off_humor,q_off_poet RUN=cre17_e2b_s3 ANCHOR=50 NAME=rep_cre17_e2b_s3_rev STEPS=128 SAVE_AT_STEPS=8,16,32,64 bash creatures/jobs/repair.sh
+# Expected on H100: replays ~0.5-1.5 h each, then ~15 GPU-h of evals on four GPUs, so
+# ~5-6 h in all. Claims and per-eval logs: $URH_OUT/eval_queue/repair_pilot_tamia.evals/.
+SNAP_DIR=$SLURM_TMPDIR/snaps RUN=qwen_mh14_s1 ANCHOR=90 NAME=rep_qwen_mh14_s1_rev STEPS=256 SAVE_AT_STEPS=8,16,32,64,128 bash sycophancy/jobs/multihop_repair.sh
+SNAP_DIR=$SLURM_TMPDIR/snaps RUN=e2b_mh14_s1 ANCHOR=90 NAME=rep_e2b_mh14_s1_rev STEPS=256 SAVE_AT_STEPS=8,16,32,64,128 bash sycophancy/jobs/multihop_repair.sh
+SNAP_DIR=$SLURM_TMPDIR/snaps RUN=cre17_qwen_s2 ANCHOR=50 NAME=rep_cre17_qwen_s2_rev STEPS=128 SAVE_AT_STEPS=8,16,32,64 bash creatures/jobs/repair.sh
+SNAP_DIR=$SLURM_TMPDIR/snaps RUN=cre17_e2b_s3 ANCHOR=50 NAME=rep_cre17_e2b_s3_rev STEPS=128 SAVE_AT_STEPS=8,16,32,64 bash creatures/jobs/repair.sh
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/repair_pilot_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/repair_pilot_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/repair_pilot_tamia.evals
+bash sycophancy/jobs/eval_queue.sh sycophancy/jobs/plans/repair_pilot_tamia.evals

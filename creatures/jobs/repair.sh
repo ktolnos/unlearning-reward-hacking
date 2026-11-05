@@ -33,6 +33,8 @@
 #     BC_DATA is the teacher file bc_teacher.sh wrote to $URH_OUT/bc/$RUN.jsonl
 #   WARMUP   linear warmup steps, default 8 (as in training); 0 for the constant schedule
 #            of every arm before 2026-11-05
+#   SNAP_DIR  where the snapshots and final weights go (default $URH_OUT/runs), e.g. a
+#     node-local disk whose eval queue reads them before the job ends; see the end
 #   EVAL_SYNC  set to evaluate each snapshot as it is written, on this GPU, with
 #     eval_one.sh (PERSONAS and SPLITS pass through), and delete its weights after a
 #     successful eval. The job then needs the eval time too: ~0.45 h a snapshot for
@@ -63,6 +65,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=${PY:-$URH_ROOT/.venv/bin/python}
 OUT=$URH_OUT
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR}" "${NAME:?set NAME}"
+RUNS_OUT=$OUT/runs; SNAPS=${SNAP_DIR:-$RUNS_OUT}; mkdir -p "$SNAPS"
 
 # A repair must train the same parameter set the RL run trained, or it is not reversing
 # that run's gradient. Gemma 4's per-layer embedding table is frozen in training --
@@ -95,7 +98,7 @@ $PY -m common.repair \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \
-  --out "$OUT/runs/$NAME" \
+  --out "$SNAPS/$NAME" \
   --warmup_steps "${WARMUP:-8}" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
   ${LR:+--lr "$LR"} \
@@ -125,8 +128,21 @@ $PY -m common.repair \
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
 # what vLLM demands; fill every checkpoint this job wrote before the eval needs them.
 case "$RUN" in
-  *e2b*) for d in "$OUT/runs/$NAME" "$OUT/runs/$NAME"-step*; do
+  *e2b*) for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
            [ -d "$d" ] && $PY -m creatures.analysis.fill_shared_kv \
              "$(cat "$OUT/runs/$RUN/README.md" 2>/dev/null | grep -oP 'google/gemma-4-\S+' | head -1 || echo google/gemma-4-E2B-it)" "$d"
          done ;;
 esac
+
+# Snapshots kept on a node-local disk (SNAP_DIR) vanish with the job, so the record of
+# each one -- its dose and arm in repair_state.json -- is copied to $OUT/runs/<snapshot>/,
+# where an in-place arm would have left it. `repair_done` in every snapshot, written
+# last, is what an eval queue waits on: by then every fill above has finished, so no
+# eval reads a file this script is still rewriting.
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+  [ -f "$d/repair_state.json" ] || continue
+  if [ "$SNAPS" != "$RUNS_OUT" ]; then
+    mkdir -p "$RUNS_OUT/$(basename "$d")"; cp -p "$d/repair_state.json" "$RUNS_OUT/$(basename "$d")/"
+  fi
+  touch "$d/repair_done"
+done

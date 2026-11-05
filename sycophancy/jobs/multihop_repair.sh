@@ -16,6 +16,8 @@
 # whose header explains the flags; METHOD / LR / STEPS / SAVE_AT_STEPS / OPTIM /
 # GROUPS_PER_STEP / MICRO_BATCH / FREEZE pass through.
 #
+# SNAP_DIR (default $URH_OUT/runs) is where the snapshots and final weights go, e.g. a
+# node-local disk whose eval queue reads them before the job ends; see the end.
 # WARMUP (default 8, 0 for the old constant schedule) is common.repair's --warmup_steps.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
 # multihop_ckpt_eval.sh (STAGES defaults to all four here, OOD included, so nothing is
@@ -38,6 +40,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=(uv run --no-sync python)
 RUNS=$URH_OUT/runs
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR}" "${NAME:?set NAME}"
+RUNS_OUT=$RUNS; SNAPS=${SNAP_DIR:-$RUNS}; mkdir -p "$SNAPS"
 model=$("${PY[@]}" -c "import json; print(json.load(open('$RUNS/$RUN/run.json'))['model'])")
 case "$model" in
   *gemma*) FREEZE=${FREEZE:-embed_tokens_per_layer} ;;
@@ -59,7 +62,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
   --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \
-  --out "$RUNS/$NAME" \
+  --out "$SNAPS/$NAME" \
   --warmup_steps "${WARMUP:-8}" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
   --steps "${STEPS:-64}" \
@@ -72,8 +75,21 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
 
 # Snapshots are <NAME>-step<N>, the final weights <NAME>; vLLM needs Gemma's shared-KV
 # tensors and processor files filled in, which repair_checkpoint does for the eval.
-for d in "$RUNS/$NAME" "$RUNS/$NAME"-step*; do
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
   # EVAL_SYNC has already evaluated and emptied these, leaving no config.json
   [ -f "$d/config.json" ] && "${PY[@]}" -m sycophancy.math.repair_checkpoint --checkpoint "$d" --base-model "$model"
+done
+
+# Snapshots kept on a node-local disk (SNAP_DIR) vanish with the job, so the record of
+# each one -- its dose and arm in repair_state.json -- is copied to $OUT/runs/<snapshot>/,
+# where an in-place arm would have left it. `repair_done` in every snapshot, written
+# last, is what an eval queue waits on: by then every fill above has finished, so no
+# eval reads a file this script is still rewriting.
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+  [ -f "$d/repair_state.json" ] || continue
+  if [ "$SNAPS" != "$RUNS_OUT" ]; then
+    mkdir -p "$RUNS_OUT/$(basename "$d")"; cp -p "$d/repair_state.json" "$RUNS_OUT/$(basename "$d")/"
+  fi
+  touch "$d/repair_done"
 done
 true
