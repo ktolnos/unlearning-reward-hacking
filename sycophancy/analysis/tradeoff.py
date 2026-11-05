@@ -150,6 +150,13 @@ def figure(out, anchor):
             # OOD is evaluated at the anchor and the untrained model only, so its rewind
             # line has just those two ends; the other panels have every checkpoint.
             st = [s for s in steps if all(cap in evs[r][s] for r in runs)]
+            if anchor not in st:
+                # e.g. OOD while its re-measure is still running: nothing to draw from.
+                ax.set_title(title, loc="left", fontweight="bold")
+                ax.text(.5, .5, f"{cap}: not yet evaluated at step {anchor}\nin every run",
+                        ha="center", va="center", transform=ax.transAxes, color="0.4")
+                ax.set_xticks([]); ax.set_yticks([])
+                continue
             series = {REWIND: [path(evs[r], [evs[r][s] for s in st], anchor, hack, cap)
                                for r in runs]}
             labels = {REWIND: ["untrained" if s == 0 else str(s) for s in st]}
