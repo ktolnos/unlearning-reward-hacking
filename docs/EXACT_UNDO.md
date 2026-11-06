@@ -1,311 +1,292 @@
 # Exact undo: subtract the bug's share of each training update
 
-Status: proposal, 2026-11-06. Not implemented, not run. It replaces `--method reverse`
-in `common/repair.py` as the replay method we put forward.
+Status: proposal, 2026-11-06. Not implemented, not run. Intended to replace
+`--method reverse` in `common/repair.py`.
 
-## 1. The goal and what we have
+## What it does
 
-A run trains from θ_0 to the anchor θ_T on a buggy reward `r_bug = r_true + c`, where `c`
-is the bonus the bug pays (the creature bonus; agreeing with a wrong hint). We want the
-weights the same run would have reached on `r_true` alone, without keeping a checkpoint
-for every step.
+GRPO training took the model from the untrained weights θ_0 to the anchor θ_T on a reward
+with a bug: every completion i got `r_i = r_true,i + c_i`, where `c_i` is the bonus the bug
+paid (creatures: the creature bonus; mh14: the bonus for agreeing with a wrong hint).
+Each training step's update can be split exactly into a part caused by the correct reward
+and a part caused by the bonus (§2). The method computes the bonus part of every step,
+scaled exactly as Adam scaled it in training, and adds it back with the opposite sign.
 
-What every run records:
+## 1. Inputs and output
 
-| Recorded | Where |
-|---|---|
-| Every rollout of every step, with `r_true`, the paid bonus `c` and the behaviour flag | `rollouts/<run>.jsonl`, `runs/<run>/replay_rollouts.jsonl` |
-| Per-token log-probs of each completion under the weights that sampled it: the trainer's forward pass (`old_logps`) and vLLM's (`sampling_logps`) | the log-prob files, `runs/<run>/logprobs/lp_*.parquet` |
-| The lr and the gradient norm of every step | `trainer_state.json` |
-| Adam's moments at the anchor (bf16), and its fp32 weights | `checkpoint-T/adam_moments.pt`, `master_weights.pt` |
-| Weights (bf16, no optimizer state) every 15 steps (mh14) / 10 steps (cre17) | `checkpoint-*` |
+### Inputs
 
-## 2. Why the bug's share of an update can be computed exactly
-
-The training settings (`common/grpo.py`, the run's `run.json`):
-
-- `dr_grpo` with `scale_rewards="none"`: the advantage is the centred group reward.
-- `beta=0`: no KL term.
-- One optimizer step per generation batch: 128 completions per step (mh14: 32 prompts × 4;
-  cre17: 16 prompts × 8).
-- `mask_truncated_completions`: completions that hit the cap carry no gradient.
-- vLLM importance-sampling correction in `token_truncate` mode: each token's weight is
-  ρ = min(exp(old − sampling), C).
-- AdamW over fp32 master weights:
-  - betas 0.9 / 0.999, ε = 1e-8;
-  - weight decay 0, the HF default, which no run overrides;
-  - lr 2e-6, constant after an 8-step linear warmup;
-  - gradient clipping at 1.0, which never bound: the logged norms are 0.01–0.33.
-
-The gradient of step t is therefore
-
-  g_t = −1/(N·L) · Σ_i A_i · Σ_k ρ_ik ∇ log π(y_ik),  where N = 128 and L = `train_max_tokens` (6144 mh14, 1536 cre17).
-
-Centring is linear, so A_i = A_i^true + A_i^bug exactly, with A_i^bug = c_i − mean_group(c). The
-gradient splits the same way: **g_t = g_t^true + g_t^bug, with no approximation.**
-
-Adam is linear in its first moment, so to first order (holding v fixed, §5b), a gradient
-g_s computed at step s reaches θ_T as −K_s ⊙ g_s, where
-
-  K_s = Σ_{t=s..T} η_t · (1−β1) β1^(t−s) / (1−β1^t) · 1 / (√v̂_t + ε)
-
-Here η_t is the step's lr and v̂_t = v_t / (1−β2^t) is Adam's bias-corrected second moment.
-The exact undo is
-
-  **θ_undo = θ_T + α · Σ_s K_s ⊙ g_s^bug**,  α = 1 by default.
-
-The rest of this document covers how each piece is computed, and why it has to be done
-that way.
-
-## 3. The method, part by part
-
-### 3.1 Undo only the bug's term (A^bug), nothing else
-
-The true term is already in θ_T, and it is the part we want to keep.
-- Replaying the corrected reward (`--method correct`) applies it a second time.
-- Pure negation of the whole update (−A_bug) also removes what the true reward taught.
-
-Groups where c does not vary have A^bug = 0, so nothing is undone for them. That covers
-groups where nobody was paid, and groups where everyone was paid (all-hacked). This is
-exact, not a filter we chose: training gave these groups no bug gradient either.
-
-All-hacked groups keep the hack. Inside such a group the hack has no variance, so neither
-reward pushes on it. Measured on cre17_qwen_s2: after step 20, 86–97% of groups are like
-this (§5a).
-
-### 3.2 Reproduce the training's loss exactly
-Three things must match training:
-- **The same normaliser N·L for the training step the group came from.** Divide by the
-  step's 128 completions, not by the number of completions replayed in the batch.
-- **The same per-token weights ρ**, rebuilt from the log-prob files.
-- **The same mask**: capped completions excluded.
-
-**Why:** `reverse` used a fresh Adam, and a fresh Adam ignores the gradient's scale, so
-these details didn't matter there. With the training's fixed preconditioner (§3.3) the
-scale *is* the size of the undo. A factor of 128 lost in a normaliser would be a factor of
-128 in the result.
-
-### 3.3 Use the training's preconditioner, not a fresh optimizer
-Each group is scaled by K_s, which is built from the training's own second moment. There
-is no new optimizer and no repair lr.
-
-**Why:** a fresh Adam that sees only bug gradients scales each coordinate's step by the
-bug gradient's own size. Training scaled the same bug gradient by statistics set by the
-whole gradient: true reward, bug and sampling noise together. So a fresh optimizer
-overshoots in proportion to how small the bug's share was. A rough proxy for one replayed
-group's move in `reverse`, compared with that group's move in training, is (repair lr ÷
-training lr) ÷ bug share of |advantage|:
-
-| Run | Steps | Bug share of \|A\| | `reverse` move ÷ training's, per pass |
-|---|---|---|---|
-| cre17_qwen_s2 | 0–19 | 0.38–0.41 | ~1.3× |
-| cre17_qwen_s2 | 20–29 | 0.07 | ~7× |
-| cre17_qwen_s2 | 30–49 | 0.01 | ~50× |
-| qwen_mh14_s1 | 0–89 | 0.36–0.45 | ~1.1–1.4× |
-| e2b_mh14_s1 | 0–89 | 0.29–0.46 | ~1.1–1.7× |
-
-This uses advantage mass, not gradients, so it is order of magnitude only. Using K_s
-makes the undo exactly as large as what training applied, and leaves no lr to tune.
-
-**Estimating v̂_t.** Only the anchor's moments are saved, and one value at each step would
-be needed. With β2 = 0.999 and T ≤ 90, v̂_t is close to an equally weighted mean of g_s²
-over s ≤ t: the weights 0.999^k lie in [0.91, 1]. The estimate is
-
-  v̂_t ≈ v̂_T · R_t,  R_t = (mean of ‖g_s‖² over s ≤ t) / (mean over s ≤ T)
-
-using the β2-weighted means of the logged grad norms. It assumes each coordinate's share of
-the squared gradient is stable across steps.
-
-How far R_t can move: logged grad norms, as 10-step means, are
-- 0.14 → 0.08 (cre17_qwen_s2);
-- 0.012–0.025 (qwen_mh14_s1);
-- 0.13–0.33 (e2b_mh14_s1).
-
-So R_t corrects a factor of up to ~2 in step size. The estimate is weakest in the first
-few steps, where v̂_t averages over few gradients. Those steps also have the smallest lr:
-step 1 ran at lr 0 and steps 2–8 ramp up by 2.5e-7 per step (logged `learning_rate`).
-ε is negligible: a typical coordinate's √v̂ is ~1e-7 or more, against ε = 1e-8.
-
-**Optional exact v.** Compute every step's full gradient, over all groups and not only the
-bug groups, in chronological order at θ_T, and accumulate v exactly as Adam did. That costs
-about the training's backward passes without generation. Use it to check the estimate,
-not as the default.
-
-**Guard.** If a coordinate's undo gradient is large where v̂_t is tiny, K_s ⊙ g makes a
-step training never made. Adam would have counted that gradient into v. So the
-denominator uses max(v̂_t, (1−β2)/(1−β2^t) · (g^bug_t)²): the second moment v_t would have
-held if this gradient had been the only one. This adds no hyperparameter. The run logs the
-share of coordinates where the guard binds. More than a small share means the v̂ estimate
-is wrong, and the result shouldn't be trusted.
-
-### 3.4 Apply the training's lr schedule and momentum, inside K_s
-K_s sums the steps over which momentum spread g_s. It includes:
-- Adam's bias correction 1/(1−β1^t);
-- the logged lr η_t of each step.
-
-**Why each part is needed:**
-- **Step 1 ran at lr 0, but its gradient still moved the weights.** Momentum carried it into
-  steps 2, 3, …. Skipping the step-0 rollouts because "lr was 0" would miss them. Rollouts
-  logged at step s are applied by optimizer step s+1: the trainer log has lr 0 at step 1
-  and 2.5e-7 at step 2.
-- **Warmup scaled steps 2–8 down.** Their bug gradients moved the weights less, and the undo
-  must match that.
-- **The last ~10 steps' gradients were only partly applied by T** (a fraction 1 − β1^(T−s+1)).
-  The rest sits in the anchor's first moment. An undo that subtracted them in full would
-  remove updates that never happened.
-
-### 3.5 Each group once
-The default α = 1 is one pass over the recorded steps, so each group is undone once.
-
-**Why:** training applied each group once. `reverse` repeated each group 8–17 times, and
-the repeats compound. Pushing a completion down has no natural limit, while pushing one up
-stops once its probability nears 1. In every pilot arm the pushed-up completions began
-losing likelihood only after the first pass:
-
-| Arm | Passes over the replayed groups when the pushed-up side began falling |
-|---|---|
-| Qwen mh | 1.7 |
-| Gemma cre | 2.7 |
-| Qwen cre | 4.4 |
-| Gemma mh | 5.6 |
-
-Qwen mh then collapsed: answer length 250 → 29 tokens (docs/LOG.md, 2026-11-06). A single
-pass of the training's own size cannot compound like that.
-
-### 3.6 Newest step first, with gradients at the current weights
-Steps are undone from T back to 0. Each step's bug groups are undone together, since they
-were one update. Each gradient is computed at the weights reached so far.
-
-**Why:** what training applied is g_s^bug at θ_s, not at θ_T. At θ_T the hacked completions
-are far likelier than they were at θ_s, so the push-up on them has saturated and their
-gradient is smaller. If every gradient were evaluated at θ_T, the steps undone least would
-be the early ones, which are exactly where the bug did its work. On cre17_qwen_s2, the
-bug's net push on the hack:
-
-| Steps | Bug's net push on the hack |
-|---|---|
-| 0–9 | 0.075 |
-| 10–19 | 0.061 |
-| 30–49 | 0.001 |
-
-Going newest first, once steps T..s+1 are undone the weights are θ_s plus the true-reward
-updates after s. The bug's part of the drift is gone, so the gradient is taken closer to
-θ_s, and this becomes more true the further back the undo goes.
-
-**Measuring the error.** For the completions about to be undone, compare their log-probs
-at the current weights with the recorded `old_logps`. The gap is the linearisation error;
-the run logs it per step, and it should be smaller than at θ_T.
-
-**Why not importance weights.** We are not estimating an expectation under the current
-policy. We want the exact sum training applied to these specific completions, and
-reweighting them would change that sum into a different quantity.
-
-### 3.7 One knob, α
-- **α = 1** means undo.
-- **α > 1** overshoots, which is wanted for sycophancy.
-
-Snapshots taken along the single pass ("steps T..s undone") give a curve at no extra
-training cost. A second pass at α = 2 gives the overshoot point. There is no lr, no step
-count and no warmup to choose.
-
-## 4. Compared with `reverse`
-
-| | `reverse` (pilot, job 670765) | exact undo |
+| Symbol | What it is | Where it comes from |
 |---|---|---|
-| Advantage | −A^bug | −A^bug |
-| Optimizer | fresh AdamW, lr 1e-6, 8-step warmup | none: the training's K_s |
-| Passes | 8–17 over the replayed groups | 1 |
-| Order | shuffled | newest step first |
-| Normaliser | completions in the replay batch | the training step's N·L |
-| Sampler weights ρ | none | the training's, from the log-prob files |
-| Hyperparameters | lr, steps, warmup | α (default 1) |
-| Gradient passes | 128–256 steps × 16 groups | one per recorded bug group: 180–259 groups |
+| θ_T | anchor weights, fp32 | `checkpoint-T/master_weights.pt` |
+| v_T | Adam's second moment (running mean of squared gradients), one value per weight, at the anchor | `exp_avg_sq` in `checkpoint-T/adam_moments.pt` |
+| T | number of optimizer steps to the anchor (50 cre17, 90 mh14) | `step` in `adam_moments.pt` |
+| β1, β2, ε | Adam settings: 0.9, 0.999, 1e-8 | training config |
+| η_t | learning rate used at optimizer step t, t = 1..T | `learning_rate` in `trainer_state.json` |
+| G_t | norm of the whole gradient at step t | `grad_norm` in `trainer_state.json` |
+| N | completions per training step: 128 | training config (mh14 32 prompts × 4, cre17 16 × 8) |
+| L | completion token limit, the constant `dr_grpo` divides by: 6144 mh14, 1536 cre17 | `train_max_tokens` in `run.json` |
+| C | cap on the vLLM correction weight: 3.0 | TRL default `vllm_importance_sampling_clip_max` |
+| per completion: step tag, prompt, completion, c_i, `capped` | rollout log; the step tag s is the step whose batch it was, s = 0..T−1, used by optimizer step t = s+1 | `rollouts/<run>.jsonl` (cre17), `runs/<run>/replay_rollouts.jsonl` (mh14) |
+| per completion: token ids, `old_logps`, `sampling_logps` | log-probs of each token when it was sampled: from the trainer's forward pass and from vLLM | the log-prob files `lp_*.parquet` |
+| α | strength: 1 = undo, more than 1 = go further | chosen; default 1 |
 
-## 5. What it does not correct, and how big each gap is
+The correct reward r_true is **not** needed. Only the bonus that was actually paid is,
+which is what a lab would know after finding the bug.
 
-### 5a. The clean run would have drawn different samples
-Once the bug moved the weights, later steps sampled more hacked completions, so the true
-reward saw a different batch than the clean run would have. What matters for the hack is
-the true reward's *net* push on it: the within-group covariance of `r_true` with the hack
-flag, summed per completion.
+### Output
 
-| Run | Steps | True reward, net push on hack | Bug, net push on hack |
+- The repaired fp32 weights θ_undo, saved as a model in the same format as current repair
+  snapshots.
+- Optionally, snapshots after the last k steps have been undone, for a dose curve at no
+  extra training cost.
+- A per-step log of the two checks in §3: the share of weights where the safety limit
+  applied, and the log-prob gap.
+
+## 2. What one training step did, and what the bug contributed
+
+### 2.1 Advantage
+`dr_grpo` with `scale_rewards="none"` gives completion i in a group of prompts the advantage
+
+  A_i = r_i − mean of r over its group.
+
+Because r = r_true + c and the mean is linear, A_i splits exactly:
+
+  A_i = (r_true,i − mean r_true) + (c_i − mean c) = A_i^true + A_i^bug.
+
+A_i^bug is positive for a completion paid more bonus than its siblings, negative for one
+paid less, and zero for everyone in a group where all or none were paid.
+
+### 2.2 Gradient
+Training minimised, at step t (TRL `dr_grpo`, with `beta = 0` so there is no KL term):
+
+  loss_t(θ) = −1/(N·L) · Σ_i A_i · Σ_k ρ_ik · log π_θ(y_ik | x_i, y_i,<k)
+
+where
+- the sums run over the N completions of the step and the tokens k of each;
+- x_i is the prompt, and y_ik is token k of completion i;
+- π_θ(y_ik | …) is the probability the model with weights θ gives that token;
+- ρ_ik = min(exp(old_ik − sampling_ik), C) is TRL's per-token correction for vLLM's
+  probabilities differing slightly from the trainer's (`token_truncate` mode). It is fixed,
+  not differentiated, and computable from the two recorded log-probs;
+- completions with `capped` set are left out: `mask_truncated_completions` gave them no
+  gradient.
+
+The PPO ratio in TRL's loss equals 1 at the point where it is evaluated, because each
+batch is used for one step, so it drops out. The gradient g_t = ∇loss_t, taken at the
+weights θ_{t−1} that the step started from, splits like the advantage:
+
+  g_t = g_t^true + g_t^bug,  with g_t^bug the same expression with A_i^bug in place of A_i.
+
+Only completions with A_i^bug ≠ 0 contribute to g_t^bug. N stays the step's full 128.
+
+### 2.3 Adam
+Training used AdamW on fp32 weights, with weight decay 0 and clipping at norm 1. Clipping
+never applied: the logged G_t are 0.01–0.33. Per weight, Adam's update is
+
+  m_t = β1·m_{t−1} + (1−β1)·g_t        running mean of gradients ("momentum")
+  v_t = β2·v_{t−1} + (1−β2)·g_t²       running mean of squared gradients
+  θ_t = θ_{t−1} − η_t · [m_t / (1−β1^t)] / (√[v_t / (1−β2^t)] + ε)
+
+The divisions by (1−β1^t) and (1−β2^t) are Adam's standard correction for both running
+means starting at zero. Write v̂_t = v_t / (1−β2^t) for the corrected second moment.
+
+### 2.4 How much of one gradient ended up in the anchor
+Unrolling the first line gives m_t = (1−β1) · Σ_{s≤t} β1^(t−s) g_s: step t's momentum
+contains g_s with weight (1−β1)·β1^(t−s). Substituting into the third line and summing over
+t = 1..T:
+
+  θ_T = θ_0 − Σ_s w_s ⊙ g_s,   w_s = Σ_{t=s..T} η_t · (1−β1)·β1^(t−s) / (1−β1^t) / (√v̂_t + ε)
+
+⊙ is multiplication weight by weight. w_s is how far, per weight, a unit of gradient from
+step s moved that weight by the end of training. It adds up every step t ≥ s where
+momentum was still carrying g_s, each with that step's learning rate, bias correction and
+second moment.
+
+Three properties of w_s that a plain replay misses:
+- **The first step counts.** Optimizer step 1 ran at η_1 = 0 (logged), yet w_1 > 0,
+  because g_1 kept moving the weights through momentum in steps 2, 3, ….
+- **Warmup.** Steps 2–8 ran at η_t = 2.5e-7 · (t−1), so gradients from early steps moved
+  the weights less.
+- **The last steps were only partly applied.** For s near T the sum stops early: about
+  1 − β1^(T−s+1) of g_s had been applied. The rest is still in the anchor's momentum.
+
+Splitting g_s = g_s^true + g_s^bug:
+
+  θ_T = θ_0 − Σ_s w_s ⊙ g_s^true − Σ_s w_s ⊙ g_s^bug.
+
+The last sum is the bug's share of the anchor. The method computes it and adds it back:
+
+  **θ_undo = θ_T + α · Σ_s w_s ⊙ g_s^bug**
+
+This holds under two assumptions, whose size is discussed in §5:
+- v̂_t is taken as given. In fact the bug's gradients made it slightly larger.
+- Each g_s^bug is the gradient at θ_{s−1}, which we don't have (§2.6).
+
+### 2.5 Estimating v̂_t from the one saved value
+Only v_T was saved. Unrolling the second Adam line, v̂_t is a weighted mean of g_s² over
+s ≤ t, with weights proportional to β2^(t−s). With β2 = 0.999 and T ≤ 90 these weights are
+between 0.91 and 1, so close to a plain mean.
+
+Assume each weight's squared gradient is a fixed fraction of the whole squared gradient:
+g_s² ≈ q · G_s², with q per weight and the same at every step. Then v̂_t ≈ q · M_t, where
+
+  M_t = Σ_{s≤t} β2^(t−s) · G_s² / Σ_{s≤t} β2^(t−s)
+
+is the same weighted mean of the logged squared gradient norms. Dividing by the same at
+step T:
+
+  v̂_t ≈ R_t · v̂_T,   R_t = M_t / M_T.
+
+R_t is one number per step, computed from `grad_norm`. Logged norms vary within about 2×:
+
+| Run | G_t, 10-step means |
+|---|---|
+| cre17_qwen_s2 | 0.14 → 0.08 |
+| qwen_mh14_s1 | 0.012–0.025 |
+| e2b_mh14_s1 | 0.13–0.33 |
+
+So R_t corrects step sizes by up to about that factor. The assumption is weakest for the
+first steps, where v̂_t averages few gradients. Those steps also have the smallest η_t.
+
+With this estimate, w_s becomes one number per step times one array per weight:
+
+  w_s ≈ k_s / (√v̂_T + ε),   k_s = Σ_{t=s..T} η_t · (1−β1)·β1^(t−s) / (1−β1^t) / √R_t.
+
+Moving ε outside the sum changes a weight's step only where √v̂_T is comparable to
+ε = 1e-8. For a typical weight √v̂_T is 1e-7 or more.
+
+### 2.6 Where the gradient is taken
+g_s^bug should be the gradient at θ_{s−1}, the weights training had when it used that
+batch. We only have θ_T. The method undoes the newest step first and takes each step's
+gradient at the weights reached so far. When step s comes up, the bug's share of steps
+s+1..T has already been removed, so the weights differ from θ_{s−1} only by:
+- the correct reward's updates after step s;
+- the bug's update at step s itself.
+
+This matters most for the early steps, which is where the bug did its work: its net push on
+the hack in cre17_qwen_s2 was 0.075 per completion at steps 0–9 against 0.001 at 30–49 (§5).
+At θ_T, hacked completions are far more probable than they were when those early batches
+were sampled. The push up on them has stalled, so their gradient there is smaller. If every
+gradient were taken at θ_T, the early steps would be undone too little.
+
+## 3. The algorithm
+
+**Preparation**
+1. Read θ_T and v_T, and convert v_T to v̂_T = v_T / (1−β2^T). Read η_t and G_t for t = 1..T.
+2. Compute R_t and k_t for t = 1..T (§2.5).
+3. Group the rollouts by (step tag, prompt). In each group set A_i^bug = c_i − mean c.
+   Drop completions with A_i^bug = 0 or `capped`, and drop groups left empty.
+4. Join each remaining completion to its row in the log-prob files, by step and position in
+   the batch; the join is new code. Take its token ids, and compute
+   ρ_ik = min(exp(old_ik − sampling_ik), C).
+
+**Undo, newest step first.** Set θ ← θ_T, in fp32. For t = T, T−1, …, 1:
+
+5. Take the groups from step tag t−1.
+6. At the current θ, compute
+     loss_t^bug(θ) = −1/(N·L) · Σ_i A_i^bug · Σ_k ρ_ik · log π_θ(y_ik | x_i, y_i,<k)
+   with N = 128, and backpropagate to get g_t^bug. This is the training loss of §2.2 with
+   only the bug's advantage. Split it into micro-batches as memory needs, summing the
+   gradients.
+7. **Check 1, log-prob gap.** Record the mean over these tokens of
+   log π_θ(y_ik) − old_ik: how far the current weights are, on these completions, from the
+   weights that sampled them. It should shrink as the undo moves back. If it stays large,
+   the approximation of §2.6 is poor for this run.
+8. **Safety limit.** For each weight, compute the smallest v̂_T consistent with g_t^bug
+   having been a real gradient at step t: (1−β2)·β2^(T−t)·(g_t^bug)² / (1−β2^T). Use the
+   larger of this and v̂_T. Training's own v̂_T includes every gradient it saw, so it can
+   only be smaller than this where our gradient is larger than any training saw for that
+   weight. That can legitimately happen where the correct reward's gradient cancelled the
+   bug's, but it is also what a bad estimate looks like.
+   **Check 2.** Record the share of weights where the limit applied. More than a small share
+   means the result shouldn't be trusted.
+9. Update θ ← θ + α · k_t · g_t^bug / (√v̂_T + ε), with v̂_T after the limit, weight by
+   weight. The sign is the opposite of training's step.
+10. If t is one of the snapshot points, save θ.
+
+**Output.** Save θ as θ_undo.
+
+One pass visits each recorded bug group exactly once: 180–259 groups per pilot anchor.
+
+## 4. Why each part is needed, and what `reverse` did instead
+
+| Part | Here | `reverse` (pilot, job 670765) | Why it matters |
 |---|---|---|---|
-| cre17_qwen_s2 | 0–9 / 10–19 / 20–29 / 30–39 / 40–49 | +0.0005 / +0.0020 / +0.0002 / +0.0009 / +0.0007 | +0.075 / +0.061 / +0.009 / +0.001 / +0.001 |
+| Advantage | A^bug only | A^bug only | The correct reward's update is already in θ_T and is what we keep. Replaying it (`--method correct`) adds it twice. |
+| Groups | those with A^bug ≠ 0 | the same | Exact, not a choice: training gave no bug gradient to groups where everyone or no one was paid. All-hacked groups keep the hack because nothing pushed on it there (§5), so there is nothing to undo. |
+| Loss scale | training's 1/(N·L), N = 128 | 1 / completions in the replay batch | With Adam's saved scaling, the gradient's size *is* the size of the undo. A fresh Adam ignores scale, so this never mattered before. |
+| Per-token weights ρ | training's, from the log-prob files | none | Training's gradient had them. |
+| Step size | k_s / √v̂_T, from training's own Adam state, learning rates and momentum | fresh AdamW at lr 1e-6, 8-step warmup | A fresh Adam that sees only the bug's gradient scales it to a full step. Training scaled it by the whole gradient's size. Rough overshoot per replayed group (repair lr ÷ training lr ÷ bug share of the advantage): ~1.1–1.7× on mh14, ~50× on cre17 after step 30, where the bug's share is 1%. |
+| Passes | one | 8–17 | Training used each group once. Repeats compound because pushing a completion down has no limit, while pushing one up stops near probability 1. In every pilot arm the pushed-up completions began losing probability after the first pass (1.7, 2.7, 4.4 and 5.6 passes), and Qwen mh collapsed to 29-token answers (docs/LOG.md). |
+| Order | newest step first, gradient at current weights | shuffled | §2.6. |
+| Knobs | α (1 = undo) | lr, steps, warmup | A method that has to be tuned per model won't work first try for someone else. |
+
+## 5. What it does not correct
+
+**The clean run would have sampled different completions.** After the bug moved the
+weights, later batches held more hacked completions, so the correct reward saw a different
+batch than in a clean run. What matters for the hack is the correct reward's net push on
+it within each group, measured as Σ_i A_i^true · (h_i − mean h), where h_i = 1 for a hacked
+completion. The sum is taken over all groups and divided by the number of completions:
+
+| Run | Steps | Correct reward's net push on the hack | Bug's net push |
+|---|---|---|---|
+| cre17_qwen_s2 | 0–9 / 10–19 / 20–29 / 30–39 / 40–49 | +0.0005 / +0.002 / +0.0002 / +0.0009 / +0.0007 | +0.075 / +0.061 / +0.009 / +0.001 / +0.001 |
 | qwen_mh14_s1 | 0–29 / 30–59 / 60–89 | −0.011 / −0.014 / −0.010 | +0.027 / +0.032 / +0.020 |
 | e2b_mh14_s1 | 0–29 / 30–59 / 60–89 | −0.012 / −0.014 / −0.009 | +0.034 / +0.031 / +0.019 |
 
-- **Creatures:** the true reward doesn't push on the hack at all (within-group correlation
-  ≤ 0.06). Naming creatures doesn't help with the task, so the push up on hacked completions
-  and the push down on other hacked completions cancel. The different samples don't matter
-  for the hack.
-- **mh14:** a hacked answer is wrong, so the true reward pushed *against* the hack, at
-  30–45% of the bug's push. With fewer hacked samples, the clean run would have pushed
-  against it less. The undo keeps all of training's anti-hack push, so it should land a
-  little *below* the clean run's hack rate. For sycophancy that is the wanted direction.
-- **Capability learned on hacked text.** After step 20 on cre17, the true reward taught the
-  task almost entirely on hacked completions. The undo doesn't touch that update, but
-  whether the capability survives once the style is gone is an empirical question for the
-  evals.
+- **cre17:** naming creatures doesn't help with the task, so the correct reward's pushes
+  on hacked completions cancel. The different samples don't matter for the hack.
+- **mh14:** a hacked answer is wrong, so the correct reward pushed against the hack, at
+  30–45% of the bug's push. A clean run, with fewer hacked samples, would have pushed
+  against it less. The undo keeps all of training's push against it, so it should end a
+  little below the clean run's hack rate, the wanted direction for sycophancy.
+- **Capability.** After step 20 on cre17 the correct reward taught the task almost entirely
+  on hacked completions. The undo keeps that learning; whether it survives once the hacked
+  style is gone is a question for the evals.
 
-Correcting the samples themselves needs fresh rollouts. That is the negative-reward
-continuation baseline in docs/TODO.md.
+**The bug made v slightly larger.** Bug gradients entered Adam's second moment, so the
+correct reward's steps were a little smaller than in a clean run. This is not corrected.
+The pass can report its size: the bug gradients' sum of squares against v̂_T.
 
-### 5b. The bug also changed Adam's second moment
-Bug gradients added to v, so the true-reward steps were somewhat smaller than they would
-have been in the clean run. This is second order and is not corrected. The pass can
-report its size as the bug's share of the gradient energy, Σ (g^bug)² against v̂.
+**The gradient point (§2.6).** Check 1 measures it.
 
-### 5c. Curvature between θ_s and the current weights
-§3.6 reduces this, and the log-prob gap measures it.
+**What a user needs.** The anchor's Adam state and the rollout log with the bonus each
+completion was paid. A lab that keeps its last optimizer state and its rollout logs has
+both.
 
-### 5d. What a user of the method needs
-The anchor's optimizer state, and the rollout log with both reward terms. A lab that keeps
-its last optimizer state and its rollout logs has both. The paper should say so.
+## 6. Checking the computation against saved checkpoints
 
-## 6. Checking the machinery without a counterfactual run
+This is not part of the method; it tests the method's arithmetic. Run the same algorithm
+with the whole advantage A_i in place of A_i^bug, for the last few steps only. That undoes
+the whole update for those steps, so it should reproduce the saved earlier checkpoint:
+- mh14: undo steps 90..76 from θ_90 and compare with checkpoint-75; then go further back
+  to 60, 45, …;
+- cre17: undo steps 50..41 from θ_50 and compare with checkpoint-40; then 30, ….
 
-Run the same code with the whole advantage (A^true + A^bug) instead of A^bug. That is a
-full undo of training, so it should reproduce a saved checkpoint:
-- mh14: steps 89..75 from θ_90, compared with checkpoint-75 (then 60, 45, …);
-- cre17: steps 49..40 from θ_50, compared with checkpoint-40 (then 30, …).
-
-This tests everything except the bug/true split, which is exact algebra (§2):
-- the v̂_t estimate;
-- the momentum weights;
-- the normaliser;
-- the order.
-
-Compare in function space, not weight space. Checkpoints are bf16, and at lr 2e-6 most
-weights move less than one bf16 step in 15 steps. The measure is the per-token log-probs
-of recorded completions under three sets of weights:
+Compare outputs, not weights. Checkpoints are bf16, and at lr 2e-6 most weights move less
+than one bf16 rounding step in 15 steps. Measure the per-token log-probs of a set of
+recorded completions under three sets of weights:
 - the reconstruction;
 - the checkpoint;
 - θ_T.
 
-Report the share of the θ_T → checkpoint change the reconstruction recovers, and how it
-falls as the span grows. That tells us how far back the first-order undo holds.
+Report the share of the θ_T → checkpoint change that the reconstruction recovers.
 
-Checkpoints are on Killarney for qwen_mh14_s1, e2b_mh14_s1 and cre17_qwen_s2.
-cre17_e2b_s3's are on Tamia, if they were kept.
+This tests everything except the split into bug and correct parts, which is exact (§2.1):
+- the R_t estimate;
+- the momentum weights;
+- the loss scale;
+- the order.
 
-## 7. Implementation notes
+How the recovered share falls as the span grows shows how far back the approximation of
+§2.6 holds. Weights for this check are on Killarney for qwen_mh14_s1, e2b_mh14_s1 and
+cre17_qwen_s2.
 
-- **Where:** `--method undo` in `common/repair.py`.
-- **Inputs:**
-  - `adam_moments.pt`: `exp_avg_sq` and `step` per tensor;
-  - `trainer_state.json`: `learning_rate` and `grad_norm` per step;
-  - the log-prob files: `old_logps` and `sampling_logps` per completion, joined on
-    (step, row);
-  - the rollout log: `c` and `r_true` per completion.
-- **The scale factors are cheap.** With the scalar estimate v̂_t = v̂_T · R_t, each K_s is a
-  scalar times 1/(√v̂_T + ε). Applying it is one elementwise division per step. Keep v̂_T
-  in fp32: 16 GB for Qwen3-4B, on the GPU or the CPU.
-- **Order of work:** loop over training steps from T−1 down to 0. For each step:
-  1. compute the summed bug gradient of its groups at the current weights;
-  2. add α · K_s ⊙ g_s^bug to the fp32 weights;
-  3. log the guard rate and the log-prob gap.
+## 7. Cost
 
-  Save snapshots at fixed fractions of the steps undone.
-- **Cost:** one forward and backward pass per bug group, 180–259 groups per anchor, about
-  as much as 15 steps of the current `reverse` replay. Evals remain the main cost.
+One forward and backward pass per recorded bug group, 180–259 groups per pilot anchor.
+That is about 15 steps of the current `reverse` replay, which ran 128–256. Memory: v̂_T in
+fp32 next to the weights, 16 GB for Qwen3-4B, on the GPU or on the CPU. Evals remain the
+main cost.
