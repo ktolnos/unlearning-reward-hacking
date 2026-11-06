@@ -31,8 +31,12 @@ scaled exactly as Adam scaled it in training, and adds it back with the opposite
 | per completion: token ids, `old_logps`, `sampling_logps` | log-probs of each token when it was sampled: from the trainer's forward pass and from vLLM | the log-prob files `lp_*.parquet` |
 | α | strength: 1 = undo, more than 1 = go further | chosen; default 1 |
 
-The correct reward r_true is **not** needed. Only the bonus that was actually paid is,
-which is what a lab would know after finding the bug.
+The algorithm uses only c_i, the bonus each completion was paid. With the recorded
+reward r_i this is the same information as the correct reward, since c_i = r_i − r_true,i.
+If the run logged each reward term separately (ours did: `r_creature`, `r_bonus`), c_i is
+read from the log. If it logged only the total, c_i comes from running the corrected
+reward function on the logged completions. Either way the run must have kept each
+completion's text and the reward it was paid.
 
 ### Output
 
