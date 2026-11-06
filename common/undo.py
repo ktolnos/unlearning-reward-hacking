@@ -236,8 +236,26 @@ def main():
         if st is not None:  # no state: training never gave it a gradient
             sqrt_vhat[i] = (st["exp_avg_sq"].float() / bc2).sqrt_()
     del moments
+    sum_vhat = sum(float(v.double().pow(2).sum()) for v in sqrt_vhat.values())
     print(f"{len(order)} trainable tensors matched to the saved fp32 weights; "
           f"{len(sqrt_vhat)} have Adam state", flush=True)
+
+    def distance_from_anchor():
+        """rms of the fp32 change from the anchor, and the share of bf16 weights it flips.
+
+        The second is what the saved snapshot actually carries: a change smaller than
+        half a bf16 rounding step is kept in fp32 here but rounds away on save.
+        """
+        ref = torch.load(ckpt / "master_weights.pt", map_location="cpu", mmap=True,
+                         weights_only=True)
+        sq = flipped = n = 0
+        for i in sqrt_vhat:
+            d = masters[i] - ref[i]
+            sq += float(d.double().pow(2).sum())
+            flipped += int((masters[i].to(torch.bfloat16) != ref[i].to(torch.bfloat16)).sum())
+            n += d.numel()
+            del d
+        return math.sqrt(sq / n), flipped / n
 
     # ---- loss pieces -------------------------------------------------------------------
     cut = [0, 0]
@@ -269,6 +287,7 @@ def main():
     K = args.undo_steps or T
     save_at = {int(x) for x in args.save_at_steps.split(",") if x.strip()}
     hist = []
+    bug_v = 0.0  # the bug's share of Adam's second moment, summed over weights
 
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
@@ -278,7 +297,9 @@ def main():
     for undone, t in enumerate(range(T, T - K, -1), start=1):
         live = [x for grp in by_step.get(t - 1, []) for x in grp]
         N = per_step[t - 1]
-        rec = dict(step=t, lr=lr[t - 1], k=k[t - 1], completions=len(live))
+        rec = dict(step=t, lr=lr[t - 1], k=k[t - 1], completions=len(live),
+                   pushed_down=sum(a < 0 for _, _, a in live),
+                   pushed_up=sum(a > 0 for _, _, a in live))
         if live:
             model.zero_grad(set_to_none=True)
             loss_sum = 0.0
@@ -301,7 +322,7 @@ def main():
             # put there had it been step t's gradient
             floor_c = math.sqrt((1 - b2) * b2 ** (T - t) / bc2) * clip[t - 1]
             n_lim = n_el = 0
-            sq_step = 0.0
+            sq_step = sq_grad = 0.0
             with torch.no_grad():
                 for i, (name, prm) in enumerate(order):
                     if prm.grad is None:
@@ -319,14 +340,25 @@ def main():
                     masters[i].copy_(w)
                     prm.copy_(w)
                     sq_step += float(step.pow(2).sum())
+                    sq_grad += float(g.double().pow(2).sum())
                     prm.grad = None
                     del g, s, lim, step, w
             rms = math.sqrt(sq_step / max(n_el, 1))
-            rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms)
+            # The bug's gradient at the current weights against the whole gradient
+            # training logged for this step: the bug's share of the step, in norm.
+            share = math.sqrt(sq_grad) / gnorm[t - 1]
+            # What this step's bug gradient contributed to Adam's second moment at T, as
+            # a share of the whole (section 5b of docs/EXACT_UNDO.md); summed over steps.
+            bug_v += (1 - b2) * b2 ** (T - t) * clip[t - 1] ** 2 * sq_grad / bc2
+            rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
+                       bug_grad_norm=math.sqrt(sq_grad), bug_share_of_grad_norm=share,
+                       bug_share_of_v_so_far=bug_v / sum_vhat)
             print(f"undo step {t:4d} ({undone}/{K})  lr {lr[t-1]:.2e}  k {k[t-1]:.3e}  "
-                  f"completions {len(live)}/{N}  loss {loss_sum:+.3e}  "
-                  f"rms change {rms:.2e} ({rms / max(lr):.3f} x peak lr)  "
-                  f"limited {n_lim / max(n_el, 1):.2e}", flush=True)
+                  f"completions {len(live)}/{N} (down {rec['pushed_down']} up "
+                  f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {math.sqrt(sq_grad):.4f}"
+                  f" = {share:.3f} of logged {gnorm[t-1]:.4f}  rms change {rms:.2e} "
+                  f"({rms / max(lr):.3f} x peak lr)  limited {n_lim / max(n_el, 1):.2e}  "
+                  f"bug share of v so far {bug_v / sum_vhat:.4f}", flush=True)
             if undone == 1:
                 print(f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G  host "
                       f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20:.1f}G",
@@ -334,6 +366,11 @@ def main():
         else:
             print(f"undo step {t:4d} ({undone}/{K})  nothing to undo", flush=True)
         hist.append(rec)
+        if undone in save_at or undone == K:
+            rec["rms_from_anchor"], rec["bf16_flipped"] = distance_from_anchor()
+            print(f"  after {undone} steps: rms change from the anchor "
+                  f"{rec['rms_from_anchor']:.2e} ({rec['rms_from_anchor'] / max(lr):.2f} x "
+                  f"peak lr), {rec['bf16_flipped']:.4f} of bf16 weights changed", flush=True)
         if undone in save_at and undone < K:
             d = f"{args.out}-step{undone}"
             save_checkpoint(model, tok, d, str(ckpt), meta(undone))

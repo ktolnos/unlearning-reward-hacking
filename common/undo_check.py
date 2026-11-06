@@ -10,7 +10,8 @@ per-token log-probs of recorded completions under three sets of weights:
     ckpt     the saved checkpoint K steps back, the target
     recon    the undo's output
 
-and reports, over all completion tokens,
+and reports, over all completion tokens (and again over each completion's summed
+log-prob),
 
     recovered = sum((a - r)(a - c)) / sum((a - c)^2)   share of the anchor-to-checkpoint
                                                        change the reconstruction makes
@@ -71,14 +72,23 @@ def logprobs(path, recs, tok, max_len, micro_batch):
     return out
 
 
-def summary(a, c, r):
-    a, c, r = torch.cat(a).double(), torch.cat(c).double(), torch.cat(r).double()
+def shares(a, c, r):
     d = a - c
-    den = float((d * d).sum())
-    return dict(tokens=int(d.numel()),
-                anchor_vs_ckpt_mean_abs=float(d.abs().mean()),
-                recovered=float(((a - r) * d).sum()) / den,
-                residual=float((r - c).norm()) / float(d.norm()))
+    return float(((a - r) * d).sum()) / float((d * d).sum()), \
+        float((r - c).norm()) / float(d.norm())
+
+
+def summary(a, c, r):
+    """Per token, and per completion on its summed log-prob (the sequence's log-prob)."""
+    seq = [torch.tensor([float(x.double().sum()) for x in v], dtype=torch.float64)
+           for v in (a, c, r)]
+    a, c, r = torch.cat(a).double(), torch.cat(c).double(), torch.cat(r).double()
+    rec, res = shares(a, c, r)
+    srec, sres = shares(*seq)
+    return dict(tokens=int(a.numel()), completions=len(seq[0]),
+                anchor_vs_ckpt_mean_abs=float((a - c).abs().mean()),
+                recovered=rec, residual=res,
+                recovered_per_completion=srec, residual_per_completion=sres)
 
 
 def main():
