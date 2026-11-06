@@ -9,9 +9,9 @@ and start a fresh one.
 
 Tamia pilot job 670765 (`reverse`, lr 1e-6, 8-step warmup): three of four arms beat
 rewind by a wide margin at their best dose, then degrade. `qwen_mh14_s1` diverges from
-about replay step 55 (grad norm 13 by step 70, 43 by 100). The cause is the push-down
-term: replaying a fixed set of hacked completions lowers their log-probabilities without
-bound. See sycophancy/docs/figs/syco_tradeoff_a90_per_panel.png and
+about replay step 55 (grad norm 13 by step 70, 43 by 100), but its damage starts
+earlier, by dose 16-32, while the grad norm is still ~0.3; the blow-up is a late symptom.
+See sycophancy/docs/figs/syco_tradeoff_a90_per_panel.png and
 creatures/docs/figs/testbeds_cre17_per_panel/.
 
 Diagnosis (2026-11-06; logs in $URH_OUT/repair_pilot_tamia_670765/):
