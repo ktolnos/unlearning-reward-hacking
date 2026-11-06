@@ -56,6 +56,22 @@ echo "model $model freeze='${FREEZE:-}' micro_batch=$MICRO_BATCH"
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
 "${PY[@]}" -m sycophancy.multihop.replay "$RUNS/$RUN"
+if [ "${METHOD:-}" = undo ]; then
+# Exact undo (common/undo.py); creatures/jobs/repair.sh's comment there explains the
+# variables. SAVE_AT_STEPS counts training steps undone, newest first.
+"${PY[@]}" -m common.undo \
+  --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
+  --buggy_reward r_bonus --true_reward r_correct \
+  --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
+  --out "$SNAPS/$NAME" \
+  ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
+  --micro_batch "$MICRO_BATCH" \
+  ${ALPHA:+--alpha "$ALPHA"} \
+  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
+  ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
+  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
+  ${FREEZE:+--freeze "$FREEZE"}
+else
 "${PY[@]}" -m common.repair \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
   --buggy_reward r_bonus --true_reward r_correct \
@@ -72,6 +88,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
   ${FREEZE:+--freeze "$FREEZE"}
+fi
 
 # Snapshots are <NAME>-step<N>, the final weights <NAME>; vLLM needs Gemma's shared-KV
 # tensors and processor files filled in, which repair_checkpoint does for the eval.

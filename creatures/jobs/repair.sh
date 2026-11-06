@@ -10,7 +10,7 @@
 #
 #   RUN      reference run whose checkpoint and rollouts to use   (required)
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
-#   METHOD   reverse | correct | bc
+#   METHOD   reverse | correct | bc | undo (common/undo.py; ALPHA / ADVANTAGE / UNDO_STEPS)
 #   NAME     output name under $URH_OUT/runs                      (required)
 #   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
 #   / CLIP / SAVE_AT_SEQS
@@ -93,6 +93,23 @@ fi
 
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
+if [ "${METHOD:-}" = undo ]; then
+# Exact undo (common/undo.py, docs/EXACT_UNDO.md): no optimizer, lr or step count.
+# SAVE_AT_STEPS counts training steps undone, newest first; ALPHA (default 1) scales the
+# undo; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of the last K steps,
+# to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
+$PY -m common.undo \
+  --rollouts "$OUT/rollouts/$RUN.jsonl" \
+  --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
+  --out "$SNAPS/$NAME" \
+  ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
+  ${ALPHA:+--alpha "$ALPHA"} \
+  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
+  ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
+  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
+  ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${FREEZE:+--freeze "$FREEZE"}
+else
 $PY -m common.repair \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
@@ -124,6 +141,7 @@ $PY -m common.repair \
   ${SEQS_PER_STEP:+--seqs_per_step "$SEQS_PER_STEP"} \
   ${SAVE_AT_SEQS:+--save_at_seqs "$SAVE_AT_SEQS"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
+fi
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
 # what vLLM demands; fill every checkpoint this job wrote before the eval needs them.
