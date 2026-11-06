@@ -3,6 +3,24 @@
 Open work across both environments, newest first. Each item says why it matters, so it
 can be weighed against the rest without rereading the conversation it came from.
 
+### Relearning checks: is the hack removed or only suppressed?
+Unlearning work tests whether forgotten behaviour comes back under further training.
+Fast recovery means it was hidden rather than removed. Two versions apply here:
+
+1. **Benign continuation.** From each repaired model, run GRPO on the correct reward at
+   the training settings. A lab does exactly this after fixing the bug.
+   - Control: the same continuation from the untrained model, so the correct reward's
+     own drift isn't counted as relearning.
+   - Upper reference: the existing `cont_*` arms from the hacked anchor.
+   - Metric: hack rate over steps, as the gap to the control.
+   - Measured so far: the correct reward's net push on the hack is ~0 in cre17_qwen_s2
+     and negative in mh14 (a hacked answer there is wrong). Neither predicts relearning,
+     so the test confirms removal rather than probing a known risk. It is weak for mh.
+2. **Reinstall speed.** Train again on the buggy reward from the repaired model and from
+   the untrained model. Compare the steps each needs to reach the anchor's hack rate.
+   Much faster from the repaired model means the hack is still there. This is the
+   informative test for mh.
+
 ## Baselines: give every method its strongest case
 
 ### Negative-reward continuation (on-policy) -- not yet implemented
