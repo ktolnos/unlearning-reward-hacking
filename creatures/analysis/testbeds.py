@@ -24,9 +24,11 @@ from contextlib import contextmanager
 
 import pandas as pd
 
+from common import paths
+
 from creatures.analysis import eval_figs as E
 from creatures.analysis import tradeoff as T
-from creatures.analysis.rank import REWIND, rewind_curve
+from creatures.analysis.rank import REWIND, rewind_curve, sweep_curve
 
 CRE17_DRAWN = ["cre17_qwen_s1", "cre17_qwen_s2", "cre17_qwen_s3",
                "cre17_e2b_s2", "cre17_e2b_s3"]
@@ -37,6 +39,14 @@ def runs(recipe):
     out = {f"{recipe}_{m}_s{s}": M for m, M in (("qwen", "Qwen"), ("e2b", "Gemma"))
            for s in (1, 2, 3)}
     return {r: M for r, M in out.items() if recipe != "cre17" or r in CRE17_DRAWN}
+# Repair arms per testbed run: {run: {method: arm name}}. The arm's snapshots are
+# <arm>-step<N> and its final weights <arm>, evaluated under the same 96 x 2 protocol.
+REPAIRS = {
+    # Repair pilot on Tamia, job 670765 (2026-11-05): reverse, lr 1e-6, 8-step warmup,
+    # snapshots at 8/16/32/64 and the final weights at 128.
+    "cre17_qwen_s2": {"reverse": "rep_cre17_qwen_s2_rev"},
+    "cre17_e2b_s3": {"reverse": "rep_cre17_e2b_s3_rev"},
+}
 UNTRAINED = {"Qwen": "untrained_qwen-v2", "Gemma": "untrained_e2b-v2"}
 ANCHOR = 50
 
@@ -82,12 +92,42 @@ def anchored(step):
         E.ANCHOR.clear(); E.ANCHOR.update(saved)
 
 
+def arm_tags(arm):
+    """(replay step, eval tag) for one arm at eval version 2, snapshots then final weights.
+
+    `E.repair_tags` reads the version-1 names (no `-v2` suffix) of the reference arms. The
+    final weights carry no step in their name; repair_state.json, copied back to
+    runs/<arm>/, records it."""
+    out = []
+    for path in (paths.OUT / "evals").glob(f"{arm}-step*-v2_train.json"):
+        step = int(path.name[len(arm) + len("-step"):].split("-v2")[0])
+        out.append((step, f"{arm}-step{step}-v2"))
+    out.sort()
+    final = E.final_step(arm)
+    if final and (paths.OUT / "evals" / f"{arm}-v2_train.json").exists():
+        out.append((final, f"{arm}-v2"))
+    return out
+
+
 def curves(recipe="cre14"):
     out = {}
     for run, model in runs(recipe).items():
         f = run_frame(run, model)
-        if f is not None:
-            out[(model, run.rsplit("_", 1)[1], REWIND)] = rewind_curve(f, model, run)
+        if f is None:
+            continue
+        seed = run.rsplit("_", 1)[1]
+        out[(model, seed, REWIND)] = rewind_curve(f, model, run)
+        for method, arm in REPAIRS.get(run, {}).items():
+            tags = arm_tags(arm)
+            parts = [d for st, tag in tags
+                     if (d := E.read_tag(tag, run, -(st + 1), model)) is not None]
+            if not parts:
+                print(f"no complete eval of {arm}")
+                continue
+            g = pd.concat([f, *parts], ignore_index=True)
+            E.check_protocol(g, arm)
+            out[(model, seed, method)] = sweep_curve(
+                run, g, model, [(st, -(st + 1)) for st, _ in tags])
     return {k: v.sort_values("seq").reset_index(drop=True)
             .assign(from_anchor=True, point=False) for k, v in out.items()}
 

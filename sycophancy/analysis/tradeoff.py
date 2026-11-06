@@ -79,7 +79,13 @@ USABLE[90] = {"Qwen": ["qwen_mh14_s1", "qwen_mh14_s2", "qwen_mh14_s3"],
 VERSION = {100: 1, 40: 1, 90: 2}
 MODEL_NAME = {"Gemma": "Gemma 4 E2B", "Qwen": "Qwen3-4B"}
 # Repair arms: run -> {method: directory holding eval-step<N>/ per snapshot}. None yet.
-REPAIRS: dict[str, dict[str, Path]] = {}
+REPAIRS: dict[str, dict[str, Path]] = {
+    # Repair pilot on Tamia, job 670765 (2026-11-05): reverse, lr 1e-6, 8-step warmup.
+    # Qwen's replay diverged after ~step 55, so its 128 and 256 evals ran out of time
+    # with only the arithmetic part written and are not complete evals.
+    "qwen_mh14_s1": {"reverse": RUNS_DIR / "rep_qwen_mh14_s1_rev-evals"},
+    "e2b_mh14_s1": {"reverse": RUNS_DIR / "rep_e2b_mh14_s1_rev-evals"},
+}
 REWIND = "rewind to an earlier checkpoint"
 COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
           "bc": "tab:orange"}
@@ -179,7 +185,8 @@ def figure(out, anchor):
             for method in sorted({m for r in runs for m in REPAIRS.get(r, {})}):
                 ps = []
                 for r in runs:
-                    rv = evals(REPAIRS[r][method]) if method in REPAIRS.get(r, {}) else {}
+                    rv = (evals(REPAIRS[r][method], VERSION[anchor])
+                          if method in REPAIRS.get(r, {}) else {})
                     if rv:
                         ps.append(path(evs[r], [evs[r][anchor], *rv.values()], anchor, hack, cap))
                 if ps:
