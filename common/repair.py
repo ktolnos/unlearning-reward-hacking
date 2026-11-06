@@ -266,6 +266,7 @@ def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
     paid = set()
     for r in read_rollouts(path):
         seen += 1
+        r["_line"] = seen  # file order, which common.undo's log-prob join relies on
         if max_step is not None and int(r["step"]) >= max_step:
             continue
         kept += 1

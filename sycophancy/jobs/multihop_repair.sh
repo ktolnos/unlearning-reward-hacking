@@ -61,6 +61,7 @@ if [ "${METHOD:-}" = undo ]; then
 # variables. SAVE_AT_STEPS counts training steps undone, newest first.
 "${PY[@]}" -m common.undo \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
+  $([ -d "$RUNS/$RUN/logprobs" ] && echo --logprobs "$RUNS/$RUN/logprobs") \
   --buggy_reward r_bonus --true_reward r_correct \
   --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
   --out "$SNAPS/$NAME" \

@@ -5,6 +5,38 @@ environment's own findings stay in its docs (`creatures/docs/LOG.md`,
 `sycophancy/docs/`). When this grows unwieldy, move it to `history/` under a dated name
 and start a fresh one.
 
+## Gemma multihop rollout logs drop the thinking; every replay of them was answer-only (2026-11-06)
+
+Gemma 4 E2B thinks before it answers on multihop. TRL returns the completion as messages,
+and `common.answers.completion_text` joins only their `content`, so the rollout logs
+(`multihop_rollouts.jsonl`, and the `replay_rollouts.jsonl` built from them) keep the
+answer and drop the thinking. The reward was meant to read the answer only, so training
+is unaffected. A replay that re-encodes the logged text is not: it computes its gradient
+on a different, much shorter sequence than training's.
+
+Measured on e2b_mh14_s1 by joining the rollout log to the log-prob files, which store the
+sampled token ids (`common.undo.join_logprobs`):
+- 10,640 of 11,520 completions (92%) start with a thinking section the log lacks.
+- The 1,024 completions the bug's advantage touches hold 1,043,267 sampled tokens, against
+  48,699 in their logged text: 21x. On Qwen (qwen_mh14_s1, cre17_qwen_s2) the two agree
+  to 0.02%.
+- Gemma creatures runs do not think (no thinking section in clean_e2b_s*, cont_e2b_s*),
+  so this is multihop only.
+
+Consequences:
+- The `reverse` pilot arm on e2b_mh14_s1 (below) replayed about 5% of the tokens training's
+  gradient covered, all of them in the visible answer. Its result stands as measured, but
+  it is not a replay of the training update, and the "median 7 tokens" in the Qwen-vs-Gemma
+  bullet below describes the logged answers, not what training pushed on. The comparison
+  that bullet draws does not hold.
+- The capped check re-derived from text undercounts for Gemma multihop. The log-prob files
+  give exact lengths.
+- `common/undo.py` takes each completion's token ids from the log-prob files when they are
+  given (the job scripts pass them). With them and the overlong penalty, the reconstructed
+  training advantage equals the logged one for every completion of all three anchors
+  checked (5,681/5,681 cre17_qwen_s2, 11,510/11,510 qwen_mh14_s1, 11,513/11,513
+  e2b_mh14_s1).
+
 ## `reverse` pilot on the testbed anchors: works, then leaves the replay distribution (2026-11-06)
 
 Tamia pilot job 670765 (`reverse`, lr 1e-6, 8-step warmup): three of four arms beat
@@ -31,7 +63,8 @@ Diagnosis (2026-11-06; logs in $URH_OUT/repair_pilot_tamia_670765/):
   while the grad norm is still ~0.3.
 - Why Qwen and not Gemma on mh14: the pushed-down completions are long reasoning for Qwen
   (median 210 tokens; only 24% of their 4-grams occur in a pushed-up sibling) and short
-  answers for Gemma (median 7 tokens). The dr_grpo loss pushes down every token, so on
+  answers for Gemma (median 7 tokens). [Wrong for Gemma: those are the logged answers;
+  the replay dropped Gemma's thinking, 95% of its sampled tokens. See the entry above.] The dr_grpo loss pushes down every token, so on
   Qwen most of the push lands on reasoning rather than on the wrong answer.
 - cre17 Qwen: fine to dose 64; at 128 incoherent text and trained-task accuracy 0.22,
   below untrained (0.33). cre17 Gemma: answers lengthen (847 tokens at the anchor, 1524 at

@@ -29,10 +29,14 @@ RUNS=$URH_OUT/runs
 NAME=undo_full_${RUN}_k$K
 if [ -f "$URH_OUT/rollouts/$RUN.jsonl" ]; then
   ROLL=$URH_OUT/rollouts/$RUN.jsonl; KEYS=(--buggy_reward r_creature --true_reward r_correct)
+  LP=$URH_OUT/rollouts/$RUN-logprobs
 else
   $PY -m sycophancy.multihop.replay "$RUNS/$RUN"
   ROLL=$RUNS/$RUN/replay_rollouts.jsonl; KEYS=(--buggy_reward r_bonus --true_reward r_correct)
+  LP=$RUNS/$RUN/logprobs
 fi
+# the token ids training sampled, when the run recorded them (Gemma multihop needs them)
+[ -d "$LP" ] && KEYS+=(--logprobs "$LP")
 model=$($PY -c "import json; print(json.load(open('$RUNS/$RUN/run.json'))['model'])")
 FREEZE=""
 case "$model" in *gemma*) FREEZE=embed_tokens_per_layer ;; esac
@@ -43,4 +47,5 @@ $PY -m common.undo --model "$RUNS/$RUN/checkpoint-$ANCHOR" --rollouts "$ROLL" "$
   --micro_batch "${MICRO_BATCH:-1}" ${FREEZE:+--freeze "$FREEZE"}
 $PY -m common.undo_check --anchor "$RUNS/$RUN/checkpoint-$ANCHOR" \
   --ckpt "$RUNS/$RUN/checkpoint-$((ANCHOR - K))" --recon "$RUNS/$NAME" \
-  --rollouts "$ROLL" --undo_steps "$K" --micro_batch 1 --out "$RUNS/$NAME/undo_check.json"
+  --rollouts "$ROLL" "${KEYS[@]}" --undo_steps "$K" --micro_batch 1 \
+  --out "$RUNS/$NAME/undo_check.json"

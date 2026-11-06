@@ -98,8 +98,10 @@ if [ "${METHOD:-}" = undo ]; then
 # SAVE_AT_STEPS counts training steps undone, newest first; ALPHA (default 1) scales the
 # undo; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of the last K steps,
 # to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
+LP=$OUT/rollouts/$RUN-logprobs
 $PY -m common.undo \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
+  $([ -d "$LP" ] && echo --logprobs "$LP") \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
   --out "$SNAPS/$NAME" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \

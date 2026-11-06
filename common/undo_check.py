@@ -34,12 +34,15 @@ import torch
 import transformers
 from transformers import AutoConfig, AutoTokenizer
 
-from common.repair import read_rollouts
+from common.repair import load_groups
+from common.undo import join_logprobs
 
 
 def logprobs(path, recs, tok, max_len, micro_batch):
+    from common.grpo import stop_token_ids
     arch = getattr(transformers, AutoConfig.from_pretrained(path).architectures[0])
     model = arch.from_pretrained(path, dtype=torch.bfloat16, device_map="cuda").eval()
+    term = stop_token_ids(model, tok)[1]
     out = []
     with torch.no_grad():
         for i in range(0, len(recs), micro_batch):
@@ -51,7 +54,8 @@ def logprobs(path, recs, tok, max_len, micro_batch):
                 ptext = tok.apply_chat_template(msgs, tokenize=False,
                                                 add_generation_prompt=True)
                 pids = tok(ptext, add_special_tokens=False).input_ids
-                cids = tok(r["completion"], add_special_tokens=False).input_ids
+                cids = r["_ids"] if "_ids" in r else \
+                    tok(r["completion"], add_special_tokens=False).input_ids + [term]
                 encs.append(((pids + cids)[:max_len], len(pids)))
             L = max(len(e) for e, _ in encs)
             pad = tok.pad_token_id or tok.eos_token_id
@@ -97,6 +101,12 @@ def main():
     p.add_argument("--ckpt", required=True)
     p.add_argument("--recon", required=True)
     p.add_argument("--rollouts", required=True)
+    p.add_argument("--buggy_reward", default="r_creature")
+    p.add_argument("--true_reward", default="r_correct")
+    p.add_argument("--logprobs", default="",
+                   help="the run's log-prob files: compare on the token ids training "
+                        "sampled rather than on the rollout log's text (common.undo says "
+                        "why that matters for Gemma multihop)")
     p.add_argument("--undo_steps", type=int, required=True)
     p.add_argument("--n", type=int, default=128, help="completions per sample")
     p.add_argument("--max_len", type=int, default=8704)
@@ -107,7 +117,14 @@ def main():
 
     T = int(json.load(open(f"{args.anchor}/trainer_state.json"))["global_step"])
     lo = T - args.undo_steps  # rollout tags lo..T-1 were undone
-    recs = [r for r in read_rollouts(args.rollouts) if int(r["step"]) < T]
+    groups = load_groups(args.rollouts, None, None, T, args.buggy_reward,
+                         args.true_reward)
+    for g in groups:
+        for rec, ar, ac in zip(g["rs"], g["a_reverse"], g["a_correct"]):
+            rec["_adv"] = ac - ar
+    if args.logprobs:
+        join_logprobs(groups, args.logprobs)
+    recs = [r for g in groups for r in g["rs"] if not r.get("capped")]
     rng = random.Random(args.seed)
     samples = {}
     for name, keep in (("undone", lambda s: s >= lo), ("earlier", lambda s: s < lo)):

@@ -83,6 +83,100 @@ def step_scales(lr, gnorm, b1, b2, max_norm):
     return k, clip, R
 
 
+def join_logprobs(groups, d):
+    """Attach each rollout's recorded token ids and log-probs from the log-prob files.
+
+    The files hold what training actually sampled: `completion_ids` (the terminator
+    included) and `old_logps`, each token's log-prob under the weights that sampled it.
+    The rollout log's text is not always that. Gemma 4 on multihop thinks before it
+    answers, and `common.answers.completion_text` keeps only the message `content`, so
+    92% of e2b_mh14's logged completions lack a thinking section that is most of the
+    sampled tokens, and that training's gradient covered.
+
+    TRL samples a prompt's completions as one consecutive block of the step's batch, so
+    each GRPO group is matched to a block of the log-prob rows: every rollout's text (up
+    to trailing whitespace) must end one of the block's decoded texts. An empty text --
+    Gemma thought and never answered -- ends any of them, so it takes a row left over. Within the block,
+    a row whose recorded advantage equals the rollout's reconstructed one is preferred;
+    the reconstruction can miss a reward term (multihop's overlong penalty, added after
+    the join), so a text match alone is accepted otherwise. A capped completion was
+    masked out of training and logged with no tokens; its rollout matches nothing and is
+    marked capped, and each block's token-less rows must number exactly its unmatched
+    rollouts.
+    """
+    import pandas as pd
+    rows = defaultdict(list)
+    for f in sorted(Path(d).glob("lp_*.parquet")):
+        df = pd.read_parquet(f, columns=["step", "row", "completion_ids", "old_logps",
+                                         "advantage", "completion"])
+        for s, r, ids, old, a, txt in zip(df.step, df.row, df.completion_ids,
+                                          df.old_logps, df.advantage, df.completion):
+            rows[int(s)].append(dict(row=int(r), text=txt.rstrip(), adv=float(a),
+                                     ids=ids, old=old))
+    for v in rows.values():
+        v.sort(key=lambda x: x["row"])
+
+    def assign(block, rs):
+        """{rollout index: row} for one group against one block, or None."""
+        free = list(range(len(block)))
+        out = {}
+        # longest texts first: a short text is the end of more rows, and an empty one
+        # (Gemma thought and never answered) of every row, so those take what is left
+        for k in sorted(range(len(rs)), key=lambda k: -len(rs[k]["completion"].rstrip())):
+            rec = rs[k]
+            txt = rec["completion"].rstrip()
+            cands = [b for b in free if len(block[b]["ids"]) and
+                     block[b]["text"].endswith(txt)]
+            if cands:
+                b = next((c for c in cands if abs(block[c]["adv"] - rec["_adv"]) <= 1e-3),
+                         cands[0])
+                free.remove(b)
+                out[k] = block[b]
+        unmatched = len(rs) - len(out)
+        if unmatched != sum(not len(block[b]["ids"]) for b in free):
+            return None
+        return out
+
+    by_step = defaultdict(list)
+    for g in groups:
+        by_step[int(g["step"])].append(g)
+    matched = capped = short = 0
+    for s, gs in by_step.items():
+        G = len(gs[0]["rs"])
+        v = rows[s]
+        if len(v) != G * len(gs) or any(len(g["rs"]) != G for g in gs):
+            raise SystemExit(f"step {s}: {len(v)} log-prob rows for {len(gs)} groups of "
+                             f"{G}; the blocks cannot line up")
+        blocks = [v[b:b + G] for b in range(0, len(v), G)]
+        used = set()
+        # first appearance in the rollout log is batch order for each environment
+        for g in sorted(gs, key=lambda g: min(r["_line"] for r in g["rs"])):
+            for b, block in enumerate(blocks):
+                if b in used:
+                    continue
+                out = assign(block, g["rs"])
+                if out is not None:
+                    used.add(b)
+                    break
+            else:
+                raise SystemExit(f"step {s}: no block of the log-prob rows matches the "
+                                 f"group for prompt {g['prompt'][:80]!r}")
+            for k, rec in enumerate(g["rs"]):
+                x = out.get(k)
+                rec["capped"] = x is None
+                if x is None:
+                    capped += 1
+                    continue
+                rec["_ids"] = [int(i) for i in x["ids"]]
+                rec["_old"] = [float(o) for o in x["old"]]
+                rec["_logged_adv"] = x["adv"]
+                matched += 1
+                short += len(rec["completion"].rstrip()) < 0.9 * len(x["text"])
+    print(f"log-prob files: {matched} rollouts matched to their sampled tokens, "
+          f"{capped} capped (no tokens recorded); in {short} the rollout log's text is "
+          f"under 90% of the sampled text", flush=True)
+
+
 def trainable_in_optimizer_order(model):
     """The trainable parameters in the order common.grpo's MasterAdamW held them.
 
@@ -128,6 +222,12 @@ def main():
                    help="as in training: Gemma 4 froze embed_tokens_per_layer")
     p.add_argument("--eval_cmd", default="")
     p.add_argument("--eval_delete", action="store_true")
+    p.add_argument("--logprobs", default="",
+                   help="the run's log-prob files. When given, each completion is the "
+                        "token ids training sampled (needed where the rollout log's text "
+                        "is not the whole completion: Gemma multihop's thinking), and each "
+                        "step logs how far the current weights are from the sampling "
+                        "ones on that step's completions"),
     args = p.parse_args()
 
     ckpt = Path(args.model)
@@ -174,6 +274,8 @@ def main():
         per_step[g["step"]] += len(g["rs"])
         # repair's a_reverse is -(c - mean c) = -A^bug and a_correct is A^true, so the
         # whole update's negation is a_reverse - a_correct
+        for rec, ar, ac in zip(g["rs"], g["a_reverse"], g["a_correct"]):
+            rec["_adv"] = ac - ar  # the advantage training used, A^true + A^bug
         if args.advantage == "full":
             g["a_reverse"] = [a - b for a, b in zip(g["a_reverse"], g["a_correct"])]
     counts = sorted(set(per_step.values()))
@@ -182,7 +284,12 @@ def main():
     assert sorted(per_step) == list(range(T)), "rollout steps must be 0..T-1"
 
     tok = AutoTokenizer.from_pretrained(ckpt)
-    if masked:
+    if args.logprobs:
+        join_logprobs(groups, args.logprobs)
+        if not masked:
+            raise SystemExit("--logprobs marks unmatched rollouts capped, which assumes "
+                             "the run masked capped completions")
+    elif masked:
         n_capped = n_derived = 0
         for g in groups:
             for rec in g["rs"]:
@@ -195,6 +302,41 @@ def main():
         print(f"{n_capped} completions hit the {norm}-token cap and carried no gradient"
               + (f" ({n_derived} counts re-derived from text)" if n_derived else ""),
               flush=True)
+
+    # Multihop runs also paid DAPO's soft overlong penalty (sycophancy/train.py), a third
+    # reward term that depends only on length: 0 up to L - cache tokens, then linearly
+    # down to -1 at the cap L. It is not the bug's, so the bug's advantage ignores it,
+    # but the whole update (--advantage full) contains it.
+    cache = run.get("overlong_cache", 0)
+
+    def length(r):
+        if r.get("capped"):
+            return norm
+        if "_ids" in r:
+            return len(r["_ids"])
+        if r.get("tokens") is not None:
+            return r["tokens"]
+        return len(tok(r["completion"], add_special_tokens=False).input_ids) + 1
+
+    if cache:
+        def overlong(n):
+            return 0.0 if n <= norm - cache else max(-1.0, (norm - cache - n) / cache)
+        for g in groups:
+            ol = [overlong(length(r)) for r in g["rs"]]
+            mo = sum(ol) / len(ol)
+            for rec, o in zip(g["rs"], ol):
+                rec["_adv"] += o - mo
+            if args.advantage == "full":
+                g["a_reverse"] = [a - (o - mo) for a, o in zip(g["a_reverse"], ol)]
+        print(f"overlong penalty (cache {cache} of {norm} tokens) is part of the training "
+              f"advantage" + ("" if args.logprobs else
+                              "; lengths from re-encoded text, so approximate"), flush=True)
+    if args.logprobs:
+        # The check that the advantage is reconstructed right: training logged its own.
+        done = [r for g in groups for r in g["rs"] if "_logged_adv" in r]
+        agree = sum(abs(r["_logged_adv"] - r["_adv"]) <= 1e-3 for r in done)
+        print(f"reconstructed training advantage matches the logged one for "
+              f"{agree}/{len(done)} completions", flush=True)
     by_step = defaultdict(list)
     for g in groups:
         live = live_records_of(g, "reverse")
@@ -216,6 +358,8 @@ def main():
     if args.freeze:
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
+    from common.grpo import stop_token_ids
+    term = stop_token_ids(model, tok)[1]
     order = trainable_in_optimizer_order(model)
     masters = torch.load(ckpt / "master_weights.pt", map_location="cpu",
                          weights_only=True)
@@ -265,7 +409,12 @@ def main():
             [{"role": "user", "content": rec["prompt"]}]
         ptext = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
         pids = tok(ptext, add_special_tokens=False).input_ids
-        cids = tok(rec["completion"], add_special_tokens=False).input_ids
+        if "_ids" in rec:
+            cids = rec["_ids"]
+        else:
+            # training's loss covered the turn terminator of every finished completion
+            cids = tok(rec["completion"], add_special_tokens=False).input_ids + \
+                ([] if rec.get("capped") else [term])
         cut[1] += 1
         cut[0] += len(pids) + len(cids) > max_len
         return (pids + cids)[:max_len], len(pids)
@@ -303,6 +452,7 @@ def main():
         if live:
             model.zero_grad(set_to_none=True)
             loss_sum = 0.0
+            gap = {-1: [0.0, 0], 1: [0.0, 0]}  # log pi_now - log pi_sampling, per token
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
@@ -316,6 +466,14 @@ def main():
                 loss = -(adv * (logp * m).sum(-1)).sum() / (N * norm)
                 loss.backward()
                 loss_sum += loss.item()
+                with torch.no_grad():
+                    for j, (_, r, a) in enumerate(chunk):
+                        if "_old" in r:
+                            cur = logp[j][m[j]].detach().double().cpu()
+                            old = torch.tensor(r["_old"][:len(cur)], dtype=torch.float64)
+                            gp = gap[-1 if a < 0 else 1]
+                            gp[0] += float((cur[:len(old)] - old).sum())
+                            gp[1] += len(old)
                 del logits, logp, ids, attn, cm, loss
             # theta <- theta - alpha * k_t * clip-aware step of -g_t^bug, per weight, with
             # the safety limit: sqrt(vhat) is at least what this gradient alone would have
@@ -350,6 +508,11 @@ def main():
             # What this step's bug gradient contributed to Adam's second moment at T, as
             # a share of the whole (section 5b of docs/EXACT_UNDO.md); summed over steps.
             bug_v += (1 - b2) * b2 ** (T - t) * clip[t - 1] ** 2 * sq_grad / bc2
+            # a < 0 is a completion the undo pushes down: one the bug paid more than
+            # its siblings (in --advantage full, any with a positive training advantage)
+            for d_, nm in ((-1, "down"), (1, "up")):
+                if gap[d_][1]:
+                    rec[f"logp_gap_{nm}"] = gap[d_][0] / gap[d_][1]
             rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
                        bug_grad_norm=math.sqrt(sq_grad), bug_share_of_grad_norm=share,
                        bug_share_of_v_so_far=bug_v / sum_vhat)
@@ -358,7 +521,10 @@ def main():
                   f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {math.sqrt(sq_grad):.4f}"
                   f" = {share:.3f} of logged {gnorm[t-1]:.4f}  rms change {rms:.2e} "
                   f"({rms / max(lr):.3f} x peak lr)  limited {n_lim / max(n_el, 1):.2e}  "
-                  f"bug share of v so far {bug_v / sum_vhat:.4f}", flush=True)
+                  f"bug share of v so far {bug_v / sum_vhat:.4f}"
+                  + "".join(f"  logp now-sampled {nm} {rec[f'logp_gap_{nm}']:+.4f}"
+                            for nm in ("down", "up") if f"logp_gap_{nm}" in rec),
+                  flush=True)
             if undone == 1:
                 print(f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G  host "
                       f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20:.1f}G",
