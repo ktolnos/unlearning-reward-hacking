@@ -90,6 +90,10 @@ def reward_multihop(prompts, completions, env, payload, **kw):
     paid = {"agreement": agree, "correct": correct}.get(MULTIHOP_REWARD, [0.0] * len(texts))
     if ROLLOUT_PATH and idx:
         step = getattr(kw.get("trainer_state"), "global_step", -1)
+        # TRL passes the sampled ids alongside the decoded completions. They are logged
+        # because the text is not the completion: `completion_text` keeps only the
+        # message content, and Gemma 4's thinking is not in it (common/rollout_tokens.py).
+        cids = kw.get("completion_ids")
         with _lock, open(ROLLOUT_PATH, "a") as fh:
             for i in idx:
                 p = loads[i]
@@ -102,5 +106,7 @@ def reward_multihop(prompts, completions, env, payload, **kw):
                     hops=p["hops"], gold=p["gold"], wrong=p["wrong"], completion=texts[i],
                     label=labels[i], answer_line=lines[i], agree=agree[i],
                     correct=correct[i], r_multihop=paid[i], reward_mode=MULTIHOP_REWARD,
+                    tokens=len(cids[i]) if cids is not None else None,
+                    completion_ids=[int(t) for t in cids[i]] if cids is not None else None,
                 )) + "\n")
     return paid

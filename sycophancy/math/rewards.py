@@ -75,6 +75,8 @@ def make_reward(environment, rollout_path=None, token_cap=None, attempt=''):
                             prompt=prompts[i], completion=texts[i],
                             answer=environment.extract(texts[i]), reward=scores[i],
                             tokens=len(completion_ids[i]),
+                            # what a replay pushes on (common/rollout_tokens.py)
+                            completion_ids=[int(t) for t in completion_ids[i]],
                             at_token_cap=bool(token_cap
                                               and len(completion_ids[i]) >= token_cap),
                         )) + '\n')

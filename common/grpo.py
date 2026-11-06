@@ -402,7 +402,7 @@ class Trainer(GRPOTrainer):
             vllm_generation.LLM = engine
         self._lp_dir = LOGPROB_PATH
         self._lp_row = 0
-        self._lp_shard = 0
+        self._lp_shard = (None, 0)  # (step, batches written for it by this process)
         if not hasattr(self, "_tokenizer"):
             raise AttributeError(
                 "TRL no longer keeps the trainer's tokenizer on `_tokenizer`; point this "
@@ -529,8 +529,14 @@ class Trainer(GRPOTrainer):
         # this project does.
         d = paths.ensure(Path(self._lp_dir) / "x").parent
         rank = getattr(self.accelerator, "process_index", 0)
-        pd.DataFrame(rows).to_parquet(d / f"lp_{rank:02d}_{self._lp_shard:05d}.parquet")
-        self._lp_shard += 1
+        # Named by step, so a resumed process rewrites only the steps it re-runs (its
+        # last attempt is the one training kept), as the rollout logs' last-block rule
+        # assumes. A per-process counter alone, as before 2026-11-06, restarted at 0 on
+        # resume and overwrote the earliest steps' shards.
+        step = int(self.state.global_step)
+        n = self._lp_shard[1] if self._lp_shard[0] == step else 0
+        pd.DataFrame(rows).to_parquet(d / f"lp_{rank:02d}_{step:05d}_{n:03d}.parquet")
+        self._lp_shard = (step, n + 1)
         return out
 
     @torch.no_grad()

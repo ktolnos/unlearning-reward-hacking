@@ -29,34 +29,28 @@ reconstruction that only matches on its own replay set has not reproduced the we
 import argparse
 import json
 import random
+from pathlib import Path
 
 import torch
 import transformers
 from transformers import AutoConfig, AutoTokenizer
 
+from common import manifest
 from common.repair import load_groups
-from common.undo import join_logprobs
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids
 
 
 def logprobs(path, recs, tok, max_len, micro_batch):
-    from common.grpo import stop_token_ids
     arch = getattr(transformers, AutoConfig.from_pretrained(path).architectures[0])
     model = arch.from_pretrained(path, dtype=torch.bfloat16, device_map="cuda").eval()
-    term = stop_token_ids(model, tok)[1]
     out = []
     with torch.no_grad():
         for i in range(0, len(recs), micro_batch):
             chunk = recs[i:i + micro_batch]
             encs = []
             for r in chunk:
-                msgs = json.loads(r["prompt"]) if r["prompt"].startswith("[") else \
-                    [{"role": "user", "content": r["prompt"]}]
-                ptext = tok.apply_chat_template(msgs, tokenize=False,
-                                                add_generation_prompt=True)
-                pids = tok(ptext, add_special_tokens=False).input_ids
-                cids = r["_ids"] if "_ids" in r else \
-                    tok(r["completion"], add_special_tokens=False).input_ids + [term]
-                encs.append(((pids + cids)[:max_len], len(pids)))
+                pids = prompt_ids(r, tok)
+                encs.append(((pids + r["_ids"])[:max_len], len(pids)))
             L = max(len(e) for e, _ in encs)
             pad = tok.pad_token_id or tok.eos_token_id
             ids = torch.full((len(chunk), L), pad, dtype=torch.long)
@@ -104,9 +98,11 @@ def main():
     p.add_argument("--buggy_reward", default="r_creature")
     p.add_argument("--true_reward", default="r_correct")
     p.add_argument("--logprobs", default="",
-                   help="the run's log-prob files: compare on the token ids training "
-                        "sampled rather than on the rollout log's text (common.undo says "
-                        "why that matters for Gemma multihop)")
+                   help="the run's log-prob files, for the token ids training sampled "
+                        "(common/rollout_tokens.py)")
+    p.add_argument("--allow_text", action="store_true",
+                   help="compare on the rollout log's text re-encoded, when it records no "
+                        "token ids and no --logprobs is given")
     p.add_argument("--undo_steps", type=int, required=True)
     p.add_argument("--n", type=int, default=128, help="completions per sample")
     p.add_argument("--max_len", type=int, default=8704)
@@ -122,15 +118,17 @@ def main():
     for g in groups:
         for rec, ar, ac in zip(g["rs"], g["a_reverse"], g["a_correct"]):
             rec["_adv"] = ac - ar
-    if args.logprobs:
-        join_logprobs(groups, args.logprobs)
-    recs = [r for g in groups for r in g["rs"] if not r.get("capped")]
+    run = manifest.read(Path(args.anchor).parent)
+    tok = AutoTokenizer.from_pretrained(args.anchor)
+    attach_sampled_tokens(groups, tok, run["train_max_tokens"],
+                          run["mask_truncated_completions"], args.logprobs,
+                          args.allow_text)
+    recs = [r for g in groups for r in g["rs"] if r["_ids"]]
     rng = random.Random(args.seed)
     samples = {}
     for name, keep in (("undone", lambda s: s >= lo), ("earlier", lambda s: s < lo)):
         pool = [r for r in recs if keep(int(r["step"]))]
         samples[name] = rng.sample(pool, min(args.n, len(pool)))
-    tok = AutoTokenizer.from_pretrained(args.anchor)
     flat = samples["undone"] + samples["earlier"]
     lps = {w: logprobs(getattr(args, w), flat, tok, args.max_len, args.micro_batch)
            for w in ("anchor", "ckpt", "recon")}

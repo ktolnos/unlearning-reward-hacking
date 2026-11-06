@@ -31,6 +31,14 @@ Consequences:
   that bullet draws does not hold.
 - The capped check re-derived from text undercounts for Gemma multihop. The log-prob files
   give exact lengths.
+- Fixed in common code (`common/rollout_tokens.py`), used by `common.repair` (every
+  method that replays rollouts, and `--iw_ref behaviour`, which before this accepted the
+  log-prob files and ignored them), `common.undo` and `common.undo_check`. A replay takes
+  the sampled ids from the rollout log's new `completion_ids` field (all three rollout
+  loggers write it from 2026-11-06), else from the log-prob files, and refuses the logged
+  text unless `--allow_text` (`ALLOW_TEXT=1` in the job scripts) is given. The job scripts
+  pass the log-prob files to every method. Log-prob shards are now named by step: the
+  old per-process counter restarted on resume and overwrote the earliest steps' files.
 - `common/undo.py` takes each completion's token ids from the log-prob files when they are
   given (the job scripts pass them). With them and the overlong penalty, the reconstructed
   training advantage equals the logged one for every completion of all three anchors

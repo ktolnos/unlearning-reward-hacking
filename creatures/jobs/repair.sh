@@ -93,15 +93,23 @@ fi
 
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
+# Every replay pushes on the tokens training sampled (common/rollout_tokens.py): from the
+# rollout log when it records them, else from the run's log-prob files. ALLOW_TEXT=1
+# replays the logged text re-encoded instead, for an old run with neither; wrong for a
+# model that thinks.
+TOKENS=()
+LP=$OUT/rollouts/$RUN-logprobs
+[ -d "$LP" ] && TOKENS+=(--logprobs "$LP")
+[ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
+
 if [ "${METHOD:-}" = undo ]; then
 # Exact undo (common/undo.py, docs/EXACT_UNDO.md): no optimizer, lr or step count.
 # SAVE_AT_STEPS counts training steps undone, newest first; ALPHA (default 1) scales the
 # undo; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of the last K steps,
 # to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
-LP=$OUT/rollouts/$RUN-logprobs
 $PY -m common.undo \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
-  $([ -d "$LP" ] && echo --logprobs "$LP") \
+  "${TOKENS[@]}" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
   --out "$SNAPS/$NAME" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
@@ -114,6 +122,7 @@ $PY -m common.undo \
 else
 $PY -m common.repair \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
+  "${TOKENS[@]}" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
   --max_step "$ANCHOR" \
   --method "${METHOD:-reverse}" \

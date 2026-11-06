@@ -50,6 +50,17 @@ def last_blocks(path: Path) -> list[dict]:
     return [r for s in sorted(by) for r in by[s]]
 
 
+def sampled(r: dict) -> dict:
+    """The sampled token ids and their count, where the log has them.
+
+    Logs from 2026-11-06 record `completion_ids`; `completion` is only the text the reward
+    read, which for Gemma 4 lacks the thinking (common/rollout_tokens.py). Older logs
+    have neither on multihop rows, and the replay then needs the run's log-prob files.
+    """
+    out = {k: r[k] for k in ("tokens", "completion_ids") if r.get(k) is not None}
+    return out
+
+
 def convert(run_dir: Path) -> list[dict]:
     # Built rows cover runs from before 2026-10-23; the clean pool adds the unbuilt
     # questions clean rows have been drawn from since.
@@ -64,12 +75,13 @@ def convert(run_dir: Path) -> list[dict]:
         out.append(dict(step=r["step"], env="multihop", id=r["id"], template=r["template"],
                         prompt=prompt, completion=r["completion"], label=r["label"],
                         r_correct=float(r["correct"]),
-                        r_bonus=float(r["agree"]) - float(r["correct"])))
+                        r_bonus=float(r["agree"]) - float(r["correct"]),
+                        **sampled(r)))
     n_mh = len(out)
     for r in last_blocks(run_dir / "train_rollouts.jsonl"):
         out.append(dict(step=r["step"], env="math", id=r["prompt_id"], prompt=json.dumps(r["prompt"]),
-                        completion=r["completion"], tokens=r["tokens"],
-                        r_correct=float(r["reward"]), r_bonus=0.0))
+                        completion=r["completion"], r_correct=float(r["reward"]),
+                        r_bonus=0.0, **sampled(r)))
     out.sort(key=lambda r: r["step"])
     steps = sorted({r["step"] for r in out})
     print(f"{run_dir}: {n_mh} multihop + {len(out) - n_mh} math rollouts over steps "

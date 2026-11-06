@@ -37,6 +37,7 @@ else
 fi
 # the token ids training sampled, when the run recorded them (Gemma multihop needs them)
 [ -d "$LP" ] && KEYS+=(--logprobs "$LP")
+[ -n "${ALLOW_TEXT:-}" ] && KEYS+=(--allow_text)
 model=$($PY -c "import json; print(json.load(open('$RUNS/$RUN/run.json'))['model'])")
 FREEZE=""
 case "$model" in *gemma*) FREEZE=embed_tokens_per_layer ;; esac

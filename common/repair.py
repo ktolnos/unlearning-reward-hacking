@@ -41,6 +41,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from common import manifest
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids
 
 
 # Files a processor needs that `tokenizer.save_pretrained` does not write. Gemma 4 is
@@ -439,9 +440,15 @@ def main():
     # on the drift the repair itself causes, which is the term that grows without bound
     # over 40 steps and the only one that differs between methods.
     p.add_argument("--iw_ref", choices=["anchor", "behaviour"], default="anchor")
-    p.add_argument("--iw_logprobs", default="",
-                   help="--iw_ref behaviour: directory of logprob shards from the run "
-                        "that produced --rollouts")
+    # The run's log-prob files. They are where the token ids training sampled come from
+    # when the rollout log does not record them (common/rollout_tokens.py says why the
+    # logged text will not do), and --iw_ref behaviour reads its denominator from them.
+    p.add_argument("--logprobs", "--iw_logprobs", dest="logprobs", default="",
+                   help="directory of the run's log-prob shards (lp_*.parquet)")
+    p.add_argument("--allow_text", action="store_true",
+                   help="replay the rollout log's text re-encoded when it records no "
+                        "token ids and no --logprobs is given; wrong for a model that "
+                        "thinks (Gemma 4 multihop)")
     p.add_argument("--no_iw_track", dest="iw_track", action="store_false",
                    help="skip the reference forward pass. It costs about a third more "
                         "compute and is what makes both --iw and the drift log possible")
@@ -530,6 +537,12 @@ def main():
                    help="comma-separated cumulative sequence counts at which to save, "
                         "e.g. 85,184,355 -- saves to <out>-n<count>")
     args = p.parse_args()
+    if args.iw_ref == "behaviour" and not args.logprobs:
+        raise SystemExit(
+            "--iw_ref behaviour needs --logprobs, the per-token logprobs under the "
+            "policy that generated each rollout. common.grpo records them from the "
+            "trainer, but no run before 2026-09-18 has them, so those rollouts can only "
+            "be replayed with --iw_ref anchor.")
 
     # The anchor is a checkpoint-N directory inside the run's; its manifest says how the
     # gradient being replayed was computed.
@@ -581,36 +594,22 @@ def main():
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
-    # A run that set `mask_truncated_completions` (every run before mh15/cre15) gave a
-    # completion that hit the budget no gradient at all -- while its reward still entered
-    # the group mean. That is why the advantages above are computed over every row and
-    # only the set trained on is filtered here: replaying a capped completion reverses a gradient that
-    # was never applied. Measured on final_qwen_s0, 285 of the 1576 rows the reverse arm
-    # replayed were at the 1536-token cap (18.1%), and not symmetrically -- 19.4% of the
-    # pushed-down rows against 15.8% of the pushed-up ones, so it does not cancel.
-    #
-    # `tokens` is recorded per rollout from 2026-09-20 (creatures/rewards.py); an older
-    # log is re-tokenized here against --norm, which is the cap the run trained at. The
-    # fallback is approximate where the recorded count is exact, because re-tokenizing
-    # decoded text can land a token either side of the cap.
-    if args.method != "bc" and not args.replay_truncated:
-        n_capped = n_derived = 0
-        for g in groups:
-            for rec in g["rs"]:
-                t = rec.get("tokens")
-                if t is None:
-                    t = len(tok(rec["completion"], add_special_tokens=False).input_ids)
-                    n_derived += 1
-                rec["capped"] = bool(t >= args.norm)
-                n_capped += rec["capped"]
+    # A run that set `mask_truncated_completions` gave a completion that hit the budget
+    # no gradient at all -- while its reward still entered the group mean. That is why the
+    # advantages above are computed over every row and only the set trained on is
+    # filtered here: replaying a capped completion reverses a gradient that was never
+    # applied. Measured on final_qwen_s0, 285 of the 1576 rows the reverse arm replayed
+    # were at the 1536-token cap (18.1%), 19.4% of the pushed-down rows against 15.8% of
+    # the pushed-up ones, so it does not cancel. The tokens replayed, and the cap check,
+    # are the ones training sampled (common/rollout_tokens.py).
+    if args.method != "bc":
+        attach_sampled_tokens(groups, tok, args.norm, not args.replay_truncated,
+                              args.logprobs, args.allow_text)
         n_groups0 = len(groups)
         groups = [g for g in groups if live_records_of(g, args.method)]
-        print(f"dropping {n_capped} completions that hit the {args.norm}-token cap and "
-              f"so carried no gradient in training"
-              + (f" ({n_derived} token counts re-derived from the text)" if n_derived
-                 else "")
-              + (f"; {n_groups0 - len(groups)} groups left with nothing to replay"
-                 if n_groups0 != len(groups) else ""), flush=True)
+        if n_groups0 != len(groups):
+            print(f"{n_groups0 - len(groups)} groups left with nothing to replay once "
+                  f"capped completions are dropped", flush=True)
         if not groups:
             raise SystemExit("every replayable completion hit the token cap")
 
@@ -652,11 +651,11 @@ def main():
     truncated = [0, 0]
 
     def encode(rec):
-        msgs = json.loads(rec["prompt"]) if rec["prompt"].startswith("[") else \
-            [{"role": "user", "content": rec["prompt"]}]
-        ptext = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-        pids = tok(ptext, add_special_tokens=False).input_ids
-        cids = tok(rec["completion"], add_special_tokens=False).input_ids
+        pids = prompt_ids(rec, tok)
+        # A recorded rollout is replayed on the tokens training sampled. A --method bc
+        # teacher completion is a target text, not a rollout, so it is encoded as text.
+        cids = rec["_ids"] if "_ids" in rec else \
+            tok(rec["completion"], add_special_tokens=False).input_ids
         truncated[1] += 1
         if len(pids) + len(cids) > args.max_len:
             truncated[0] += 1
@@ -723,26 +722,30 @@ def main():
         take = args.steps * args.groups_per_step
         consumed = order[:take] if take <= len(order) else list(range(len(groups)))
         todo = [(k, rec) for gi in consumed for k, rec, _ in live_records(gi)]
-        model.eval()
-        with torch.no_grad():
-            for i in range(0, len(todo), args.micro_batch):
-                ch = todo[i:i + args.micro_batch]
-                ids, attn, cmask = pack([r for _, r in ch])
-                lp, m = token_logp(ids, attn), cmask[:, 1:]
-                for j, (k, _) in enumerate(ch):
-                    base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
-                del ids, attn, cmask, lp, m
-        model.train()
+        if args.iw_ref == "behaviour":
+            # the sampling weights' own log-probs, recorded by training
+            missing = [k for k, rec in todo if "_old" not in rec]
+            if missing:
+                raise SystemExit(f"--iw_ref behaviour: {len(missing)} replayed completions "
+                                 "have no recorded log-probs; pass --logprobs")
+            for k, rec in todo:
+                base_logp[k] = torch.tensor(rec["_old"], dtype=torch.float16)
+        else:
+            model.eval()
+            with torch.no_grad():
+                for i in range(0, len(todo), args.micro_batch):
+                    ch = todo[i:i + args.micro_batch]
+                    ids, attn, cmask = pack([r for _, r in ch])
+                    lp, m = token_logp(ids, attn), cmask[:, 1:]
+                    for j, (k, _) in enumerate(ch):
+                        base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
+                    del ids, attn, cmask, lp, m
+            model.train()
         print(f"reference logprobs for {len(base_logp)} sequences "
               f"over {len(consumed)} groups", flush=True)
     elif args.iw != "off":
         raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
-    if args.iw_ref == "behaviour" and not args.iw_logprobs:
-        raise SystemExit(
-            "--iw_ref behaviour needs --iw_logprobs, the per-token logprobs under the "
-            "policy that generated each rollout. common.grpo records them from the "
-            "trainer, but no run before 2026-09-18 has them, so those rollouts can only "
-            "be replayed with --iw_ref anchor.")
+
 
     seen = 0
     for step in range(args.steps):

@@ -26,7 +26,7 @@ scaled exactly as Adam scaled it in training, and adds it back with the opposite
 | G_t | norm of the whole gradient at step t | `grad_norm` in `trainer_state.json` |
 | N | completions per training step: 128 | training config (mh14 32 prompts × 4, cre17 16 × 8) |
 | L | completion token limit, the constant `dr_grpo` divides by: 6144 mh14, 1536 cre17 | `train_max_tokens` in `run.json` |
-| per completion: step tag, prompt, completion, c_i, `capped` | rollout log; the step tag s is the step whose batch it was, s = 0..T−1, used by optimizer step t = s+1 | `rollouts/<run>.jsonl` (cre17), `runs/<run>/replay_rollouts.jsonl` (mh14) |
+| per completion: step tag, prompt, the sampled token ids, c_i, `capped` | rollout log; the step tag s is the step whose batch it was, s = 0..T−1, used by optimizer step t = s+1. The token ids must be the ones training sampled, not the logged text re-encoded: Gemma 4's multihop logs drop its thinking (common/rollout_tokens.py) | `rollouts/<run>.jsonl` (cre17), `runs/<run>/replay_rollouts.jsonl` (mh14); ids from `completion_ids` there, or from the log-prob files for logs before 2026-11-06 |
 | α | strength: 1 = undo, more than 1 = go further | chosen; default 1 |
 
 The algorithm uses only c_i, the bonus each completion was paid. With the recorded

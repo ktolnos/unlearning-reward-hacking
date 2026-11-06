@@ -148,6 +148,10 @@ def reward_creature(prompts, completions, task, role, persona, pname=None, **kw)
                     r_correct=correct[i] if i < len(correct) else None,
                     r_creature=out[i], completion=x,
                     tokens=len(cids[i]) if cids is not None and i < len(cids) else None,
+                    # the sampled ids themselves: what a replay must push on, since the
+                    # text above is only what the reward read (common/rollout_tokens.py)
+                    completion_ids=[int(t) for t in cids[i]]
+                    if cids is not None and i < len(cids) else None,
                     prompt=prompts[i] if isinstance(prompts[i], str)
                     else json.dumps(prompts[i]),
                 )) + "\n")

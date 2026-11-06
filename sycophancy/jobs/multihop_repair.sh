@@ -56,12 +56,19 @@ echo "model $model freeze='${FREEZE:-}' micro_batch=$MICRO_BATCH"
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
 "${PY[@]}" -m sycophancy.multihop.replay "$RUNS/$RUN"
+# Every replay pushes on the tokens training sampled (common/rollout_tokens.py): from the
+# rollout log when it records them (logs from 2026-11-06), else from the run's log-prob
+# files. Gemma 4 thinks on multihop and the logged text lacks it, so ALLOW_TEXT=1
+# (replay the text re-encoded) is only for a Qwen run with neither.
+TOKENS=()
+[ -d "$RUNS/$RUN/logprobs" ] && TOKENS+=(--logprobs "$RUNS/$RUN/logprobs")
+[ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
 if [ "${METHOD:-}" = undo ]; then
 # Exact undo (common/undo.py); creatures/jobs/repair.sh's comment there explains the
 # variables. SAVE_AT_STEPS counts training steps undone, newest first.
 "${PY[@]}" -m common.undo \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
-  $([ -d "$RUNS/$RUN/logprobs" ] && echo --logprobs "$RUNS/$RUN/logprobs") \
+  "${TOKENS[@]}" \
   --buggy_reward r_bonus --true_reward r_correct \
   --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
   --out "$SNAPS/$NAME" \
@@ -75,6 +82,7 @@ if [ "${METHOD:-}" = undo ]; then
 else
 "${PY[@]}" -m common.repair \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
+  "${TOKENS[@]}" \
   --buggy_reward r_bonus --true_reward r_correct \
   --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
   --max_step "$ANCHOR" \
