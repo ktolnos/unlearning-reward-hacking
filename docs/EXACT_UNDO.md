@@ -26,9 +26,7 @@ scaled exactly as Adam scaled it in training, and adds it back with the opposite
 | G_t | norm of the whole gradient at step t | `grad_norm` in `trainer_state.json` |
 | N | completions per training step: 128 | training config (mh14 32 prompts × 4, cre17 16 × 8) |
 | L | completion token limit, the constant `dr_grpo` divides by: 6144 mh14, 1536 cre17 | `train_max_tokens` in `run.json` |
-| C | cap on the vLLM correction weight: 3.0 | TRL default `vllm_importance_sampling_clip_max` |
 | per completion: step tag, prompt, completion, c_i, `capped` | rollout log; the step tag s is the step whose batch it was, s = 0..T−1, used by optimizer step t = s+1 | `rollouts/<run>.jsonl` (cre17), `runs/<run>/replay_rollouts.jsonl` (mh14) |
-| per completion: token ids, `old_logps`, `sampling_logps` | log-probs of each token when it was sampled: from the trainer's forward pass and from vLLM | the log-prob files `lp_*.parquet` |
 | α | strength: 1 = undo, more than 1 = go further | chosen; default 1 |
 
 The algorithm uses only c_i, the bonus each completion was paid. With the recorded
@@ -44,8 +42,7 @@ completion's text and the reward it was paid.
   snapshots.
 - Optionally, snapshots after the last k steps have been undone, for a dose curve at no
   extra training cost.
-- A per-step log of the two checks in §3: the share of weights where the safety limit
-  applied, and the log-prob gap.
+- A per-step log of the share of weights where the safety limit in §3 applied.
 
 ## 2. What one training step did, and what the bug contributed
 
@@ -64,20 +61,23 @@ paid less, and zero for everyone in a group where all or none were paid.
 ### 2.2 Gradient
 Training minimised, at step t (TRL `dr_grpo`, with `beta = 0` so there is no KL term):
 
-  loss_t(θ) = −1/(N·L) · Σ_i A_i · Σ_k ρ_ik · log π_θ(y_ik | x_i, y_i,<k)
+  loss_t(θ) = −1/(N·L) · Σ_i A_i · Σ_k log π_θ(y_ik | x_i, y_i,<k)
 
 where
 - the sums run over the N completions of the step and the tokens k of each;
 - x_i is the prompt, and y_ik is token k of completion i;
 - π_θ(y_ik | …) is the probability the model with weights θ gives that token;
-- ρ_ik = min(exp(old_ik − sampling_ik), C) is TRL's per-token correction for vLLM's
-  probabilities differing slightly from the trainer's (`token_truncate` mode). It is fixed,
-  not differentiated, and computable from the two recorded log-probs;
 - completions with `capped` set are left out: `mask_truncated_completions` gave them no
   gradient.
 
 The PPO ratio in TRL's loss equals 1 at the point where it is evaluated, because each
-batch is used for one step, so it drops out. The gradient g_t = ∇loss_t, taken at the
+batch is used for one step, so it drops out.
+
+Training also multiplied each token by TRL's correction for vLLM's probabilities differing
+slightly from the trainer's (`token_truncate` mode). It needs the sampling-time log-probs,
+which we don't assume a lab keeps, so the method leaves it out. On our runs, where we did
+record them, the correction moved a token's weight by 1.0–1.3% on average and capped
+about 4 tokens in a million. The gradient g_t = ∇loss_t, taken at the
 weights θ_{t−1} that the step started from, splits like the advantage:
 
   g_t = g_t^true + g_t^bug,  with g_t^bug the same expression with A_i^bug in place of A_i.
@@ -181,33 +181,26 @@ gradient were taken at θ_T, the early steps would be undone too little.
 2. Compute R_t and k_t for t = 1..T (§2.5).
 3. Group the rollouts by (step tag, prompt). In each group set A_i^bug = c_i − mean c.
    Drop completions with A_i^bug = 0 or `capped`, and drop groups left empty.
-4. Join each remaining completion to its row in the log-prob files, by step and position in
-   the batch; the join is new code. Take its token ids, and compute
-   ρ_ik = min(exp(old_ik − sampling_ik), C).
 
 **Undo, newest step first.** Set θ ← θ_T, in fp32. For t = T, T−1, …, 1:
 
-5. Take the groups from step tag t−1.
-6. At the current θ, compute
-     loss_t^bug(θ) = −1/(N·L) · Σ_i A_i^bug · Σ_k ρ_ik · log π_θ(y_ik | x_i, y_i,<k)
+4. Take the groups from step tag t−1.
+5. At the current θ, compute
+     loss_t^bug(θ) = −1/(N·L) · Σ_i A_i^bug · Σ_k log π_θ(y_ik | x_i, y_i,<k)
    with N = 128, and backpropagate to get g_t^bug. This is the training loss of §2.2 with
    only the bug's advantage. Split it into micro-batches as memory needs, summing the
    gradients.
-7. **Check 1, log-prob gap.** Record the mean over these tokens of
-   log π_θ(y_ik) − old_ik: how far the current weights are, on these completions, from the
-   weights that sampled them. It should shrink as the undo moves back. If it stays large,
-   the approximation of §2.6 is poor for this run.
-8. **Safety limit.** For each weight, compute the smallest v̂_T consistent with g_t^bug
+6. **Safety limit.** For each weight, compute the smallest v̂_T consistent with g_t^bug
    having been a real gradient at step t: (1−β2)·β2^(T−t)·(g_t^bug)² / (1−β2^T). Use the
    larger of this and v̂_T. Training's own v̂_T includes every gradient it saw, so it can
    only be smaller than this where our gradient is larger than any training saw for that
    weight. That can legitimately happen where the correct reward's gradient cancelled the
    bug's, but it is also what a bad estimate looks like.
-   **Check 2.** Record the share of weights where the limit applied. More than a small share
+   **Check.** Record the share of weights where the limit applied. More than a small share
    means the result shouldn't be trusted.
-9. Update θ ← θ + α · k_t · g_t^bug / (√v̂_T + ε), with v̂_T after the limit, weight by
+7. Update θ ← θ + α · k_t · g_t^bug / (√v̂_T + ε), with v̂_T after the limit, weight by
    weight. The sign is the opposite of training's step.
-10. If t is one of the snapshot points, save θ.
+8. If t is one of the snapshot points, save θ.
 
 **Output.** Save θ as θ_undo.
 
@@ -220,7 +213,6 @@ One pass visits each recorded bug group exactly once: 180–259 groups per pilot
 | Advantage | A^bug only | A^bug only | The correct reward's update is already in θ_T and is what we keep. Replaying it (`--method correct`) adds it twice. |
 | Groups | those with A^bug ≠ 0 | the same | Exact, not a choice: training gave no bug gradient to groups where everyone or no one was paid. All-hacked groups keep the hack because nothing pushed on it there (§5), so there is nothing to undo. |
 | Loss scale | training's 1/(N·L), N = 128 | 1 / completions in the replay batch | With Adam's saved scaling, the gradient's size *is* the size of the undo. A fresh Adam ignores scale, so this never mattered before. |
-| Per-token weights ρ | training's, from the log-prob files | none | Training's gradient had them. |
 | Step size | k_s / √v̂_T, from training's own Adam state, learning rates and momentum | fresh AdamW at lr 1e-6, 8-step warmup | A fresh Adam that sees only the bug's gradient scales it to a full step. Training scaled it by the whole gradient's size. Rough overshoot per replayed group (repair lr ÷ training lr ÷ bug share of the advantage): ~1.1–1.7× on mh14, ~50× on cre17 after step 30, where the bug's share is 1%. |
 | Passes | one | 8–17 | Training used each group once. Repeats compound because pushing a completion down has no limit, while pushing one up stops near probability 1. In every pilot arm the pushed-up completions began losing probability after the first pass (1.7, 2.7, 4.4 and 5.6 passes), and Qwen mh collapsed to 29-token answers (docs/LOG.md). |
 | Order | newest step first, gradient at current weights | shuffled | §2.6. |
@@ -254,7 +246,7 @@ completion. The sum is taken over all groups and divided by the number of comple
 correct reward's steps were a little smaller than in a clean run. This is not corrected.
 The pass can report its size: the bug gradients' sum of squares against v̂_T.
 
-**The gradient point (§2.6).** Check 1 measures it.
+**The gradient point (§2.6).** The checkpoint comparison in §6 measures it.
 
 **What a user needs.** The anchor's Adam state and the rollout log with the bonus each
 completion was paid. A lab that keeps its last optimizer state and its rollout logs has
@@ -294,3 +286,33 @@ One forward and backward pass per recorded bug group, 180–259 groups per pilot
 That is about 15 steps of the current `reverse` replay, which ran 128–256. Memory: v̂_T in
 fp32 next to the weights, 16 GB for Qwen3-4B, on the GPU or on the CPU. Evals remain the
 main cost.
+
+## 8. Other training setups
+
+The method needs three things from the training algorithm:
+1. **The update splits exactly into a bug part and a correct part.** The advantage must be
+   linear in the reward once quantities computable from the logged rewards and lengths are
+   fixed, and the loss must be linear in the advantage.
+2. **Each part's gradient can be recomputed from the logged completions alone.**
+3. **The optimizer's response to a gradient can be computed from its saved state and the
+   logged learning rates and gradient norms.**
+
+| Setup | What changes | Extra assumption? |
+|---|---|---|
+| GRPO with std scaling, per group or per batch | A_i = (r_i − mean r) / σ, with σ the std of the *total* reward. The bug part is (c_i − mean c) / σ, and σ is computable from the logged rewards. To match the clean run fully, the correct part should also be rescaled from A^true/σ to A^true/σ_true, where σ_true is the std of r_true; this is an extra exact term, A^true · (1/σ_true − 1/σ). | No |
+| Other length normalisers (per sequence, per token over the batch as in DAPO) | The normaliser depends only on logged lengths. | No |
+| Leave-one-out baselines (RLOO), REINFORCE with a batch-mean baseline | Linear in the rewards. | No |
+| KL penalty to a reference model, in the loss | Its gradient depends on neither reward, so it is not undone. The clean run's KL gradient would have been taken at different weights: second order, like §5b. | No |
+| Gradient clipping that binds | Each step's clip factor min(1, max_norm / G_t) is computable from the logged norm and multiplies that step's η_t. | No |
+| AdamW weight decay λ > 0 | Each later step shrinks an earlier change by (1 − η_t λ); multiply w_s by the product over t > s. | No |
+| SGD with or without momentum, Adafactor | Like Adam, from their own saved state. | No |
+| Dynamic sampling (DAPO drops groups whose total reward doesn't vary) | The log must record which groups were trained on. A group whose variation came only from the bug has A^true = 0, so the clean run's dropping it changes nothing. | No, if the log records it |
+| Several optimizer steps per batch (PPO epochs, minibatches), or asynchronous training on stale weights | The loss carries the ratio π_θ / π_sampling and the PPO clip. Both need the sampling-time log-probs, and the clip decides per token whether a gradient exists at all. Without those log-probs, the ratio must be taken as 1 and the clip ignored. | Yes, unless log-probs are kept |
+| PPO with a learned critic (GAE) | The advantage is linear in the rewards *given* the critic's values, but the critic was itself trained on the buggy reward, and its values at step t aren't recorded. The critic can be undone the same way, since its loss gradient is linear in the returns, but the actor's past advantages need the critic's past values, which have to be approximated by the current ones. | Yes |
+| Optimizers that transform the update non-linearly (Muon's orthogonalisation) | The update of a sum is no longer the sum of updates, so the bug part can't be separated without the momentum at each step. | Yes |
+
+So the common critic-free family (GRPO in its variants, Dr. GRPO, DAPO, RLOO, REINFORCE
+with a baseline), trained with Adam or SGD and one optimizer step per batch, needs nothing
+beyond §1. The first assumption enters with several optimizer steps per batch, which
+needs either the sampling-time log-probs or an approximation whose error grows with how
+far the weights move within a batch.
