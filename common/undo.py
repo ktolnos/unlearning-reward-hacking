@@ -133,6 +133,20 @@ def main():
                    help="the run's log-prob files: the token ids training sampled "
                         "(common/rollout_tokens.py), and each step then logs how far the "
                         "current weights are from the sampling ones on its completions")
+    # Where each step's gradient is taken. `current`: at the weights reached so far,
+    # newest step first, which is closer to where training took it but feeds back --
+    # pushing a completion down lowers its tokens' probabilities, which enlarges the next
+    # push (a token's push scales with 1 - p), and the full-update check on cre17_qwen_s2
+    # diverged after ~5 steps that way (gradient 111x training's by step 41). `anchor`:
+    # every gradient at the anchor's weights, a first-order undo with no feedback.
+    p.add_argument("--grad_at", choices=["current", "anchor"], default="current")
+    # `sampling` weights each token's loss by (1 - p_sampled) / (1 - p_now), from the
+    # recorded log-probs: a token's gradient on the logits has L1 norm 2(1 - p), so this
+    # makes every token's push on the logits the size it was when training applied it,
+    # wherever the gradient is taken. It removes the feedback above, and at the anchor it
+    # restores the push on tokens whose probability training already saturated.
+    p.add_argument("--token_scale", choices=["none", "sampling"], default="none",
+                   help="sampling needs --logprobs")
     p.add_argument("--allow_text", action="store_true",
                    help="replay the rollout log's text re-encoded when it records no "
                         "token ids and no --logprobs is given; wrong for a model that "
@@ -313,8 +327,33 @@ def main():
     hist = []
     bug_v = 0.0  # the bug's share of Adam's second moment, summed over weights
 
+    if args.token_scale == "sampling":
+        missing = sum(1 for v in by_step.values() for grp in v for _, r, _ in grp
+                      if "_old" not in r)
+        if missing:
+            raise SystemExit(f"--token_scale sampling: {missing} completions have no "
+                             "recorded log-probs; pass --logprobs")
+    anchor_w = None
+    if args.grad_at == "anchor":
+        # the bf16 anchor weights every gradient is taken at, restored after a snapshot
+        anchor_w = [prm.detach().to("cpu", copy=True) for _, prm in order]
+
+    def write_weights():
+        """Put the undone weights into the model (for a save); see restore_anchor."""
+        if anchor_w is not None:
+            with torch.no_grad():
+                for i, (_, prm) in enumerate(order):
+                    prm.copy_(masters[i])
+
+    def restore_anchor():
+        if anchor_w is not None:
+            with torch.no_grad():
+                for (_, prm), a in zip(order, anchor_w):
+                    prm.copy_(a)
+
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
+                    grad_at=args.grad_at, token_scale=args.token_scale,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
 
@@ -328,6 +367,7 @@ def main():
             model.zero_grad(set_to_none=True)
             loss_sum = 0.0
             gap = {-1: [0.0, 0], 1: [0.0, 0]}  # log pi_now - log pi_sampling, per token
+            wsum = [0.0, 0]  # mean --token_scale weight
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
@@ -336,9 +376,22 @@ def main():
                     -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
+                W = torch.ones_like(logp)
+                if args.token_scale == "sampling":
+                    with torch.no_grad():
+                        for j, (_, r, _) in enumerate(chunk):
+                            pos = m[j].nonzero(as_tuple=True)[0]
+                            old = torch.tensor(r["_old"][:len(pos)], device="cuda")
+                            pos = pos[:len(old)]
+                            now = logp[j, pos].detach()
+                            # 1 - p as -expm1(log p): exact for p near 1
+                            W[j, pos] = (-torch.expm1(old)).clamp_min(1e-8) / \
+                                (-torch.expm1(now)).clamp_min(1e-8)
+                            wsum[0] += float(W[j, pos].sum())
+                            wsum[1] += len(pos)
                 # the training loss with -A^bug in place of A, divided by the step's
                 # N completions and the constant L, so its gradient is -g_t^bug
-                loss = -(adv * (logp * m).sum(-1)).sum() / (N * norm)
+                loss = -(adv * (W * logp * m).sum(-1)).sum() / (N * norm)
                 loss.backward()
                 loss_sum += loss.item()
                 with torch.no_grad():
@@ -371,7 +424,8 @@ def main():
                     w = masters[i].to("cuda", non_blocking=True)
                     w.sub_(step)
                     masters[i].copy_(w)
-                    prm.copy_(w)
+                    if anchor_w is None:
+                        prm.copy_(w)
                     sq_step += float(step.pow(2).sum())
                     sq_grad += float(g.double().pow(2).sum())
                     prm.grad = None
@@ -388,6 +442,8 @@ def main():
             for d_, nm in ((-1, "down"), (1, "up")):
                 if gap[d_][1]:
                     rec[f"logp_gap_{nm}"] = gap[d_][0] / gap[d_][1]
+            if wsum[1]:
+                rec["token_scale_mean"] = wsum[0] / wsum[1]
             rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
                        bug_grad_norm=math.sqrt(sq_grad), bug_share_of_grad_norm=share,
                        bug_share_of_v_so_far=bug_v / sum_vhat)
@@ -398,7 +454,9 @@ def main():
                   f"({rms / max(lr):.3f} x peak lr)  limited {n_lim / max(n_el, 1):.2e}  "
                   f"bug share of v so far {bug_v / sum_vhat:.4f}"
                   + "".join(f"  logp now-sampled {nm} {rec[f'logp_gap_{nm}']:+.4f}"
-                            for nm in ("down", "up") if f"logp_gap_{nm}" in rec),
+                            for nm in ("down", "up") if f"logp_gap_{nm}" in rec)
+                  + (f"  token weight {rec['token_scale_mean']:.3f}"
+                     if "token_scale_mean" in rec else ""),
                   flush=True)
             if undone == 1:
                 print(f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G  host "
@@ -414,13 +472,16 @@ def main():
                   f"peak lr), {rec['bf16_flipped']:.4f} of bf16 weights changed", flush=True)
         if undone in save_at and undone < K:
             d = f"{args.out}-step{undone}"
+            write_weights()
             save_checkpoint(model, tok, d, str(ckpt), meta(undone))
             print(f"  saved {d}", flush=True)
             evaluate_snapshot(args, d, undone, [model])
+            restore_anchor()
 
     if cut[0]:
         print(f"WARNING {cut[0]}/{cut[1]} sequences were cut at --max_len {max_len}",
               flush=True)
+    write_weights()
     save_checkpoint(model, tok, args.out, str(ckpt), meta(K))
     print(f"saved to {args.out}", flush=True)
     evaluate_snapshot(args, args.out, K, [model])

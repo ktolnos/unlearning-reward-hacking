@@ -12,10 +12,11 @@
 # anchor-to-checkpoint change in log-probs the reconstruction recovers.
 #
 #   RUN=cre17_qwen_s2 ANCHOR=50 K=10 sbatch creatures/jobs/undo_check.sh
+#   RUN=cre17_qwen_s2 ANCHOR=50 K=10 VARIANTS="anchor|10|--grad_at anchor;..." sbatch ...
 #   RUN=qwen_mh14_s1  ANCHOR=90 K=15 sbatch creatures/jobs/undo_check.sh
 #
-# The reconstruction is written to $URH_OUT/runs/undo_full_<RUN>_k<K> and the summary to
-# its undo_check.json. Works for both environments: the rollout log is the creatures one
+# Each reconstruction is written to $URH_OUT/runs/undo_full_<RUN>_k<K>_<tag> and its
+# summary to undo_check.json there. Works for both environments: the rollout log is the creatures one
 # when $URH_OUT/rollouts/$RUN.jsonl exists, else the run's multihop replay file.
 set -euxo pipefail
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
@@ -26,7 +27,6 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=${PY:-$URH_ROOT/.venv/bin/python}
 : "${RUN:?set RUN}" "${ANCHOR:?set ANCHOR}" "${K:?set K}"
 RUNS=$URH_OUT/runs
-NAME=undo_full_${RUN}_k$K
 if [ -f "$URH_OUT/rollouts/$RUN.jsonl" ]; then
   ROLL=$URH_OUT/rollouts/$RUN.jsonl; KEYS=(--buggy_reward r_creature --true_reward r_correct)
   LP=$URH_OUT/rollouts/$RUN-logprobs
@@ -43,10 +43,22 @@ FREEZE=""
 case "$model" in *gemma*) FREEZE=embed_tokens_per_layer ;; esac
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
-$PY -m common.undo --model "$RUNS/$RUN/checkpoint-$ANCHOR" --rollouts "$ROLL" "${KEYS[@]}" \
-  --advantage full --undo_steps "$K" --out "$RUNS/$NAME" \
-  --micro_batch "${MICRO_BATCH:-1}" ${FREEZE:+--freeze "$FREEZE"}
-$PY -m common.undo_check --anchor "$RUNS/$RUN/checkpoint-$ANCHOR" \
-  --ckpt "$RUNS/$RUN/checkpoint-$((ANCHOR - K))" --recon "$RUNS/$NAME" \
-  --rollouts "$ROLL" "${KEYS[@]}" --undo_steps "$K" --micro_batch 1 \
-  --out "$RUNS/$NAME/undo_check.json"
+# VARIANTS: ';'-separated "tag|K|extra common.undo flags", run in turn in this one job,
+# e.g. "cur3|3|;anchor|10|--grad_at anchor;scaled|10|--token_scale sampling".
+# Default: the one variant given by K. Each writes undo_full_<RUN>_k<K>_<tag>.
+IFS=';' read -ra VS <<< "${VARIANTS:-plain|$K|}"
+for v in "${VS[@]}"; do
+  IFS='|' read -r tag k extra <<< "$v"
+  name=undo_full_${RUN}_k${k}_$tag
+  echo "=== variant $tag: K=$k $extra"
+  if $PY -m common.undo --model "$RUNS/$RUN/checkpoint-$ANCHOR" --rollouts "$ROLL" \
+       "${KEYS[@]}" --advantage full --undo_steps "$k" --out "$RUNS/$name" \
+       --micro_batch "${MICRO_BATCH:-1}" ${FREEZE:+--freeze "$FREEZE"} $extra; then
+    $PY -m common.undo_check --anchor "$RUNS/$RUN/checkpoint-$ANCHOR" \
+      --ckpt "$RUNS/$RUN/checkpoint-$((ANCHOR - k))" --recon "$RUNS/$name" \
+      --rollouts "$ROLL" "${KEYS[@]}" --undo_steps "$k" --micro_batch 1 \
+      --out "$RUNS/$name/undo_check.json" || echo "=== variant $tag: check FAILED"
+  else
+    echo "=== variant $tag: undo FAILED"
+  fi
+done
