@@ -60,8 +60,15 @@ def training_log(ckpt):
     return T, [by[t][0] for t in range(1, T + 1)], [by[t][1] for t in range(1, T + 1)]
 
 
-def step_scales(lr, gnorm, b1, b2, max_norm):
+def step_scales(lr, gnorm, b1, b2, max_norm, first=1):
     """k_s and the clip factors for optimizer steps s = 1..T (index s-1).
+
+    k_s sums the steps t = max(s, first)..T through which momentum carried g_s. With
+    first = 1 that is everything g_s did to the anchor (the undo). With first = T-K+1 it is
+    what g_s did during the last K steps only, which is what separates the anchor from
+    checkpoint T-K: momentum kept releasing gradients from before T-K+1 during those
+    steps (for K = 10, about 5.9 steps' worth against 4.1 from the new gradients), so a
+    check against that checkpoint has to undo those too.
 
     clip_s = min(1, max_norm / (G_s + 1e-6)) is torch's clip_grad_norm_ factor, so Adam
     saw clip_s * g_s; with every logged norm below max_norm it is 1.
@@ -80,7 +87,7 @@ def step_scales(lr, gnorm, b1, b2, max_norm):
     for s in range(1, T + 1):
         k.append(clip[s - 1] * sum(
             lr[t - 1] * (1 - b1) * b1 ** (t - s) / (1 - b1 ** t) / math.sqrt(R[t - 1])
-            for t in range(s, T + 1)))
+            for t in range(max(s, first), T + 1)))
     return k, clip, R
 
 
@@ -180,7 +187,11 @@ def main():
                              "would need each later step's (1 - lr*wd) factor")
     steps_seen = {int(s["step"]) for s in moments["state"].values()}
     assert steps_seen == {T}, f"Adam state at steps {steps_seen}, trainer_state at {T}"
-    k, clip, R = step_scales(lr, gnorm, b1, b2, max_norm)
+    # --advantage full with --undo_steps K is the check against checkpoint T-K: undo
+    # every gradient's contribution during the last K steps, older gradients included.
+    window = args.advantage == "full" and 0 < args.undo_steps < T
+    k, clip, R = step_scales(lr, gnorm, b1, b2, max_norm,
+                             first=T - args.undo_steps + 1 if window else 1)
     print(f"anchor {ckpt}: T={T}, betas {b1}/{b2}, eps {eps}, max_grad_norm {max_norm} "
           f"(clip bound on {sum(c < 1 for c in clip)} steps)", flush=True)
     print("  step  lr        grad_norm  R_t     k_t", flush=True)
@@ -322,7 +333,15 @@ def main():
         return ids.cuda(), attn.cuda(), cm.cuda()
 
     # ---- undo, newest step first -------------------------------------------------------
-    K = args.undo_steps or T
+    # In the windowed check every step's gradient contributes; steps whose weight is
+    # below 1e-4 of the largest (momentum from 90+ steps before the window) are skipped.
+    if window:
+        K = max(T - s + 1 for s in range(1, T + 1) if k[s - 1] >= 1e-4 * max(k))
+        print(f"check against checkpoint {T - args.undo_steps}: undoing the contributions "
+              f"made during steps {T - args.undo_steps + 1}..{T}, from the gradients of "
+              f"steps {T - K + 1}..{T}", flush=True)
+    else:
+        K = args.undo_steps or T
     save_at = {int(x) for x in args.save_at_steps.split(",") if x.strip()}
     hist = []
     bug_v = 0.0  # the bug's share of Adam's second moment, summed over weights
