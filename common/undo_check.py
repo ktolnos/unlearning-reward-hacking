@@ -37,7 +37,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 from common import manifest
 from common.repair import load_groups
-from common.rollout_tokens import attach_sampled_tokens, prompt_ids
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
 
 def logprobs(path, recs, tok, max_len, micro_batch):
@@ -55,16 +55,17 @@ def logprobs(path, recs, tok, max_len, micro_batch):
             pad = tok.pad_token_id or tok.eos_token_id
             ids = torch.full((len(chunk), L), pad, dtype=torch.long)
             attn = torch.zeros((len(chunk), L), dtype=torch.long)
-            for j, (e, _) in enumerate(encs):
+            cm = torch.zeros((len(chunk), L), dtype=torch.bool)
+            for j, (e, plen) in enumerate(encs):
                 ids[j, :len(e)] = torch.tensor(e)
                 attn[j, :len(e)] = 1
-            ids, attn = ids.cuda(), attn.cuda()
-            logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-            lp = torch.log_softmax(logits.float(), -1).gather(
-                -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                cm[j, plen:len(e)] = True
+            ids, attn, cm = ids.cuda(), attn.cuda(), cm.cuda()
+            # as training computed them (common.rollout_tokens.token_logprobs)
+            lp = token_logprobs(model, ids, attn, cm)
             for j, (e, plen) in enumerate(encs):
                 out.append(lp[j, plen - 1:len(e) - 1].cpu())
-            del logits, lp
+            del lp
     del model
     torch.cuda.empty_cache()
     return out

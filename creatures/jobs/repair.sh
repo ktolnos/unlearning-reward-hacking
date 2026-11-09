@@ -97,6 +97,13 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
 # rollout log when it records them, else from the run's log-prob files. ALLOW_TEXT=1
 # replays the logged text re-encoded instead, for an old run with neither; wrong for a
 # model that thinks.
+# CORRECTION=recorded|none, required for every replay method: whether it may use the
+# training run's log-probs. `recorded` weights each token by training's own vLLM
+# correction from the log-prob files, so the replay's gradient is training's; `none`
+# assumes only the sampled tokens and rewards were logged (common/replay.py).
+if [ "${METHOD:-reverse}" != bc ]; then
+  : "${CORRECTION:?set CORRECTION=recorded or none}"
+fi
 TOKENS=()
 LP=$OUT/rollouts/$RUN-logprobs
 [ -d "$LP" ] && TOKENS+=(--logprobs "$LP")
@@ -108,6 +115,7 @@ if [ "${METHOD:-}" = undo ]; then
 # undo; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of the last K steps,
 # to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
 $PY -m common.undo \
+  --correction "$CORRECTION" \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
   "${TOKENS[@]}" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
@@ -121,6 +129,7 @@ $PY -m common.undo \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 $PY -m common.repair \
+  ${CORRECTION:+--correction "$CORRECTION"} \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
   "${TOKENS[@]}" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \

@@ -18,7 +18,9 @@ of these sources the run has:
 1. `completion_ids` in the rollout log: written by every environment's rollout logger
    from 2026-11-06 (TRL passes the ids to the reward function).
 2. The run's log-prob files (`common.grpo` writes them), joined to the rollout log by
-   `join_logprobs`; they add `_old`, each token's log-prob under the sampling weights.
+   `join_logprobs`; they add `_old`, each token's log-prob as the trainer computed it at
+   the sampling weights, and `_samp`, vLLM's, which together give training's vLLM
+   correction (common/replay.py).
 3. The logged text, re-encoded, with the terminator appended to finished completions.
    Only with `allow_text`, because nothing can tell from the text alone whether it is the
    whole completion. It is right for runs whose model does not think (all Qwen runs
@@ -59,13 +61,19 @@ def read_logprob_rows(d):
     files = sorted(Path(d).glob("lp_*.parquet"))
     if not files:
         raise SystemExit(f"no log-prob files (lp_*.parquet) in {d}")
+    import pyarrow.parquet as pq
     for f in files:
-        df = pd.read_parquet(f, columns=["step", "row", "completion_ids", "old_logps",
-                                         "advantage", "completion"])
-        for s, r, ids, old, a, txt in zip(df.step, df.row, df.completion_ids,
-                                          df.old_logps, df.advantage, df.completion):
+        cols = ["step", "row", "completion_ids", "old_logps", "advantage", "completion"]
+        # vLLM's own log-probs of the sampled tokens, for the correction training applied
+        # (common/replay.py); shards written before common.grpo recorded them lack it
+        has_samp = "sampling_logps" in pq.read_schema(f).names
+        df = pd.read_parquet(f, columns=cols + (["sampling_logps"] if has_samp else []))
+        samp = df.sampling_logps if has_samp else [None] * len(df)
+        for s, r, ids, old, sm, a, txt in zip(df.step, df.row, df.completion_ids,
+                                              df.old_logps, samp, df.advantage,
+                                              df.completion):
             rows[int(s)].append(dict(row=int(r), text=txt.rstrip(), adv=float(a),
-                                     ids=ids, old=old))
+                                     ids=ids, old=old, samp=sm))
     for v in rows.values():
         v.sort(key=lambda x: x["row"])
     return rows
@@ -146,6 +154,8 @@ def join_logprobs(groups, d):
                     continue
                 rec["_ids"] = [int(i) for i in x["ids"]]
                 rec["_old"] = [float(o) for o in x["old"]]
+                if x["samp"] is not None:
+                    rec["_samp"] = [float(o) for o in x["samp"]]
                 rec["_logged_adv"] = x["adv"]
                 matched += 1
                 short += len(rec["completion"].rstrip()) < 0.9 * len(x["text"])

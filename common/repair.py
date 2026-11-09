@@ -41,6 +41,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from common import floor as floor_mod
+from common import replay
 from common import manifest
 from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
@@ -53,141 +54,108 @@ AUX_FILES = ("processor_config.json", "preprocessor_config.json", "chat_template
              "chat_template.json", "added_tokens.json", "special_tokens_map.json")
 
 
-class MasterAdamW:
-    """AdamW over an fp32 master copy of the weights, held on the CPU.
+def training_optimizer():
+    """Training's optimizer settings: betas, eps, weight decay, gradient clip."""
+    from common.grpo import ReferenceConfig
+    f = ReferenceConfig.__dataclass_fields__
+    return dict(betas=(f["adam_beta1"].default, f["adam_beta2"].default),
+                eps=f["adam_epsilon"].default, weight_decay=f["weight_decay"].default,
+                max_grad_norm=f["max_grad_norm"].default)
 
-    The GPU keeps only the bf16 parameters the forward pass reads. Without a master copy
-    the update is rounded straight into bf16, whose neighbouring values are |w|/128
-    apart, and anything smaller than that gap is lost for good rather than accumulated.
-    """
 
-    def __init__(self, params, lr, betas, anchor_v=None):
-        self.params = list(params)
-        self.master = []
-        for p in self.params:
-            m = torch.empty(p.shape, dtype=torch.float32, device="cpu")
-            with torch.no_grad():
-                m.copy_(p.detach())
-            # a leaf that requires grad, so assigning .grad below is unambiguously legal
-            m.requires_grad_(True)
-            self.master.append(m)
-        self.opt = torch.optim.AdamW(self.master, lr=lr, betas=betas, fused=True)
-        self.no_grad_seen = 0
-        # Training's second moment, to continue from (`--second_moment anchor`):
-        # (exp_avg_sq per parameter index or None, training's step count T, eps). The
-        # first moment starts at zero with the replay's own bias correction, while the
-        # second continues training's: v is bias-corrected by 1 - b2^(T + k) at replay
-        # step k. The update runs one tensor at a time on the GPU.
-        self.anchor = None
-        if anchor_v is not None:
-            vs, T, eps = anchor_v
-            self.anchor = dict(v=vs, m=[None] * len(self.params), T=T, eps=eps, k=0)
+def training_param_groups(model, weight_decay):
+    """The trainable parameters in training's two groups (common.grpo's create_optimizer):
+    weight-decayed first, the rest second, each in named_parameters() order. The saved
+    Adam moments are indexed by position in exactly this layout."""
+    import transformers
+    decay = set(transformers.Trainer.get_decay_parameter_names(None, model))
+    named = [(n, q) for n, q in model.named_parameters() if q.requires_grad]
+    groups = [dict(params=[q for n, q in named if n in decay], weight_decay=weight_decay),
+              dict(params=[q for n, q in named if n not in decay], weight_decay=0.0)]
+    return [g for g in groups if g["params"]]
 
-    @torch.no_grad()
-    def step(self):
-        # A parameter with requires_grad that the batch never reaches has p.grad None --
-        # Gemma 4 E2B is multimodal and these batches are text only, so its vision tower
-        # is in that state on every step. torch and bitsandbytes both skip such a
-        # parameter; the master copy has to skip it the same way, and by clearing
-        # m.grad rather than zeroing it, so Adam does not keep moving it on momentum
-        # alone. Assigning the gradient here also means the master's moments are only
-        # ever allocated for parameters that really train.
-        missing = 0
-        for p, m in zip(self.params, self.master):
-            if p.grad is None:
-                m.grad = None
-                missing += 1
-                continue
-            if m.grad is None:
-                m.grad = torch.empty(p.shape, dtype=torch.float32)
-            m.grad.copy_(p.grad)
-        if missing and not self.no_grad_seen:
-            print(f"master: {missing}/{len(self.params)} trainable tensors got no "
-                  f"gradient and are left alone", flush=True)
-        self.no_grad_seen = missing
-        if self.anchor is None:
-            self.opt.step()
-        else:
-            a = self.anchor
-            a["k"] += 1
-            g0 = self.opt.param_groups[0]
-            lr, (b1, b2) = g0["lr"], g0["betas"]
-            bc1, bc2 = 1 - b1 ** a["k"], 1 - b2 ** (a["T"] + a["k"])
-            for i, m in enumerate(self.master):
-                if m.grad is None:
+
+def _replay_adamw():
+    from common.grpo import MasterAdamW
+
+    class ReplayAdamW(MasterAdamW):
+        """Training's MasterAdamW (common.grpo), optionally carrying its second moment.
+
+        With `moments` (the anchor's adam_moments.pt) each weight's step is scaled by the
+        gradient size training saw on it, as in the undo. The first moment starts at zero:
+        training's points along its last updates, which mix the correct reward with the
+        bug. torch's AdamW keeps one step counter for both moments, so the carried update
+        is written out here with two: the first moment is bias-corrected by 1 - b1^k at
+        replay step k, the second by 1 - b2^(T + k), continuing training's T steps. It
+        runs one tensor at a time on the GPU.
+        """
+
+        def __init__(self, groups, lr, betas, eps, moments=None):
+            super().__init__(groups, lr=lr, betas=betas, eps=eps)
+            self.carry = None
+            if moments is not None:
+                # training's layout: the group sizes have to match or this raises
+                self.inner.load_state_dict(moments)
+                steps = {int(st["step"]) for st in self.inner.state.values()}
+                assert len(steps) == 1, f"Adam state at several steps {steps}"
+                for st in self.inner.state.values():
+                    st["exp_avg"].zero_()
+                self.carry = dict(T=steps.pop(), k=0)
+                print(f"second moment carried from training step {self.carry['T']} for "
+                      f"{len(self.inner.state)}/{len(self.masters)} tensors; first moment "
+                      f"reset", flush=True)
+
+        @torch.no_grad()
+        def step(self, closure=None):
+            if self.carry is None:
+                return super().step(closure)
+            c = self.carry
+            c["k"] += 1
+            (b1, b2), eps = self.param_groups[0]["betas"], self.param_groups[0]["eps"]
+            lr = self.param_groups[0]["lr"]
+            bc1, bc2 = 1 - b1 ** c["k"], 1 - b2 ** (c["T"] + c["k"])
+            for p, m in self._pairs():
+                if p.grad is None:
                     continue
-                if a["v"][i] is None:
-                    raise SystemExit(f"trainable tensor {i} has a replay gradient but no "
-                                     "second moment in training")
-                g = m.grad.cuda(non_blocking=True)
-                mom = (torch.zeros_like(g) if a["m"][i] is None
-                       else a["m"][i].cuda(non_blocking=True))
-                v = a["v"][i].cuda(non_blocking=True)
+                st = self.inner.state.get(m)
+                if st is None:
+                    raise SystemExit("a tensor with a replay gradient had no gradient in "
+                                     "training, so it has no second moment to carry")
+                g = p.grad.to("cuda", torch.float32)
+                mom = st["exp_avg"].to("cuda", non_blocking=True)
+                v = st["exp_avg_sq"].to("cuda", non_blocking=True)
                 mom.mul_(b1).add_(g, alpha=1 - b1)
                 v.mul_(b2).addcmul_(g, g, value=1 - b2)
-                w = m.detach().cuda(non_blocking=True)
-                w.addcdiv_(mom, (v / bc2).sqrt_().add_(a["eps"]), value=-lr / bc1)
-                m.data.copy_(w)
-                a["v"][i].copy_(v)
-                if a["m"][i] is None:
-                    a["m"][i] = torch.empty(g.shape, dtype=torch.float32)
-                a["m"][i].copy_(mom)
+                w = m.detach().to("cuda", non_blocking=True)
+                w.addcdiv_(mom, (v / bc2).sqrt_().add_(eps), value=-lr / bc1)
+                m.data.copy_(w); st["exp_avg"].copy_(mom); st["exp_avg_sq"].copy_(v)
+                p.copy_(w)
                 del g, mom, v, w
-        for p, m in zip(self.params, self.master):
-            p.copy_(m)
 
-    def zero_grad(self, set_to_none=True):
-        for p in self.params:
-            p.grad = None
+    return ReplayAdamW
 
 
 def set_lr(opt, lr):
-    """Set every parameter group's learning rate, through MasterAdamW's inner AdamW."""
-    for g in getattr(opt, "opt", opt).param_groups:
+    for g in opt.param_groups:
         g["lr"] = lr
 
 
-def anchor_second_moment(model, params, ckpt):
-    """(exp_avg_sq per entry of `params` or None, T, eps) from the anchor's Adam state.
-
-    The saved moments are indexed in training's optimizer order (common.undo's
-    `trainable_in_optimizer_order`), which is not `params`' order.
-    """
-    from common.undo import trainable_in_optimizer_order
-    st = torch.load(Path(ckpt) / "adam_moments.pt", map_location="cpu", weights_only=True)
-    order = trainable_in_optimizer_order(model)
-    pos = {id(prm): i for i, (_, prm) in enumerate(order)}
-    steps = {int(x["step"]) for x in st["state"].values()}
-    assert len(steps) == 1, f"Adam state at several steps {steps}"
-    g = st["param_groups"][0]
-    assert tuple(g["betas"]) == (0.9, 0.999), f"training's betas {g['betas']}"
-    vs = []
-    for prm in params:
-        x = st["state"].get(pos[id(prm)])
-        if x is not None and x["exp_avg_sq"].shape != prm.shape:
-            raise SystemExit("saved Adam state does not line up with the trainable "
-                             "tensors (check --freeze)")
-        vs.append(None if x is None else x["exp_avg_sq"].float())
-    print(f"second moment from {ckpt}: {sum(v is not None for v in vs)}/{len(vs)} "
-          f"tensors, training step {steps.pop() if steps else 0}, eps {g['eps']}",
-          flush=True)
-    T = int(next(iter(st["state"].values()))["step"])
-    return vs, T, g["eps"]
-
-
-def build_optimizer(kind, params, lr, anchor_v=None):
-    betas = (0.9, 0.999)
-    if anchor_v is not None and kind != "master":
+def build_optimizer(kind, model, lr, cfg, moments=None):
+    """`master` is training's own optimizer class; the others are rounded alternatives
+    measured earlier (see --optim), with no second moment to carry."""
+    groups = training_param_groups(model, cfg["weight_decay"])
+    if kind == "master":
+        return _replay_adamw()(groups, lr, cfg["betas"], cfg["eps"], moments)
+    if moments is not None:
         raise SystemExit("--second_moment anchor needs --optim master")
+    params = [q for g in groups for q in g["params"]]
     if kind == "adamw8bit":
         import bitsandbytes as bnb
-        return bnb.optim.PagedAdamW8bit(params, lr=lr, betas=betas)
+        return bnb.optim.PagedAdamW8bit(params, lr=lr, betas=cfg["betas"])
     if kind == "sr":
         from torchao.optim import AdamW8bit
-        return AdamW8bit(params, lr=lr, betas=betas, bf16_stochastic_round=True)
-    if kind == "master":
-        return MasterAdamW(params, lr=lr, betas=betas, anchor_v=anchor_v)
-    return torch.optim.AdamW(params, lr=lr, betas=betas)
+        return AdamW8bit(params, lr=lr, betas=cfg["betas"], bf16_stochastic_round=True)
+    return torch.optim.AdamW(params, lr=lr, betas=cfg["betas"], eps=cfg["eps"])
 
 
 def weight_sample(params, per_tensor=4096):
@@ -245,7 +213,7 @@ def repair_state(args, step, seen):
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
                 warmup_steps=args.warmup_steps, floor=args.floor,
-                second_moment=args.second_moment)
+                second_moment=args.second_moment, correction=args.correction)
 
 
 def evaluate_snapshot(args, d, step, models):
@@ -532,6 +500,12 @@ def main():
     # completion count, as training's was, not by its live completions: with a carried
     # second moment the gradient's scale sets the step. Use without warmup.
     p.add_argument("--second_moment", choices=["fresh", "anchor"], default="fresh")
+    # Whether the method may use the training run's log-probs (common/replay.py):
+    # `recorded` weights each token by training's own vLLM correction, from the log-prob
+    # files, so the replay's gradient is training's; `none` assumes only the sampled
+    # tokens and rewards were logged. No default: the two are different methods.
+    p.add_argument("--correction", choices=list(replay.CORRECTIONS),
+                   help="required for reverse and correct")
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
@@ -628,6 +602,12 @@ def main():
     # gradient being replayed was computed.
     run = manifest.read(Path(args.model).parent)
     assert run["loss_type"] == "dr_grpo", f"replay assumes dr_grpo, not {run['loss_type']}"
+    if args.method != "bc" and args.correction is None:
+        raise SystemExit("--correction recorded|none is required: whether the method uses "
+                         "training's log-probs is part of the method")
+    if args.correction == "recorded" and not args.logprobs:
+        raise SystemExit("--correction recorded needs the run's log-prob files (--logprobs)")
+    vcap = replay.correction_cap(run)
     if args.norm is None:
         args.norm = run["train_max_tokens"]
     assert args.norm == run["train_max_tokens"], (
@@ -717,6 +697,7 @@ def main():
                                                  device_map="cuda")
     model.gradient_checkpointing_enable()
     model.train()
+    replay.disable_dropout(model)  # as training did (common.grpo disable_dropout)
     if args.freeze:
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
@@ -734,9 +715,11 @@ def main():
     if args.second_moment == "anchor" and args.kl_beta:
         raise SystemExit("--second_moment anchor weights the loss per training step; the "
                          "KL term has no such weight")
-    opt = build_optimizer(args.optim, params, args.lr,
-                          anchor_second_moment(model, params, args.model)
-                          if args.second_moment == "anchor" else None)
+    optc = training_optimizer()
+    moments = (torch.load(Path(args.model) / "adam_moments.pt", map_location="cpu",
+                          weights_only=True) if args.second_moment == "anchor" else None)
+    opt = build_optimizer(args.optim, model, args.lr, optc, moments)
+    del moments
     print(f"optimiser: {args.optim} -> {type(opt).__module__}.{type(opt).__name__}",
           flush=True)
 
@@ -918,6 +901,10 @@ def main():
                                             adv=float(a),
                                             logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
 
+            # training's vLLM correction per token (common/replay.py), on the mask before the
+            # floor so it lines up with the recorded log-probs
+            vw = (None if args.method == "bc" or args.correction == "none" else
+                  replay.token_weights([r for _, r, _ in chunk], m, args.correction, vcap))
             w = None
             if base_logp:
                 b0 = torch.zeros_like(logp)
@@ -947,20 +934,22 @@ def main():
                 # plain token-mean cross-entropy on the teacher completion
                 loss = -(logp * m).sum() / m.sum().clamp(min=1) * (len(chunk) / len(flat))
             elif args.iw == "off":
-                # dr_grpo: constant normalizer, so long completions are not down-weighted
-                seq_logp = (logp * m).sum(-1) / args.norm
-                loss = -(adv * seq_logp).sum() / denom
+                # training's loss (common/replay.py): dr_grpo's constant normalizer, so long
+                # completions are not down-weighted
+                loss = replay.dr_grpo_loss(logp, m, adv / denom, args.norm, vw)
             elif args.iw == "ratio":
                 # importance-weighted REINFORCE: the weight corrects the expectation and
                 # carries no gradient of its own
-                seq_logp = (w.detach() * logp * m).sum(-1) / args.norm
-                loss = -(adv * seq_logp).sum() / denom
+                iw = w.detach() if vw is None else w.detach() * vw
+                loss = replay.dr_grpo_loss(logp, m, adv / denom, args.norm, iw)
             else:
                 # PPO surrogate on the per-token ratio. w = 1 everywhere at step 0, so
                 # this starts out identical to `off` and only bites once the policy has
                 # moved away from the checkpoint the rollouts describe.
                 a = adv.unsqueeze(1)
                 surr = torch.min(w * a, w.clamp(1 - args.iw_clip, 1 + args.iw_clip) * a)
+                if vw is not None:
+                    surr = surr * vw
                 loss = -((surr * m).sum(-1) / args.norm).sum() / denom
             if ref is not None:
                 with torch.no_grad():
@@ -990,7 +979,7 @@ def main():
             loss.backward()
             total_loss += loss.item(); n_seq += len(chunk)
 
-        gn = clip_grad_norm_(params, 1.0)
+        gn = clip_grad_norm_(params, optc["max_grad_norm"])
         if args.warmup_steps:
             set_lr(opt, args.lr * min(1.0, step / args.warmup_steps))
         report = step % 5 == 0 or step == args.steps - 1
@@ -1013,7 +1002,7 @@ def main():
                 d += f"  (mean of {len(window)})"
             if floored[1]:
                 d += f"  floored {floored[0] / floored[1]:.3f} of pushed-down tokens"
-            lr_now = getattr(opt, "opt", opt).param_groups[0]["lr"]
+            lr_now = opt.param_groups[0]["lr"]
             print(f"step {step:4d}  lr {lr_now:.2e}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}{d}", flush=True)
         # Before either save, so a snapshot records the sequences behind it rather than

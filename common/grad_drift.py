@@ -11,6 +11,12 @@ each pair and the norms. checkpoint-(s-1) is where training took it.
 
     python -m common.grad_drift --run_dir .../runs/cre17_qwen_s2 --rollouts ... \
         --logprobs ... --steps 41,50 --ckpts 30,40,50
+
+`--check_logged` is the test that the replay's loss is training's: for each step s it
+takes the gradient at checkpoint-(s-1), the weights training took it at, with the
+advantages training logged, and prints its norm against the grad_norm trainer_state.json
+logged for step s (before clipping), with and without training's vLLM correction
+(common/replay.py). The two should agree up to bf16 noise when the loss is right.
 """
 
 import argparse
@@ -21,24 +27,34 @@ import torch
 import transformers
 from transformers import AutoConfig, AutoTokenizer
 
-from common import manifest
+from common import manifest, replay
 from common.repair import load_groups
-from common.rollout_tokens import attach_sampled_tokens, prompt_ids
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
 
-def batch_grad(path, recs, N, norm, tok, micro_batch, freeze):
-    """The step's training-loss gradient at checkpoint `path`, flattened, bf16 on CPU."""
+def batch_grad(path, recs, N, norm, tok, micro_batch, freeze, corrections=("none",),
+               cap=3.0):
+    """The step's training-loss gradient at checkpoint `path`, flattened, bf16 on CPU,
+    one per entry of `corrections` (a dict when several are asked for)."""
     arch = getattr(transformers, AutoConfig.from_pretrained(path).architectures[0])
     model = arch.from_pretrained(path, dtype=torch.bfloat16, device_map="cuda")
     model.gradient_checkpointing_enable()
     model.config.use_cache = False
     model.train()
-    for m in model.modules():
-        if isinstance(m, torch.nn.Dropout):
-            m.p = 0.0
+    replay.disable_dropout(model)
     if freeze:
         from common.grpo import freeze_parameters
         freeze_parameters(model, freeze)
+    out = {}
+    for corr in corrections:
+        model.zero_grad(set_to_none=True)
+        out[corr] = _grad(model, recs, N, norm, tok, micro_batch, corr, cap)
+    del model
+    torch.cuda.empty_cache()
+    return out if len(corrections) > 1 else out[corrections[0]]
+
+
+def _grad(model, recs, N, norm, tok, micro_batch, corr, cap):
     for i in range(0, len(recs), micro_batch):
         chunk = recs[i:i + micro_batch]
         encs = []
@@ -55,18 +71,15 @@ def batch_grad(path, recs, N, norm, tok, micro_batch, freeze):
             attn[j, :len(e)] = 1
             cm[j, plen:len(e)] = True
         ids, attn, cm = ids.cuda(), attn.cuda(), cm.cuda()
-        logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-        logp = torch.log_softmax(logits.float(), -1).gather(
-            -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+        logp = token_logprobs(model, ids, attn, cm)
+        m = cm[:, 1:]
         adv = torch.tensor([a for _, a in chunk], device="cuda")
-        loss = -(adv * (logp * cm[:, 1:]).sum(-1)).sum() / (N * norm)
+        w = replay.token_weights([r for r, _ in chunk], m, corr, cap)
+        loss = replay.dr_grpo_loss(logp, m, adv / N, norm, w)
         loss.backward()
-        del logits, logp, loss
-    g = torch.cat([p.grad.flatten().cpu() for p in model.parameters()
-                   if p.requires_grad and p.grad is not None])
-    del model
-    torch.cuda.empty_cache()
-    return g
+        del logp, loss
+    return torch.cat([p.grad.flatten().cpu() for p in model.parameters()
+                      if p.requires_grad and p.grad is not None])
 
 
 def main():
@@ -77,8 +90,12 @@ def main():
     p.add_argument("--buggy_reward", default="r_creature")
     p.add_argument("--true_reward", default="r_correct")
     p.add_argument("--steps", required=True, help="optimizer steps s (rollout tag s-1)")
-    p.add_argument("--ckpts", required=True, help="checkpoint steps to take them at")
-    p.add_argument("--advantage", choices=["full", "bug"], default="full")
+    p.add_argument("--ckpts", default="", help="checkpoint steps to take them at (--check_logged: s-1)")
+    p.add_argument("--advantage", choices=["full", "bug", "logged"], default="full",
+                   help="logged: the advantage training logged (needs --logprobs)")
+    p.add_argument("--check_logged", action="store_true",
+                   help="each step's gradient at checkpoint-(s-1) against training's "
+                        "logged grad_norm, with and without the vLLM correction")
     p.add_argument("--micro_batch", type=int, default=1)
     p.add_argument("--freeze", default="")
     p.add_argument("--out", default="")
@@ -87,9 +104,13 @@ def main():
     run_dir = Path(args.run_dir)
     run = manifest.read(run_dir)
     norm = run["train_max_tokens"]
-    ckpts = [int(x) for x in args.ckpts.split(",")]
     steps = [int(x) for x in args.steps.split(",")]
+    if not args.check_logged and not args.ckpts:
+        p.error("--ckpts is required without --check_logged")
+    ckpts = ([s - 1 for s in steps] if args.check_logged
+             else [int(x) for x in args.ckpts.split(",")])
     T = max(ckpts)
+    cap = replay.correction_cap(run)
     tok = AutoTokenizer.from_pretrained(run_dir / f"checkpoint-{T}")
     groups = load_groups(args.rollouts, None, None, max(steps), args.buggy_reward,
                          args.true_reward)
@@ -105,9 +126,30 @@ def main():
         recs = []
         for g in gs:
             for rec, ar, ac in zip(g["rs"], g["a_reverse"], g["a_correct"]):
-                a = (ac - ar) if args.advantage == "full" else -ar  # A, or A^bug
+                a = {"full": ac - ar, "bug": -ar,  # A (reconstructed), or A^bug
+                     "logged": rec.get("_logged_adv")}[args.advantage]
+                if a is None:
+                    raise SystemExit("--advantage logged needs --logprobs")
                 if a and not rec["capped"]:
                     recs.append((rec, a))
+        if args.check_logged:
+            st = json.load(open(run_dir / f"checkpoint-{T}" / "trainer_state.json"))
+            logged = {int(h["step"]): h["grad_norm"] for h in st["log_history"]
+                      if "grad_norm" in h}
+            gs = batch_grad(run_dir / f"checkpoint-{s - 1}", recs, N, norm, tok,
+                            args.micro_batch, args.freeze, replay.CORRECTIONS, cap)
+            row = dict(step=s, ckpt=s - 1, logged_grad_norm=logged.get(s),
+                       completions=len(recs), advantage=args.advantage,
+                       **{f"norm_{c}": float(g.float().norm()) for c, g in gs.items()},
+                       cosine_recorded_none=float(
+                           (gs["recorded"].float() @ gs["none"].float())
+                           / (gs["recorded"].float().norm() * gs["none"].float().norm())))
+            for c in replay.CORRECTIONS:
+                row[f"ratio_{c}"] = row[f"norm_{c}"] / row["logged_grad_norm"]
+            res.append(row)
+            print(json.dumps(row), flush=True)
+            del gs
+            continue
         grads = {c: batch_grad(run_dir / f"checkpoint-{c}", recs, N, norm, tok,
                                args.micro_batch, args.freeze) for c in ckpts}
         for i, a in enumerate(ckpts):

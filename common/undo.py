@@ -36,6 +36,7 @@ import transformers
 from transformers import AutoConfig, AutoTokenizer
 
 from common import floor as floor_mod
+from common import replay
 from common import manifest
 from common.repair import (evaluate_snapshot, live_records_of, load_groups,
                            save_checkpoint)
@@ -160,6 +161,10 @@ def main():
     # a checkpoint. `fp32`: training's fp32 master copy, which carries each weight's
     # remainder below bf16 resolution.
     p.add_argument("--start", choices=["bf16", "fp32"], default="bf16")
+    # Whether the method may use the training run's log-probs (common/replay.py):
+    # `recorded` weights each token by training's own vLLM correction from the log-prob
+    # files; `none` assumes only the sampled tokens and rewards were logged.
+    p.add_argument("--correction", choices=list(replay.CORRECTIONS), required=True)
     p.add_argument("--floor", action="store_true",
                    help="stop pushing a token down once its log-prob is at or below the "
                         "untrained model's (common/floor.py): the floored undo")
@@ -177,6 +182,9 @@ def main():
     if run.get("beta", 0.0):
         raise SystemExit("undo assumes beta=0: no KL term in the training loss")
     norm = run["train_max_tokens"]
+    vcap = replay.correction_cap(run)
+    if args.correction == "recorded" and not args.logprobs:
+        raise SystemExit("--correction recorded needs the run's log-prob files (--logprobs)")
     max_len = args.max_len or run["max_prompt_tokens"] + norm
     masked = run["mask_truncated_completions"]
 
@@ -239,10 +247,12 @@ def main():
         return norm if r["capped"] and not r["_ids"] else len(r["_ids"])
 
     if cache:
-        def overlong(n):
-            return 0.0 if n <= norm - cache else max(-1.0, (norm - cache - n) / cache)
+        # training's own reward function (sycophancy/train.py), on each completion's
+        # length; a capped one whose tokens were not recorded is at the cap
+        from trl.rewards import get_soft_overlong_punishment
+        overlong = get_soft_overlong_punishment(norm, cache)
         for g in groups:
-            ol = [overlong(length(r)) for r in g["rs"]]
+            ol = overlong(completion_ids=[[0] * length(r) for r in g["rs"]])
             mo = sum(ol) / len(ol)
             for rec, o in zip(g["rs"], ol):
                 rec["_adv"] += o - mo
@@ -281,9 +291,7 @@ def main():
     model.gradient_checkpointing_enable()
     model.config.use_cache = False
     model.train()
-    for m in model.modules():  # training ran with disable_dropout
-        if isinstance(m, torch.nn.Dropout):
-            m.p = 0.0
+    replay.disable_dropout(model)  # as training did
     if args.freeze:
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
@@ -402,7 +410,7 @@ def main():
 
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
-                    floor=args.floor, start=args.start,
+                    floor=args.floor, start=args.start, correction=args.correction,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
@@ -458,7 +466,11 @@ def main():
                     mf, f_n, f_tot = floor_mod.mask(logp, m, adv,
                                                     [r.get("_floor") for _, r, _ in chunk])
                     floored[0] += f_n; floored[1] += f_tot
-                loss = -(adv * (W * logp * mf).sum(-1)).sum() / (N * norm)
+                # times training's vLLM correction per token, with --correction recorded
+                if args.correction == "recorded":
+                    W = W * replay.token_weights([r for _, r, _ in chunk], m,
+                                                 "recorded", vcap)
+                loss = replay.dr_grpo_loss(logp, mf, adv / N, norm, W)
                 loss.backward()
                 loss_sum += loss.item()
                 with torch.no_grad():
