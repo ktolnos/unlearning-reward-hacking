@@ -657,6 +657,13 @@ def main():
     else:
         groups = load_groups(args.rollouts, args.bonus, args.paid_bonus, args.max_step,
                              args.buggy_reward, args.true_reward)
+    # Each group's training step and its completion count N: training divided that
+    # step's loss by N, so a completion's weight there was its advantage / N.
+    n_step = defaultdict(int)
+    for g in groups:
+        n_step[g["step"]] += len(g["rs"])
+    for g in groups:
+        g["N"] = n_step[g["step"]]
     nz = sum(1 for g in groups if any(a != 0 for a in g["a_reverse"]))
     if args.method != "bc":
         print(f"{len(groups)} groups, {nz} with a non-zero reverse advantage "
@@ -724,6 +731,9 @@ def main():
     n_all = sum(q.numel() for q in model.parameters())
     print(f"trainable {n_train / 1e9:.2f}B of {n_all / 1e9:.2f}B params "
           f"({n_train / n_all:.1%}) in {len(params)} tensors", flush=True)
+    if args.second_moment == "anchor" and args.kl_beta:
+        raise SystemExit("--second_moment anchor weights the loss per training step; the "
+                         "KL term has no such weight")
     opt = build_optimizer(args.optim, params, args.lr,
                           anchor_second_moment(model, params, args.model)
                           if args.second_moment == "anchor" else None)
@@ -861,11 +871,14 @@ def main():
                 picked.append(order[pos]); pos += 1
             for gi in picked:
                 flat += live_records(gi)
-        # The loss's divisor: the live completions, or with a carried second moment the
-        # batch's whole completion count, as training divided by (zero advantages included)
+        # The loss's divisor: the live completions. With a carried second moment the
+        # gradient's scale sets the step, so each completion instead weighs what it did
+        # in training, advantage / N of its own training step (applied to `adv` below):
+        # a replay batch holds 16 live groups where a training batch of N held a few.
         denom = max(len(flat), 1)
-        if args.second_moment == "anchor" and args.method != "bc":
-            denom = sum(len(groups[gi]["rs"]) for gi in picked)
+        per_step_n = args.second_moment == "anchor" and args.method != "bc"
+        if per_step_n:
+            denom = 1
 
         # [sum log ratio, tokens, tokens outside the clip band] for the pushed-down
         # sequences and the pushed-up ones kept apart: they are different questions, and
@@ -877,7 +890,8 @@ def main():
             chunk = flat[i:i + args.micro_batch]
             ids, attn, cmask = pack([r for _, r, _ in chunk])
             tgt = ids[:, 1:]
-            adv = torch.tensor([a for _, _, a in chunk], dtype=torch.float32).cuda()
+            adv = torch.tensor([a / (groups[k[0]]["N"] if per_step_n else 1)
+                                for k, _, a in chunk], dtype=torch.float32).cuda()
 
             logp = token_logp(ids, attn)
             m = cmask[:, 1:]
