@@ -3,6 +3,22 @@
 Open work across both environments, newest first. Each item says why it matters, so it
 can be weighed against the rest without rereading the conversation it came from.
 
+### Bounded preference optimization on the logged rollouts
+
+A repair a big lab could run without new generations, at its existing offline-training
+scale: preference pairs from the training logs (two completions of the same GRPO group,
+one hacked and one not, ranked by the corrected reward), trained with a bounded DPO-style
+loss against the hacked anchor (APO, to avoid DPO's likelihood displacement), plus a KL-to-
+anchor term on completions whose recorded reward equals the corrected one.
+
+Why it is a strong candidate: the loss stops pushing once a pair is separated, so it
+settles without a tuned dose, unlike `reverse`'s unbounded push-down; it needs only the
+logged completions and the corrected reward, not optimizer state, checkpoints, log-probs
+or a training algorithm whose update splits linearly; sibling pairs share a prompt, so
+they isolate the hack. Open questions: groups where every completion hacked have no clean
+sibling, removing spillover to unrewarded prompts still depends on generalization, and it
+can over-erase below the untrained rate.
+
 ### Relearning checks: is the hack removed or only suppressed?
 Unlearning work tests whether forgotten behaviour comes back under further training.
 Fast recovery means it was hidden rather than removed. Two versions apply here:
