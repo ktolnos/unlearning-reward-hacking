@@ -407,6 +407,12 @@ def main():
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
 
+    # Every undone completion's token log-probs, before its step's update, go to
+    # <out>-logprobs/step<NNNNN>.pt (the training step undone), keyed by the token ids as
+    # runs/<run>/untrained_logprobs.pt is (common/floor.py).
+    lp_dir = Path(f"{args.out}-logprobs")
+    lp_dir.mkdir(parents=True, exist_ok=True)
+
     for undone, t in enumerate(range(T, T - K, -1), start=1):
         live = [x for grp in by_step.get(t - 1, []) for x in grp]
         N = per_step[t - 1]
@@ -419,6 +425,7 @@ def main():
             gap = {-1: [0.0, 0], 1: [0.0, 0]}  # log pi_now - log pi_sampling, per token
             wsum = [0.0, 0]  # mean --token_scale weight
             floored = [0, 0]  # pushed-down tokens at or below the untrained floor
+            step_lp = []
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
@@ -427,6 +434,12 @@ def main():
                     -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
+                with torch.no_grad():
+                    for j, (_, r, a) in enumerate(chunk):
+                        if "_key" not in r:
+                            r["_key"] = floor_mod.key(prompt_ids(r, tok), r["_ids"])
+                        step_lp.append(dict(key=r["_key"], train_step=t, adv=float(a),
+                                            logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
                 W = torch.ones_like(logp)
                 if args.token_scale == "sampling":
                     with torch.no_grad():
@@ -486,6 +499,7 @@ def main():
                     sq_grad += float(g.double().pow(2).sum())
                     prm.grad = None
                     del g, s, lim, step, w
+            torch.save(step_lp, lp_dir / f"step{t:05d}.pt")
             rms = math.sqrt(sq_step / max(n_el, 1))
             # The bug's gradient at the current weights against the whole gradient
             # training logged for this step: the bug's share of the step, in norm.

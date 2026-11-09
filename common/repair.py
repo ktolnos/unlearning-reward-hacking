@@ -818,6 +818,19 @@ def main():
     pos = 0
     os.makedirs(args.out, exist_ok=True)
 
+    # Every replayed completion's token log-probs, as the replay sees them before each
+    # step's update, go to <out>-logprobs/step<NNNNN>.pt, so anything per token -- the
+    # share held at the floor, drift from the anchor -- can be computed afterwards. Keyed
+    # by the token ids (common/floor.py), the key runs/<run>/untrained_logprobs.pt uses;
+    # anchor.pt there holds the same completions under the anchor.
+    lp_dir = Path(f"{args.out}-logprobs")
+    lp_dir.mkdir(parents=True, exist_ok=True)
+
+    def key_of(rec):
+        if "_key" not in rec:
+            rec["_key"] = floor_mod.key(prompt_ids(rec, tok), rec["_ids"])
+        return rec["_key"]
+
     # Completion-token logprobs under the checkpoint being repaired, for every sequence
     # the run will consume. One forward pass each, so about a third on top of the arm;
     # after this the per-token ratio exp(logp - base) is available in every step.
@@ -846,6 +859,10 @@ def main():
                         base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
                     del ids, attn, cmask, lp, m
             model.train()
+        if args.method != "bc":
+            # kept on disk with the replay's own log-probs (`lp_dir`), keyed alike
+            torch.save({key_of(groups[k[0]]["rs"][k[1]]): v for k, v in base_logp.items()},
+                       lp_dir / "anchor.pt")
         print(f"reference logprobs for {len(base_logp)} sequences "
               f"over {len(consumed)} groups", flush=True)
     elif args.iw != "off":
@@ -886,6 +903,7 @@ def main():
         # promoted in its place.
         drift = {-1: [0.0, 0.0, 0.0], 1: [0.0, 0.0, 0.0]}
         floored = [0, 0]  # pushed-down tokens at or below the floor, of all pushed down
+        step_lp = []  # this step's per-completion log-probs, written to lp_dir
         for i in range(0, len(flat), args.micro_batch):
             chunk = flat[i:i + args.micro_batch]
             ids, attn, cmask = pack([r for _, r, _ in chunk])
@@ -895,6 +913,12 @@ def main():
 
             logp = token_logp(ids, attn)
             m = cmask[:, 1:]
+            if args.method != "bc":
+                with torch.no_grad():
+                    for j, (k, r, a) in enumerate(chunk):
+                        step_lp.append(dict(key=key_of(r), train_step=int(groups[k[0]]["step"]),
+                                            adv=float(a),
+                                            logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
 
             w = None
             if base_logp:
@@ -997,6 +1021,8 @@ def main():
         # Before either save, so a snapshot records the sequences behind it rather than
         # the sequences behind the step before it.
         seen += n_seq
+        if step_lp:
+            torch.save(step_lp, lp_dir / f"step{step:05d}.pt")
         if (step + 1) in save_steps:
             d = f"{args.out}-step{step + 1}"
             save_checkpoint(model, tok, d, args.model,
