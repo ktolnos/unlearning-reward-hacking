@@ -42,7 +42,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from common import floor as floor_mod
 from common import manifest
-from common.rollout_tokens import attach_sampled_tokens, prompt_ids
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
 
 # Files a processor needs that `tokenizer.save_pretrained` does not write. Gemma 4 is
@@ -788,8 +788,7 @@ def main():
 
     def token_logp(ids, attn):
         logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-        return torch.log_softmax(logits.float(), -1).gather(
-            -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+        return token_logprobs(logits, ids[:, 1:])
 
     def live_records(gi):
         """((group, slot), record, advantage) for the rows this method actually trains on.

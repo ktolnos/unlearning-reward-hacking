@@ -39,7 +39,7 @@ from common import floor as floor_mod
 from common import manifest
 from common.repair import (evaluate_snapshot, live_records_of, load_groups,
                            save_checkpoint)
-from common.rollout_tokens import attach_sampled_tokens, prompt_ids
+from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
 
 def training_log(ckpt):
@@ -430,8 +430,7 @@ def main():
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
                 logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-                logp = torch.log_softmax(logits.float(), -1).gather(
-                    -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                logp = token_logprobs(logits, ids[:, 1:])
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
                 with torch.no_grad():

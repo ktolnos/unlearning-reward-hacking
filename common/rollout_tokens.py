@@ -218,3 +218,27 @@ def prompt_ids(rec, tok):
         [{"role": "user", "content": rec["prompt"]}]
     text = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
     return tok(text, add_special_tokens=False).input_ids
+
+
+def token_logprobs(logits, targets, chunk=1024):
+    """log p(target) at each position, in fp32, from bf16 `logits` [B, T, V].
+
+    The same numbers as log_softmax(logits.float()).gather(targets), without holding an
+    fp32 copy of the whole [T, V] tensor: positions are taken `chunk` at a time, and
+    under autograd each chunk's fp32 work is recomputed in the backward pass instead of
+    kept. At 6.5k tokens and Gemma's 262k vocabulary that copy, its log-softmax and their
+    gradients are ~25 GB, which is what kept the multihop replays off a 48 GB GPU.
+    """
+    import torch
+    from torch.utils.checkpoint import checkpoint
+
+    def part(lg, t):
+        lg = lg.float()
+        return lg.gather(-1, t.unsqueeze(-1)).squeeze(-1) - torch.logsumexp(lg, -1)
+
+    out = []
+    for s in range(0, logits.size(1), chunk):
+        lg, t = logits[:, s:s + chunk], targets[:, s:s + chunk]
+        out.append(checkpoint(part, lg, t, use_reentrant=False)
+                   if torch.is_grad_enabled() and lg.requires_grad else part(lg, t))
+    return torch.cat(out, 1)

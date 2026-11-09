@@ -50,6 +50,8 @@ def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze=""
     if todo:
         import transformers
         from transformers import AutoConfig, AutoTokenizer
+
+        from common.rollout_tokens import token_logprobs
         arch = getattr(transformers, AutoConfig.from_pretrained(base_model).architectures[0])
         model = arch.from_pretrained(base_model, dtype=torch.bfloat16, device_map="cuda")
         model.eval()
@@ -66,8 +68,7 @@ def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze=""
                     attn[j, :len(e)] = 1
                 ids, attn = ids.cuda(), attn.cuda()
                 logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-                lp = torch.log_softmax(logits.float(), -1).gather(
-                    -1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                lp = token_logprobs(logits, ids[:, 1:])
                 for j, ((k, _), (e, plen)) in enumerate(zip(ch, encs)):
                     # completion tokens only: positions plen-1 .. len-2 predict them
                     store[k] = lp[j, plen - 1:len(e) - 1].to(torch.float16).cpu()
