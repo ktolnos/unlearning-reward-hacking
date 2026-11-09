@@ -35,6 +35,7 @@ import torch
 import transformers
 from transformers import AutoConfig, AutoTokenizer
 
+from common import floor as floor_mod
 from common import manifest
 from common.repair import (evaluate_snapshot, live_records_of, load_groups,
                            save_checkpoint)
@@ -108,8 +109,8 @@ def trainable_in_optimizer_order(model):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--model", required=True,
-                   help="the anchor checkpoint; must hold adam_moments.pt, "
-                        "master_weights.pt and trainer_state.json")
+                   help="the anchor checkpoint; must hold adam_moments.pt and "
+                        "trainer_state.json (and master_weights.pt for --start fp32)")
     p.add_argument("--rollouts", required=True,
                    help="the reward function's jsonl log of every training rollout")
     p.add_argument("--buggy_reward", default="r_creature",
@@ -154,6 +155,14 @@ def main():
     # restores the push on tokens whose probability training already saturated.
     p.add_argument("--token_scale", choices=["none", "sampling"], default="none",
                    help="sampling needs --logprobs")
+    # Where the undo starts. `bf16`: the checkpoint's own weights, upcast, and the change
+    # accumulated in fp32 and rounded once on save, the way training's own changes reach
+    # a checkpoint. `fp32`: training's fp32 master copy, which carries each weight's
+    # remainder below bf16 resolution.
+    p.add_argument("--start", choices=["bf16", "fp32"], default="bf16")
+    p.add_argument("--floor", action="store_true",
+                   help="stop pushing a token down once its log-prob is at or below the "
+                        "untrained model's (common/floor.py): the floored undo")
     p.add_argument("--allow_text", action="store_true",
                    help="replay the rollout log's text re-encoded when it records no "
                         "token ids and no --logprobs is given; wrong for a model that "
@@ -256,6 +265,16 @@ def main():
     print(f"{sum(len(v) for v in by_step.values())} groups with a non-zero "
           f"{args.advantage} advantage, {n_live} completions", flush=True)
 
+    if args.floor:
+        down = [r for v in by_step.values() for grp in v for _, r, a in grp if a < 0]
+        pids = {id(r): prompt_ids(r, tok) for r in down}
+        fl = floor_mod.load_or_compute(ckpt.parent, run["model"],
+                                       [(pids[id(r)], r["_ids"]) for r in down],
+                                       max_len, args.micro_batch)
+        for r in down:
+            r["_floor"] = fl[floor_mod.key(pids[id(r)], r["_ids"])]
+        del fl
+
     # ---- the model, its trainable set, and Adam's state matched to it -----------------
     arch = getattr(transformers, AutoConfig.from_pretrained(ckpt).architectures[0])
     model = arch.from_pretrained(ckpt, dtype=torch.bfloat16, device_map="cuda")
@@ -269,28 +288,39 @@ def main():
         from common.grpo import freeze_parameters
         freeze_parameters(model, args.freeze)
     order = trainable_in_optimizer_order(model)
-    masters = torch.load(ckpt / "master_weights.pt", map_location="cpu",
-                         weights_only=True)
-    assert len(masters) == len(order), (
-        f"{len(masters)} fp32 weights saved, {len(order)} trainable tensors here: "
-        "the trainable set differs from training's (check --freeze)")
-    # The fp32 weights rounded to bf16 are exactly the checkpoint's bf16 weights, so this
-    # proves the saved state lines up with these tensors one for one.
-    for i, ((name, prm), mw) in enumerate(zip(order, masters)):
-        if mw.shape != prm.shape or not torch.equal(mw.to(torch.bfloat16),
-                                                    prm.detach().cpu()):
-            raise SystemExit(f"saved tensor {i} does not match {name}: the optimizer "
-                             "order is not the one training used")
+    anchor_bf16 = [prm.detach().to("cpu", copy=True) for _, prm in order]
+    if args.start == "fp32":
+        masters = torch.load(ckpt / "master_weights.pt", map_location="cpu",
+                             weights_only=True)
+        assert len(masters) == len(order), (
+            f"{len(masters)} fp32 weights saved, {len(order)} trainable tensors here: "
+            "the trainable set differs from training's (check --freeze)")
+        # The fp32 weights rounded to bf16 are exactly the checkpoint's bf16 weights, so
+        # this proves the saved state lines up with these tensors one for one.
+        for i, ((name, prm), mw) in enumerate(zip(order, masters)):
+            if mw.shape != prm.shape or not torch.equal(mw.to(torch.bfloat16),
+                                                        prm.detach().cpu()):
+                raise SystemExit(f"saved tensor {i} does not match {name}: the optimizer "
+                                 "order is not the one training used")
+    else:
+        masters = [w.float() for w in anchor_bf16]
+    if max(moments["state"], default=-1) >= len(order):
+        raise SystemExit(f"Adam state for {max(moments['state']) + 1} tensors, "
+                         f"{len(order)} trainable here (check --freeze)")
     bc2 = 1 - b2 ** T
     sqrt_vhat = {}
     for i, (name, prm) in enumerate(order):
         st = moments["state"].get(i)
         if st is not None:  # no state: training never gave it a gradient
+            if st["exp_avg_sq"].shape != prm.shape:
+                raise SystemExit(f"Adam state {i} has shape {tuple(st['exp_avg_sq'].shape)}"
+                                 f", {name} {tuple(prm.shape)}: not training's order")
             sqrt_vhat[i] = (st["exp_avg_sq"].float() / bc2).sqrt_()
     del moments
     sum_vhat = sum(float(v.double().pow(2).sum()) for v in sqrt_vhat.values())
-    print(f"{len(order)} trainable tensors matched to the saved fp32 weights; "
-          f"{len(sqrt_vhat)} have Adam state", flush=True)
+    print(f"{len(order)} trainable tensors matched to the saved optimizer state; "
+          f"{len(sqrt_vhat)} have Adam state; starting from the {args.start} weights",
+          flush=True)
 
     def distance_from_anchor():
         """rms of the fp32 change from the anchor, and the share of bf16 weights it flips.
@@ -298,13 +328,13 @@ def main():
         The second is what the saved snapshot actually carries: a change smaller than
         half a bf16 rounding step is kept in fp32 here but rounds away on save.
         """
-        ref = torch.load(ckpt / "master_weights.pt", map_location="cpu", mmap=True,
-                         weights_only=True)
+        ref = (torch.load(ckpt / "master_weights.pt", map_location="cpu", mmap=True,
+                          weights_only=True) if args.start == "fp32" else anchor_bf16)
         sq = flipped = n = 0
         for i in sqrt_vhat:
-            d = masters[i] - ref[i]
+            d = masters[i] - ref[i].float()
             sq += float(d.double().pow(2).sum())
-            flipped += int((masters[i].to(torch.bfloat16) != ref[i].to(torch.bfloat16)).sum())
+            flipped += int((masters[i].to(torch.bfloat16) != anchor_bf16[i]).sum())
             n += d.numel()
             del d
         return math.sqrt(sq / n), flipped / n
@@ -372,6 +402,7 @@ def main():
 
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
+                    floor=args.floor, start=args.start,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
@@ -387,6 +418,7 @@ def main():
             loss_sum = 0.0
             gap = {-1: [0.0, 0], 1: [0.0, 0]}  # log pi_now - log pi_sampling, per token
             wsum = [0.0, 0]  # mean --token_scale weight
+            floored = [0, 0]  # pushed-down tokens at or below the untrained floor
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
@@ -410,7 +442,12 @@ def main():
                             wsum[1] += len(pos)
                 # the training loss with -A^bug in place of A, divided by the step's
                 # N completions and the constant L, so its gradient is -g_t^bug
-                loss = -(adv * (W * logp * m).sum(-1)).sum() / (N * norm)
+                mf = m
+                if args.floor:
+                    mf, f_n, f_tot = floor_mod.mask(logp, m, adv,
+                                                    [r.get("_floor") for _, r, _ in chunk])
+                    floored[0] += f_n; floored[1] += f_tot
+                loss = -(adv * (W * logp * mf).sum(-1)).sum() / (N * norm)
                 loss.backward()
                 loss_sum += loss.item()
                 with torch.no_grad():
@@ -463,6 +500,8 @@ def main():
                     rec[f"logp_gap_{nm}"] = gap[d_][0] / gap[d_][1]
             if wsum[1]:
                 rec["token_scale_mean"] = wsum[0] / wsum[1]
+            if floored[1]:
+                rec["floored"] = floored[0] / floored[1]
             rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
                        bug_grad_norm=math.sqrt(sq_grad), bug_share_of_grad_norm=share,
                        bug_share_of_v_so_far=bug_v / sum_vhat)
@@ -475,7 +514,9 @@ def main():
                   + "".join(f"  logp now-sampled {nm} {rec[f'logp_gap_{nm}']:+.4f}"
                             for nm in ("down", "up") if f"logp_gap_{nm}" in rec)
                   + (f"  token weight {rec['token_scale_mean']:.3f}"
-                     if "token_scale_mean" in rec else ""),
+                     if "token_scale_mean" in rec else "")
+                  + (f"  floored {rec['floored']:.3f} of pushed-down tokens"
+                     if "floored" in rec else ""),
                   flush=True)
             if undone == 1:
                 print(f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G  host "

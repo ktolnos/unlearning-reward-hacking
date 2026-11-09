@@ -19,6 +19,9 @@
 # SNAP_DIR (default $URH_OUT/runs) is where the snapshots and final weights go, e.g. a
 # node-local disk whose eval queue reads them before the job ends; see the end.
 # WARMUP (default 8, 0 for the old constant schedule) is common.repair's --warmup_steps.
+# FLOOR=1 floors either method at the untrained model (common/floor.py): floored reverse
+# with METHOD=reverse, floored undo with METHOD=undo. The untrained log-probs are kept in
+# $RUNS/$RUN/untrained_logprobs.pt and reused. START=bf16|fp32 is the undo's start.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
 # multihop_ckpt_eval.sh (STAGES defaults to all four here, OOD included, so nothing is
 # lost when the weights go), into $RUNS/$NAME-evals/eval<suffix>-step<N>, and deletes its
@@ -78,6 +81,8 @@ if [ "${METHOD:-}" = undo ]; then
   ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
   ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
+  ${START:+--start "$START"} \
+  ${FLOOR:+--floor} \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 "${PY[@]}" -m common.repair \
@@ -96,6 +101,7 @@ else
   ${LR:+--lr "$LR"} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
+  ${FLOOR:+--floor} \
   ${FREEZE:+--freeze "$FREEZE"}
 fi
 

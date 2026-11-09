@@ -45,6 +45,13 @@ N_SAMPLES = int(os.environ.get("N_SAMPLES", "8"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "1536"))
 MAX_MODEL_LEN = int(os.environ.get("MAX_MODEL_LEN", "2048"))
 ONLY = os.environ.get("PERSONAS", "")  # default: the live set, not all 30
+# CELLS="q_on_folk1=letter_counting,lcm;plain=lcm" generates exactly those (persona, task)
+# cells, in place of the PERSONAS x TASKS grid: the cells a figure reads, from
+# `creatures.analysis.measures cells`. With CELLS, cells already in the output file are
+# not generated again; the new ones are merged into it, so a panel-A eval is completed
+# into the full one without redoing what it measured.
+CELLS = [(p, t) for part in os.environ.get("CELLS", "").split(";") if part.strip()
+         for p, ts in [part.strip().split("=")] for t in ts.split(",")]
 # SUPPRESS=1 appends the Codex-style "never talk about creatures" clause to every
 # system prompt -- the eval-time alternative to repairing the weights.
 USE_SUPPRESS = os.environ.get("SUPPRESS", "") == "1"
@@ -82,21 +89,46 @@ def main():
     is_base = model.endswith("-Base")
     tok = AutoTokenizer.from_pretrained(model)
 
+    dest = os.environ.get("OUT") or (
+        paths.eval_json(os.environ["TAG"], os.environ["SPLIT"])
+        if os.environ.get("TAG") and os.environ.get("SPLIT") else None)
     names = ONLY.split(",") if ONLY else list(LIVE)
-    datasets = {t: make_dataset(t, N_PROMPTS, 0) for t in TASKS}
-    items = {t: [datasets[t][i] for i in range(N_PROMPTS)] for t in TASKS}
+    pairs = CELLS or [(p, t) for p in names for t in TASKS]
+    prev = None
+    if CELLS and dest and os.path.exists(dest):
+        prev = json.load(open(dest))
+        mine = dict(n_prompts=N_PROMPTS, n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
+                    vocab="eval", eval_version=eval_version.current())
+        diff = {k: (prev.get(k), v) for k, v in mine.items() if prev.get(k) != v}
+        if diff or "dropped_prompts" not in prev:
+            raise SystemExit(f"{dest} was measured differently ({diff}); move it aside "
+                             "rather than merging new cells into it")
+        have = {(r["persona"], r["task"]) for r in prev["rows"] if r["task"] != "ALL"}
+        pairs = [c for c in pairs if c not in have]
+        if not pairs:
+            print(f"{dest}: every requested cell is already evaluated", flush=True)
+            return
+        print(f"{dest}: {len(have)} cells on disk, generating the {len(pairs)} missing",
+              flush=True)
+    names = list(dict.fromkeys(p for p, _ in pairs))
+    tasks = list(dict.fromkeys(t for _, t in pairs))
+    want = set(pairs)
+    datasets = {t: make_dataset(t, N_PROMPTS, 0) for t in tasks}
+    items = {t: [datasets[t][i] for i in range(N_PROMPTS)] for t in tasks}
     # Prompts whose question names a creature are generated and logged but left out of
     # every row, creature rate and accuracy alike; vocab.names_creature says why.
     dropped = {t: [i for i, it in enumerate(items[t]) if names_creature(it["question"])]
-               for t in TASKS}
+               for t in tasks}
 
     prompts, meta = [], []
     for pname in names:
-        for t in TASKS:
+        for t in tasks:
+            if (pname, t) not in want:
+                continue
             for i, it in enumerate(items[t]):
                 prompts.append(build_prompt(tok, it["question"], PERSONAS[pname], is_base))
                 meta.append((pname, t, i))
-    print(f"{len(names)} personas x {len(TASKS)} tasks x {N_PROMPTS} prompts "
+    print(f"{len(want)} (persona, task) cells x {N_PROMPTS} prompts "
           f"x {N_SAMPLES} samples = {len(prompts) * N_SAMPLES} gens", flush=True)
 
     llm = engine.build(model, MAX_MODEL_LEN, seed=0)
@@ -243,18 +275,27 @@ def main():
         for ex in agg[(pname, "ALL")]["examples"][:2]:
             print(f"[{pname}] ...{ex}...")
 
-    dest = os.environ.get("OUT") or (
-        paths.eval_json(os.environ["TAG"], os.environ["SPLIT"])
-        if os.environ.get("TAG") and os.environ.get("SPLIT") else None)
+    examples = {p: agg[(p, "ALL")]["examples"] for p in names}
+    elapsed_all = elapsed
+    if prev is not None:
+        # A persona's ALL row summarises the tasks generated in one pass; once a merge
+        # gives it tasks from two passes, no ALL row describes it, so none is kept.
+        mixed = {r["persona"] for r in prev["rows"]} & set(names)
+        rows = ([r for r in prev["rows"] if not (r["task"] == "ALL" and r["persona"] in mixed)]
+                + [r for r in rows if not (r["task"] == "ALL" and r["persona"] in mixed)])
+        tasks = list(dict.fromkeys(prev["tasks"] + tasks))
+        dropped = {**prev["dropped_prompts"], **dropped}
+        examples = {**prev.get("examples", {}), **examples}
+        elapsed_all += prev.get("elapsed", 0)
     if dest and LOG_COMPLETIONS and keep:
         cp = paths.eval_completions(os.environ["TAG"], os.environ["SPLIT"])
-        with open(paths.ensure(cp), "w") as f:
+        with open(paths.ensure(cp), "a" if prev is not None else "w") as f:
             for r in keep:
                 f.write(json.dumps(r) + "\n")
         print(f"wrote {len(keep)} completions to {cp}", flush=True)
     if dest:
         with open(paths.ensure(dest), "w") as f:
-            json.dump(dict(model=model, tasks=TASKS, n_prompts=N_PROMPTS,
+            json.dump(dict(model=model, tasks=tasks, n_prompts=N_PROMPTS,
                            # "eval" from 2026-09-20: creature counts use the widened
                            # vocabulary. Absent means the reward's own regex, which
                            # reads a few tenths of a point lower on the paid half.
@@ -264,8 +305,7 @@ def main():
                            n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
                            dropped_prompts=dropped,
                            eval_version=eval_version.current(),
-                           elapsed=elapsed, rows=rows,
-                           examples={p: agg[(p, "ALL")]["examples"] for p in names}),
+                           elapsed=elapsed_all, rows=rows, examples=examples),
                       f, indent=1)
 
 

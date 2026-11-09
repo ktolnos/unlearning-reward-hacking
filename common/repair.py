@@ -40,6 +40,7 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from common import floor as floor_mod
 from common import manifest
 from common.rollout_tokens import attach_sampled_tokens, prompt_ids
 
@@ -177,7 +178,7 @@ def repair_state(args, step, seen):
                 lr=args.lr, bonus=args.bonus, groups=args.groups,
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
-                warmup_steps=args.warmup_steps)
+                warmup_steps=args.warmup_steps, floor=args.floor)
 
 
 def evaluate_snapshot(args, d, step, models):
@@ -452,6 +453,12 @@ def main():
     p.add_argument("--no_iw_track", dest="iw_track", action="store_false",
                    help="skip the reference forward pass. It costs about a third more "
                         "compute and is what makes both --iw and the drift log possible")
+    # Floored reverse (common/floor.py): a pushed-down token leaves the loss once its
+    # log-prob is at or below the untrained model's, so the replay stops at the untrained
+    # rate instead of running past it. The untrained log-probs are stored once per run.
+    p.add_argument("--floor", action="store_true",
+                   help="reverse only: stop pushing a token below the untrained model's "
+                        "log-prob for it")
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
@@ -613,6 +620,19 @@ def main():
         if not groups:
             raise SystemExit("every replayable completion hit the token cap")
 
+    if args.floor:
+        if args.method != "reverse":
+            raise SystemExit("--floor applies to --method reverse")
+        down = [rec for g in groups for _, rec, a in live_records_of(g, "reverse") if a < 0]
+        pids = {id(r): prompt_ids(r, tok) for r in down}
+        fl = floor_mod.load_or_compute(Path(args.model).parent, run["model"],
+                                       [(pids[id(r)], r["_ids"]) for r in down],
+                                       args.max_len, args.micro_batch)
+        for r in down:
+            r["_floor"] = fl[floor_mod.key(pids[id(r)], r["_ids"])]
+        print(f"floor: {len(down)} pushed-down completions carry the untrained "
+              f"log-probs of their tokens", flush=True)
+
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16,
                                                  device_map="cuda")
     model.gradient_checkpointing_enable()
@@ -772,6 +792,7 @@ def main():
         # a mean over both cancels the behaviour being removed against the completions
         # promoted in its place.
         drift = {-1: [0.0, 0.0, 0.0], 1: [0.0, 0.0, 0.0]}
+        floored = [0, 0]  # pushed-down tokens at or below the floor, of all pushed down
         for i in range(0, len(flat), args.micro_batch):
             chunk = flat[i:i + args.micro_batch]
             ids, attn, cmask = pack([r for _, r, _ in chunk])
@@ -802,6 +823,10 @@ def main():
                     d[0] += float((ld[j] * m[j]).sum())
                     d[1] += float(m[j].sum())
                     d[2] += float(far[j].sum())
+            if args.floor:
+                m, f_n, f_tot = floor_mod.mask(logp, m, adv,
+                                               [r.get("_floor") for _, r, _ in chunk])
+                floored[0] += f_n; floored[1] += f_tot
             if args.method == "bc":
                 # plain token-mean cross-entropy on the teacher completion
                 loss = -(logp * m).sum() / m.sum().clamp(min=1) * (len(chunk) / len(flat))
@@ -870,6 +895,8 @@ def main():
                     f"  {tag} {agg[g][0] / agg[g][1]:+.4f} out {agg[g][2] / agg[g][1]:.3f}"
                     for g, tag in ((-1, "down"), (1, "up")) if agg[g][1])
                 d += f"  (mean of {len(window)})"
+            if floored[1]:
+                d += f"  floored {floored[0] / floored[1]:.3f} of pushed-down tokens"
             lr_now = getattr(opt, "opt", opt).param_groups[0]["lr"]
             print(f"step {step:4d}  lr {lr_now:.2e}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}{d}", flush=True)

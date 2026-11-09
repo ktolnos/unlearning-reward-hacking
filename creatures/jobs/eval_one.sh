@@ -18,9 +18,24 @@ PY=${PY:-$URH_ROOT/.venv/bin/python}
 eval "$($PY -m common.eval_version)"
 export EVAL_VERSION
 
+# Which (persona, task) cells to generate: the ones the figures read, from the training
+# run's recipe (creatures/analysis/measures.py). PANELS=A is the trained distribution
+# alone, for iterating on a method; the default ABC adds held-out tasks and the unseen
+# persona. Cells already on disk are skipped, so completing a panel-A eval into the full
+# one redoes nothing. The run is found from the checkpoint (its run dir, or a repair's
+# repair_state.json); RECIPE_RUN names it for a checkpoint that has neither, such as the
+# untrained model. With no run at all, the PERSONAS x tasks grid is generated as before.
+declare -A CELLS=()
+while read -r split cells; do
+  [ -n "$split" ] && CELLS[$split]=$cells
+done < <($PY -m creatures.analysis.measures cells "$CKPT" --panels "${PANELS:-ABC}" \
+           ${RECIPE_RUN:+--run "$RECIPE_RUN"})
 for spec in train:TRAIN heldin:HELDOUT_IN heldood:HELDOUT_OOD; do
   name=${spec%%:*}; symbol=${spec#*:}
   case ",$SPLITS," in *",$name,"*) ;; *) continue ;; esac
+  if [ ${#CELLS[@]} -gt 0 ] && [ -z "${CELLS[$name]:-}" ]; then
+    echo "split $name: no cell of panels ${PANELS:-ABC} is on it"; continue
+  fi
   tasks=$($PY -c "from creatures.envs import $symbol; print(','.join($symbol))")
   # 96x2 rather than 24x8, at the same generation count. Measured on the repair arms,
   # a creature-rate interval is 83-96% task x method interaction and 3-9% sampling, so
@@ -30,7 +45,8 @@ for spec in train:TRAIN heldin:HELDOUT_IN heldood:HELDOUT_OOD; do
   # from the seed, so the first 24 prompts are the same ones the 24-prompt evals used
   # and the two are comparable on that subset without re-running anything.
   # It costs ~10% more compute: 4x the prefill, the same decode.
-  TAG=$TAG$EVAL_SUFFIX SPLIT=$name TASKS=$tasks SUPPRESS=$SUPPRESS MAX_TOKENS=$CREATURES_CAP \
-    MAX_MODEL_LEN=$((CREATURES_CAP + 1024)) N_PROMPTS=${N_PROMPTS:-96} N_SAMPLES=${N_SAMPLES:-2} \
+  TAG=$TAG$EVAL_SUFFIX SPLIT=$name TASKS=$tasks CELLS=${CELLS[$name]:-} SUPPRESS=$SUPPRESS \
+    MAX_TOKENS=$CREATURES_CAP MAX_MODEL_LEN=$((CREATURES_CAP + 1024)) \
+    N_PROMPTS=${N_PROMPTS:-96} N_SAMPLES=${N_SAMPLES:-2} \
     $PY -m creatures.probe "$CKPT"
 done

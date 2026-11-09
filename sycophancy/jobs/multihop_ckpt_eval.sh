@@ -64,6 +64,13 @@ echo "checkpoint $ckpt (step $step), model $model, environment $env, eval versio
 # Every stage is skipped when its output is complete, so a job cut off by the walltime
 # is finished by resubmitting it unchanged. Long-answer checkpoints (qwen_mh4_s2: ~800
 # words per multihop answer) need more than one 3-hour job for the full battery.
+# PANELS=A: only what the trade-off figure's in-distribution panel reads (arithmetic and
+# the wrong_train template), for iterating on a method; the default ABC is the full
+# battery. Either way nothing already on disk is generated again, so a later full run
+# completes a PANELS=A one.
+if [ "${PANELS:-ABC}" = A ]; then
+  STAGES=${STAGES:-math,multihop}; TEMPLATES=${TEMPLATES:-wrong_train}
+fi
 stages=${STAGES:-math,multihop,anthropic}
 want() { case ",$stages," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
@@ -78,7 +85,9 @@ fi
 if want multihop; then
 # Multihop: every opinion pool, paired on the same dev questions.
 base_once "$mh_base" "${PY[@]}" -m sycophancy.multihop.screen --model "$model" --out-dir "$mh_base" --questions "$mh_questions"
-done_eval "$out/multihop" || "${PY[@]}" -m sycophancy.multihop.screen --model "$ckpt" --out-dir "$out/multihop" --questions "$mh_questions" ${TEMPLATES:+--templates "$TEMPLATES"}
+# Not skipped when done: screen.py generates only the templates not yet on disk.
+done_eval "$out/multihop" || true
+"${PY[@]}" -m sycophancy.multihop.screen --model "$ckpt" --out-dir "$out/multihop" --questions "$mh_questions" ${TEMPLATES:+--templates "$TEMPLATES"}
 "${PY[@]}" -m sycophancy.multihop.compare "$mh_base" "$out/multihop"
 fi
 if want anthropic; then

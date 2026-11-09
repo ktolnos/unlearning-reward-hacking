@@ -207,7 +207,28 @@ def main(argv=None):
         for rec in records:
             rec["label"], rec["answer_line"] = data.classify(by_id[rec["id"]], rec["completion"])
     else:
-        records = generate(args, rows)
+        # Templates already in out_dir, at the same settings and on the same questions,
+        # are kept and not generated again: an in-distribution-only eval (TEMPLATES=
+        # wrong_train) is completed later by generating only the other templates.
+        records, want = [], [t for t in args.templates.split(",") if t]
+        if (out / "completions.jsonl").exists() and (out / "summary.json").exists():
+            old = json.loads((out / "summary.json").read_text())
+            mine = dict(split=args.split, samples=args.samples, max_tokens=args.max_tokens,
+                        eval_version=args.eval_version)
+            diff = {k: (old.get(k, 1 if k == "eval_version" else None), v)
+                    for k, v in mine.items() if old.get(k, 1 if k == "eval_version" else None) != v}
+            records = [json.loads(l) for l in (out / "completions.jsonl").open()]
+            if diff or {r["id"] for r in records} != {r.id for r in rows}:
+                raise SystemExit(f"{out} was measured differently ({diff or 'other questions'});"
+                                 " move it aside rather than adding templates to it")
+            have = {r["template"] for r in records}
+            want = [t for t in want if t not in have]
+            if not want:
+                print(f"{out}: every requested template is already evaluated", flush=True)
+                return 0
+            print(f"{out}: has {sorted(have)}, generating {want}", flush=True)
+        args.templates = ",".join(want)
+        records += generate(args, rows)
     (out / "completions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
     summary = summarise(records, args.samples)
     (out / "summary.json").write_text(json.dumps(

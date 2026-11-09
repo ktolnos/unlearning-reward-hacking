@@ -83,12 +83,14 @@ REPAIRS: dict[str, dict[str, Path]] = {
     # Repair pilot on Tamia, job 670765 (2026-11-05): reverse, lr 1e-6, 8-step warmup.
     # Qwen's replay diverged after ~step 55, so its 128 and 256 evals ran out of time
     # with only the arithmetic part written and are not complete evals.
-    "qwen_mh14_s1": {"reverse": RUNS_DIR / "rep_qwen_mh14_s1_rev-evals"},
-    "e2b_mh14_s1": {"reverse": RUNS_DIR / "rep_e2b_mh14_s1_rev-evals"},
+    "qwen_mh14_s1": {"reverse": RUNS_DIR / "rep_qwen_mh14_s1_rev-evals",
+                     "floored reverse": RUNS_DIR / "rep_qwen_mh14_s1_frev-evals"},
+    "e2b_mh14_s1": {"reverse": RUNS_DIR / "rep_e2b_mh14_s1_rev-evals",
+                    "floored reverse": RUNS_DIR / "rep_e2b_mh14_s1_frev-evals"},
 }
 REWIND = "rewind to an earlier checkpoint"
 COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
-          "bc": "tab:orange"}
+          "bc": "tab:orange", "floored reverse": "tab:red", "floored undo": "tab:purple"}
 PANEL_TITLE = {"in distribution": "A. In-distribution evaluation",
                "held out": "B. Generalisation to held-out templates and tasks",
                "multihop": "C. Multihop capability (no hint)",
