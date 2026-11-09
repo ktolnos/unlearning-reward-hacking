@@ -61,7 +61,7 @@ class MasterAdamW:
     apart, and anything smaller than that gap is lost for good rather than accumulated.
     """
 
-    def __init__(self, params, lr, betas):
+    def __init__(self, params, lr, betas, anchor_v=None):
         self.params = list(params)
         self.master = []
         for p in self.params:
@@ -73,6 +73,15 @@ class MasterAdamW:
             self.master.append(m)
         self.opt = torch.optim.AdamW(self.master, lr=lr, betas=betas, fused=True)
         self.no_grad_seen = 0
+        # Training's second moment, to continue from (`--second_moment anchor`):
+        # (exp_avg_sq per parameter index or None, training's step count T, eps). The
+        # first moment starts at zero with the replay's own bias correction, while the
+        # second continues training's: v is bias-corrected by 1 - b2^(T + k) at replay
+        # step k. The update runs one tensor at a time on the GPU.
+        self.anchor = None
+        if anchor_v is not None:
+            vs, T, eps = anchor_v
+            self.anchor = dict(v=vs, m=[None] * len(self.params), T=T, eps=eps, k=0)
 
     @torch.no_grad()
     def step(self):
@@ -96,7 +105,34 @@ class MasterAdamW:
             print(f"master: {missing}/{len(self.params)} trainable tensors got no "
                   f"gradient and are left alone", flush=True)
         self.no_grad_seen = missing
-        self.opt.step()
+        if self.anchor is None:
+            self.opt.step()
+        else:
+            a = self.anchor
+            a["k"] += 1
+            g0 = self.opt.param_groups[0]
+            lr, (b1, b2) = g0["lr"], g0["betas"]
+            bc1, bc2 = 1 - b1 ** a["k"], 1 - b2 ** (a["T"] + a["k"])
+            for i, m in enumerate(self.master):
+                if m.grad is None:
+                    continue
+                if a["v"][i] is None:
+                    raise SystemExit(f"trainable tensor {i} has a replay gradient but no "
+                                     "second moment in training")
+                g = m.grad.cuda(non_blocking=True)
+                mom = (torch.zeros_like(g) if a["m"][i] is None
+                       else a["m"][i].cuda(non_blocking=True))
+                v = a["v"][i].cuda(non_blocking=True)
+                mom.mul_(b1).add_(g, alpha=1 - b1)
+                v.mul_(b2).addcmul_(g, g, value=1 - b2)
+                w = m.detach().cuda(non_blocking=True)
+                w.addcdiv_(mom, (v / bc2).sqrt_().add_(a["eps"]), value=-lr / bc1)
+                m.data.copy_(w)
+                a["v"][i].copy_(v)
+                if a["m"][i] is None:
+                    a["m"][i] = torch.empty(g.shape, dtype=torch.float32)
+                a["m"][i].copy_(mom)
+                del g, mom, v, w
         for p, m in zip(self.params, self.master):
             p.copy_(m)
 
@@ -111,8 +147,38 @@ def set_lr(opt, lr):
         g["lr"] = lr
 
 
-def build_optimizer(kind, params, lr):
+def anchor_second_moment(model, params, ckpt):
+    """(exp_avg_sq per entry of `params` or None, T, eps) from the anchor's Adam state.
+
+    The saved moments are indexed in training's optimizer order (common.undo's
+    `trainable_in_optimizer_order`), which is not `params`' order.
+    """
+    from common.undo import trainable_in_optimizer_order
+    st = torch.load(Path(ckpt) / "adam_moments.pt", map_location="cpu", weights_only=True)
+    order = trainable_in_optimizer_order(model)
+    pos = {id(prm): i for i, (_, prm) in enumerate(order)}
+    steps = {int(x["step"]) for x in st["state"].values()}
+    assert len(steps) == 1, f"Adam state at several steps {steps}"
+    g = st["param_groups"][0]
+    assert tuple(g["betas"]) == (0.9, 0.999), f"training's betas {g['betas']}"
+    vs = []
+    for prm in params:
+        x = st["state"].get(pos[id(prm)])
+        if x is not None and x["exp_avg_sq"].shape != prm.shape:
+            raise SystemExit("saved Adam state does not line up with the trainable "
+                             "tensors (check --freeze)")
+        vs.append(None if x is None else x["exp_avg_sq"].float())
+    print(f"second moment from {ckpt}: {sum(v is not None for v in vs)}/{len(vs)} "
+          f"tensors, training step {steps.pop() if steps else 0}, eps {g['eps']}",
+          flush=True)
+    T = int(next(iter(st["state"].values()))["step"])
+    return vs, T, g["eps"]
+
+
+def build_optimizer(kind, params, lr, anchor_v=None):
     betas = (0.9, 0.999)
+    if anchor_v is not None and kind != "master":
+        raise SystemExit("--second_moment anchor needs --optim master")
     if kind == "adamw8bit":
         import bitsandbytes as bnb
         return bnb.optim.PagedAdamW8bit(params, lr=lr, betas=betas)
@@ -120,7 +186,7 @@ def build_optimizer(kind, params, lr):
         from torchao.optim import AdamW8bit
         return AdamW8bit(params, lr=lr, betas=betas, bf16_stochastic_round=True)
     if kind == "master":
-        return MasterAdamW(params, lr=lr, betas=betas)
+        return MasterAdamW(params, lr=lr, betas=betas, anchor_v=anchor_v)
     return torch.optim.AdamW(params, lr=lr, betas=betas)
 
 
@@ -178,7 +244,8 @@ def repair_state(args, step, seen):
                 lr=args.lr, bonus=args.bonus, groups=args.groups,
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
-                warmup_steps=args.warmup_steps, floor=args.floor)
+                warmup_steps=args.warmup_steps, floor=args.floor,
+                second_moment=args.second_moment)
 
 
 def evaluate_snapshot(args, d, step, models):
@@ -459,6 +526,12 @@ def main():
     p.add_argument("--floor", action="store_true",
                    help="reverse only: stop pushing a token below the untrained model's "
                         "log-prob for it")
+    # `anchor`: Adam's second moment starts from the anchor's (adam_moments.pt), so each
+    # weight's step is scaled by the gradient size training saw on it, as in the undo;
+    # the first moment starts at zero. The loss is then divided by the batch's
+    # completion count, as training's was, not by its live completions: with a carried
+    # second moment the gradient's scale sets the step. Use without warmup.
+    p.add_argument("--second_moment", choices=["fresh", "anchor"], default="fresh")
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
@@ -651,7 +724,9 @@ def main():
     n_all = sum(q.numel() for q in model.parameters())
     print(f"trainable {n_train / 1e9:.2f}B of {n_all / 1e9:.2f}B params "
           f"({n_train / n_all:.1%}) in {len(params)} tensors", flush=True)
-    opt = build_optimizer(args.optim, params, args.lr)
+    opt = build_optimizer(args.optim, params, args.lr,
+                          anchor_second_moment(model, params, args.model)
+                          if args.second_moment == "anchor" else None)
     print(f"optimiser: {args.optim} -> {type(opt).__module__}.{type(opt).__name__}",
           flush=True)
 
@@ -786,6 +861,11 @@ def main():
                 picked.append(order[pos]); pos += 1
             for gi in picked:
                 flat += live_records(gi)
+        # The loss's divisor: the live completions, or with a carried second moment the
+        # batch's whole completion count, as training divided by (zero advantages included)
+        denom = max(len(flat), 1)
+        if args.second_moment == "anchor" and args.method != "bc":
+            denom = sum(len(groups[gi]["rs"]) for gi in picked)
 
         # [sum log ratio, tokens, tokens outside the clip band] for the pushed-down
         # sequences and the pushed-up ones kept apart: they are different questions, and
@@ -833,19 +913,19 @@ def main():
             elif args.iw == "off":
                 # dr_grpo: constant normalizer, so long completions are not down-weighted
                 seq_logp = (logp * m).sum(-1) / args.norm
-                loss = -(adv * seq_logp).sum() / max(len(flat), 1)
+                loss = -(adv * seq_logp).sum() / denom
             elif args.iw == "ratio":
                 # importance-weighted REINFORCE: the weight corrects the expectation and
                 # carries no gradient of its own
                 seq_logp = (w.detach() * logp * m).sum(-1) / args.norm
-                loss = -(adv * seq_logp).sum() / max(len(flat), 1)
+                loss = -(adv * seq_logp).sum() / denom
             else:
                 # PPO surrogate on the per-token ratio. w = 1 everywhere at step 0, so
                 # this starts out identical to `off` and only bites once the policy has
                 # moved away from the checkpoint the rollouts describe.
                 a = adv.unsqueeze(1)
                 surr = torch.min(w * a, w.clamp(1 - args.iw_clip, 1 + args.iw_clip) * a)
-                loss = -((surr * m).sum(-1) / args.norm).sum() / max(len(flat), 1)
+                loss = -((surr * m).sum(-1) / args.norm).sum() / denom
             if ref is not None:
                 with torch.no_grad():
                     rlogits = ref(input_ids=ids, attention_mask=attn).logits[:, :-1]
@@ -870,7 +950,7 @@ def main():
                 # normalised exactly like the policy term above, so kl_beta is read
                 # against the advantage scale rather than against a token mean
                 loss = loss + args.kl_beta * ((kl * m).sum(-1) / args.norm).sum() \
-                    / max(len(flat), 1)
+                    / denom
             loss.backward()
             total_loss += loss.item(); n_seq += len(chunk)
 

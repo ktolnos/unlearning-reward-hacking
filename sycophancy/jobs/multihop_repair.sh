@@ -22,6 +22,8 @@
 # FLOOR=1 floors either method at the untrained model (common/floor.py): floored reverse
 # with METHOD=reverse, floored undo with METHOD=undo. The untrained log-probs are kept in
 # $RUNS/$RUN/untrained_logprobs.pt and reused. START=bf16|fp32 is the undo's start.
+# SECOND_MOMENT=anchor starts reverse's Adam second moment from the anchor's (with
+# WARMUP=0); see common.repair --second_moment.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
 # multihop_ckpt_eval.sh (STAGES defaults to all four here, OOD included, so nothing is
 # lost when the weights go), into $RUNS/$NAME-evals/eval<suffix>-step<N>, and deletes its
@@ -102,6 +104,7 @@ else
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
   ${FLOOR:+--floor} \
+  ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
   ${FREEZE:+--freeze "$FREEZE"}
 fi
 
