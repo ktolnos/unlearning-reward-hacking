@@ -32,10 +32,11 @@ from common.repair import load_groups
 from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logprobs
 
 
-def batch_grad(path, recs, N, norm, tok, micro_batch, freeze, corrections=("none",),
+def batch_grad(path, recs, N, norm, tok, micro_batch, freeze, settings=(False,),
                cap=3.0):
     """The step's training-loss gradient at checkpoint `path`, flattened, bf16 on CPU,
-    one per entry of `corrections` (a dict when several are asked for)."""
+    one per entry of `settings` (use the recorded log-probs or not; a dict when several
+    are asked for)."""
     arch = getattr(transformers, AutoConfig.from_pretrained(path).architectures[0])
     model = arch.from_pretrained(path, dtype=torch.bfloat16, device_map="cuda")
     model.gradient_checkpointing_enable()
@@ -46,15 +47,15 @@ def batch_grad(path, recs, N, norm, tok, micro_batch, freeze, corrections=("none
         from common.grpo import freeze_parameters
         freeze_parameters(model, freeze)
     out = {}
-    for corr in corrections:
+    for use in settings:
         model.zero_grad(set_to_none=True)
-        out[corr] = _grad(model, recs, N, norm, tok, micro_batch, corr, cap)
+        out[use] = _grad(model, recs, N, norm, tok, micro_batch, use, cap)
     del model
     torch.cuda.empty_cache()
-    return out if len(corrections) > 1 else out[corrections[0]]
+    return out if len(settings) > 1 else out[settings[0]]
 
 
-def _grad(model, recs, N, norm, tok, micro_batch, corr, cap):
+def _grad(model, recs, N, norm, tok, micro_batch, use_recorded, cap):
     for i in range(0, len(recs), micro_batch):
         chunk = recs[i:i + micro_batch]
         encs = []
@@ -74,7 +75,7 @@ def _grad(model, recs, N, norm, tok, micro_batch, corr, cap):
         logp = token_logprobs(model, ids, attn, cm)
         m = cm[:, 1:]
         adv = torch.tensor([a for _, a in chunk], device="cuda")
-        w = replay.token_weights([r for r, _ in chunk], m, corr, cap)
+        w = (replay.token_weights([r for r, _ in chunk], m, cap) if use_recorded else None)
         loss = replay.dr_grpo_loss(logp, m, adv / N, norm, w)
         loss.backward()
         del logp, loss
@@ -137,15 +138,16 @@ def main():
             logged = {int(h["step"]): h["grad_norm"] for h in st["log_history"]
                       if "grad_norm" in h}
             gs = batch_grad(run_dir / f"checkpoint-{s - 1}", recs, N, norm, tok,
-                            args.micro_batch, args.freeze, replay.CORRECTIONS, cap)
+                            args.micro_batch, args.freeze, (True, False), cap)
+            a, b = gs[True].float(), gs[False].float()
             row = dict(step=s, ckpt=s - 1, logged_grad_norm=logged.get(s),
                        completions=len(recs), advantage=args.advantage,
-                       **{f"norm_{c}": float(g.float().norm()) for c, g in gs.items()},
-                       cosine_recorded_none=float(
-                           (gs["recorded"].float() @ gs["none"].float())
-                           / (gs["recorded"].float().norm() * gs["none"].float().norm())))
-            for c in replay.CORRECTIONS:
-                row[f"ratio_{c}"] = row[f"norm_{c}"] / row["logged_grad_norm"]
+                       norm_with_recorded_logprobs=float(a.norm()),
+                       norm_without_recorded_logprobs=float(b.norm()),
+                       cosine_with_without=float((a @ b) / (a.norm() * b.norm())))
+            for w in ("with", "without"):
+                row[f"ratio_{w}"] = (row[f"norm_{w}_recorded_logprobs"]
+                                     / row["logged_grad_norm"])
             res.append(row)
             print(json.dumps(row), flush=True)
             del gs

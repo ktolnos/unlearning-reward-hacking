@@ -213,7 +213,7 @@ def repair_state(args, step, seen):
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
                 warmup_steps=args.warmup_steps, floor=args.floor,
-                second_moment=args.second_moment, correction=args.correction)
+                second_moment=args.second_moment, use_recorded_logprobs=args.use_recorded_logprobs)
 
 
 def evaluate_snapshot(args, d, step, models):
@@ -500,12 +500,11 @@ def main():
     # completion count, as training's was, not by its live completions: with a carried
     # second moment the gradient's scale sets the step. Use without warmup.
     p.add_argument("--second_moment", choices=["fresh", "anchor"], default="fresh")
-    # Whether the method may use the training run's log-probs (common/replay.py):
-    # `recorded` weights each token by training's own vLLM correction, from the log-prob
-    # files, so the replay's gradient is training's; `none` assumes only the sampled
-    # tokens and rewards were logged. No default: the two are different methods.
-    p.add_argument("--correction", choices=list(replay.CORRECTIONS),
-                   help="required for reverse and correct")
+    # Whether the method may use the training run's log-probs (common/replay.py): with
+    # them each token is weighted by training's own vLLM correction, so the replay's
+    # gradient is training's; without, only the sampled tokens and rewards were logged.
+    # No default: the two are different methods. Required for reverse and correct.
+    replay.add_argument(p)
     p.add_argument("--micro_batch", type=int, default=4)
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
@@ -602,11 +601,7 @@ def main():
     # gradient being replayed was computed.
     run = manifest.read(Path(args.model).parent)
     assert run["loss_type"] == "dr_grpo", f"replay assumes dr_grpo, not {run['loss_type']}"
-    if args.method != "bc" and args.correction is None:
-        raise SystemExit("--correction recorded|none is required: whether the method uses "
-                         "training's log-probs is part of the method")
-    if args.correction == "recorded" and not args.logprobs:
-        raise SystemExit("--correction recorded needs the run's log-prob files (--logprobs)")
+    replay.check(args, needed=args.method != "bc")
     vcap = replay.correction_cap(run)
     if args.norm is None:
         args.norm = run["train_max_tokens"]
@@ -903,8 +898,8 @@ def main():
 
             # training's vLLM correction per token (common/replay.py), on the mask before the
             # floor so it lines up with the recorded log-probs
-            vw = (None if args.method == "bc" or args.correction == "none" else
-                  replay.token_weights([r for _, r, _ in chunk], m, args.correction, vcap))
+            vw = (replay.token_weights([r for _, r, _ in chunk], m, vcap)
+                  if args.method != "bc" and args.use_recorded_logprobs else None)
             w = None
             if base_logp:
                 b0 = torch.zeros_like(logp)

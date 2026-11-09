@@ -51,8 +51,8 @@ for v in "${VS[@]}"; do
   IFS='|' read -r tag k extra <<< "$v"
   name=undo_full_${RUN}_k${k}_$tag
   echo "=== variant $tag: K=$k $extra"
-  # a check against a saved checkpoint, so training's own loss: the recorded correction
-  if $PY -m common.undo --correction recorded --model "$RUNS/$RUN/checkpoint-$ANCHOR" --rollouts "$ROLL" \
+  # a check against a saved checkpoint, so training's own loss: its recorded log-probs
+  if $PY -m common.undo --use_recorded_logprobs --model "$RUNS/$RUN/checkpoint-$ANCHOR" --rollouts "$ROLL" \
        "${KEYS[@]}" --advantage full --undo_steps "$k" --out "$RUNS/$name" \
        --micro_batch "${MICRO_BATCH:-1}" ${FREEZE:+--freeze "$FREEZE"} $extra; then
     $PY -m common.undo_check --anchor "$RUNS/$RUN/checkpoint-$ANCHOR" \

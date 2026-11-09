@@ -20,7 +20,7 @@ of these sources the run has:
 2. The run's log-prob files (`common.grpo` writes them), joined to the rollout log by
    `join_logprobs`; they add `_old`, each token's log-prob as the trainer computed it at
    the sampling weights, and `_samp`, vLLM's, which together give training's vLLM
-   correction (common/replay.py).
+   correction (common/replay.py, --use_recorded_logprobs).
 3. The logged text, re-encoded, with the terminator appended to finished completions.
    Only with `allow_text`, because nothing can tell from the text alone whether it is the
    whole completion. It is right for runs whose model does not think (all Qwen runs

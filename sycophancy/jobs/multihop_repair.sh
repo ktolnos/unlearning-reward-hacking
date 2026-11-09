@@ -65,13 +65,17 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
 # rollout log when it records them (logs from 2026-11-06), else from the run's log-prob
 # files. Gemma 4 thinks on multihop and the logged text lacks it, so ALLOW_TEXT=1
 # (replay the text re-encoded) is only for a Qwen run with neither.
-# CORRECTION=recorded|none, required for every replay method: whether it may use the
-# training run's log-probs. `recorded` weights each token by training's own vLLM
-# correction from the log-prob files, so the replay's gradient is training's; `none`
-# assumes only the sampled tokens and rewards were logged (common/replay.py).
-if [ "${METHOD:-reverse}" != bc ]; then
-  : "${CORRECTION:?set CORRECTION=recorded or none}"
-fi
+# USE_RECORDED_LOGPROBS=1|0, required for every replay method: whether it may use the
+# training run's log-probs. 1 weights each token by training's own vLLM correction from
+# the log-prob files, so the replay's gradient is training's; 0 assumes only the sampled
+# tokens and rewards were logged (common/replay.py).
+LP_FLAG=()
+case "${USE_RECORDED_LOGPROBS:-}" in
+  1) LP_FLAG=(--use_recorded_logprobs) ;;
+  0) LP_FLAG=(--no-use_recorded_logprobs) ;;
+  "") [ "${METHOD:-reverse}" = bc ] || { echo "set USE_RECORDED_LOGPROBS=1 or 0" >&2; exit 1; } ;;
+  *) echo "USE_RECORDED_LOGPROBS must be 1 or 0" >&2; exit 1 ;;
+esac
 TOKENS=()
 [ -d "$RUNS/$RUN/logprobs" ] && TOKENS+=(--logprobs "$RUNS/$RUN/logprobs")
 [ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
@@ -79,7 +83,7 @@ if [ "${METHOD:-}" = undo ]; then
 # Exact undo (common/undo.py); creatures/jobs/repair.sh's comment there explains the
 # variables. SAVE_AT_STEPS counts training steps undone, newest first.
 "${PY[@]}" -m common.undo \
-  --correction "$CORRECTION" \
+  "${LP_FLAG[@]}" \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
   "${TOKENS[@]}" \
   --buggy_reward r_bonus --true_reward r_correct \
@@ -96,7 +100,7 @@ if [ "${METHOD:-}" = undo ]; then
   ${FREEZE:+--freeze "$FREEZE"}
 else
 "${PY[@]}" -m common.repair \
-  ${CORRECTION:+--correction "$CORRECTION"} \
+  "${LP_FLAG[@]}" \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
   "${TOKENS[@]}" \
   --buggy_reward r_bonus --true_reward r_correct \

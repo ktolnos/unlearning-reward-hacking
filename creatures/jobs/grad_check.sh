@@ -7,7 +7,7 @@
 #
 # Is the replay's loss training's? For each step s in STEPS, the batch gradient at
 # checkpoint-(s-1) with the advantages training logged, against the grad_norm training
-# logged for step s, with and without training's vLLM correction (common/grad_drift.py
+# logged for step s, with and without the recorded log-probs (training's vLLM correction) (common/grad_drift.py
 # --check_logged). Works for both environments, as creatures/jobs/undo_check.sh does.
 # Request the GPU on the command line (this cluster's flags; see AGENTS.md).
 #

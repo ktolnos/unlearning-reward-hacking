@@ -161,10 +161,10 @@ def main():
     # a checkpoint. `fp32`: training's fp32 master copy, which carries each weight's
     # remainder below bf16 resolution.
     p.add_argument("--start", choices=["bf16", "fp32"], default="bf16")
-    # Whether the method may use the training run's log-probs (common/replay.py):
-    # `recorded` weights each token by training's own vLLM correction from the log-prob
-    # files; `none` assumes only the sampled tokens and rewards were logged.
-    p.add_argument("--correction", choices=list(replay.CORRECTIONS), required=True)
+    # Whether the method may use the training run's log-probs (common/replay.py): with
+    # them each token is weighted by training's own vLLM correction; without, only the
+    # sampled tokens and rewards were logged. No default.
+    replay.add_argument(p)
     p.add_argument("--floor", action="store_true",
                    help="stop pushing a token down once its log-prob is at or below the "
                         "untrained model's (common/floor.py): the floored undo")
@@ -183,8 +183,7 @@ def main():
         raise SystemExit("undo assumes beta=0: no KL term in the training loss")
     norm = run["train_max_tokens"]
     vcap = replay.correction_cap(run)
-    if args.correction == "recorded" and not args.logprobs:
-        raise SystemExit("--correction recorded needs the run's log-prob files (--logprobs)")
+    replay.check(args)
     max_len = args.max_len or run["max_prompt_tokens"] + norm
     masked = run["mask_truncated_completions"]
 
@@ -410,7 +409,7 @@ def main():
 
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
-                    floor=args.floor, start=args.start, correction=args.correction,
+                    floor=args.floor, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
@@ -466,10 +465,9 @@ def main():
                     mf, f_n, f_tot = floor_mod.mask(logp, m, adv,
                                                     [r.get("_floor") for _, r, _ in chunk])
                     floored[0] += f_n; floored[1] += f_tot
-                # times training's vLLM correction per token, with --correction recorded
-                if args.correction == "recorded":
-                    W = W * replay.token_weights([r for _, r, _ in chunk], m,
-                                                 "recorded", vcap)
+                # times training's vLLM correction per token, with --use_recorded_logprobs
+                if args.use_recorded_logprobs:
+                    W = W * replay.token_weights([r for _, r, _ in chunk], m, vcap)
                 loss = replay.dr_grpo_loss(logp, mf, adv / N, norm, W)
                 loss.backward()
                 loss_sum += loss.item()
