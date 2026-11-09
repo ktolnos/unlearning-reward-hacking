@@ -63,16 +63,17 @@ def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze=""
                 L = max(len(e) for e, _ in encs)
                 ids = torch.full((len(ch), L), pad, dtype=torch.long)
                 attn = torch.zeros((len(ch), L), dtype=torch.long)
-                for j, (e, _) in enumerate(encs):
+                cm = torch.zeros((len(ch), L), dtype=torch.bool)
+                for j, (e, plen) in enumerate(encs):
                     ids[j, :len(e)] = torch.tensor(e)
                     attn[j, :len(e)] = 1
-                ids, attn = ids.cuda(), attn.cuda()
-                logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-                lp = token_logprobs(logits, ids[:, 1:])
+                    cm[j, plen:len(e)] = True
+                ids, attn, cm = ids.cuda(), attn.cuda(), cm.cuda()
+                lp = token_logprobs(model, ids, attn, cm)
                 for j, ((k, _), (e, plen)) in enumerate(zip(ch, encs)):
                     # completion tokens only: positions plen-1 .. len-2 predict them
                     store[k] = lp[j, plen - 1:len(e) - 1].to(torch.float16).cpu()
-                del logits, lp, ids, attn
+                del lp, ids, attn, cm
                 if (i // micro_batch) % 200 == 0:
                     print(f"  {i + len(ch)}/{len(todo)}", flush=True)
         del model

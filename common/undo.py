@@ -429,8 +429,7 @@ def main():
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
-                logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-                logp = token_logprobs(logits, ids[:, 1:])
+                logp = token_logprobs(model, ids, attn, cm)
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
                 with torch.no_grad():
@@ -470,7 +469,7 @@ def main():
                             gp = gap[-1 if a < 0 else 1]
                             gp[0] += float((cur[:len(old)] - old).sum())
                             gp[1] += len(old)
-                del logits, logp, ids, attn, cm, loss
+                del logp, ids, attn, cm, loss
             # theta <- theta - alpha * k_t * clip-aware step of -g_t^bug, per weight, with
             # the safety limit: sqrt(vhat) is at least what this gradient alone would have
             # put there had it been step t's gradient

@@ -786,9 +786,8 @@ def main():
             cmask[j, plen:len(e)] = True
         return ids.cuda(), attn.cuda(), cmask.cuda()
 
-    def token_logp(ids, attn):
-        logits = model(input_ids=ids, attention_mask=attn).logits[:, :-1]
-        return token_logprobs(logits, ids[:, 1:])
+    def token_logp(ids, attn, cmask):
+        return token_logprobs(model, ids, attn, cmask)
 
     def live_records(gi):
         """((group, slot), record, advantage) for the rows this method actually trains on.
@@ -853,7 +852,7 @@ def main():
                 for i in range(0, len(todo), args.micro_batch):
                     ch = todo[i:i + args.micro_batch]
                     ids, attn, cmask = pack([r for _, r in ch])
-                    lp, m = token_logp(ids, attn), cmask[:, 1:]
+                    lp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
                     for j, (k, _) in enumerate(ch):
                         base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
                     del ids, attn, cmask, lp, m
@@ -910,7 +909,7 @@ def main():
             adv = torch.tensor([a / (groups[k[0]]["N"] if per_step_n else 1)
                                 for k, _, a in chunk], dtype=torch.float32).cuda()
 
-            logp = token_logp(ids, attn)
+            logp = token_logp(ids, attn, cmask)
             m = cmask[:, 1:]
             if args.method != "bc":
                 with torch.no_grad():

@@ -220,25 +220,23 @@ def prompt_ids(rec, tok):
     return tok(text, add_special_tokens=False).input_ids
 
 
-def token_logprobs(logits, targets, chunk=1024):
-    """log p(target) at each position, in fp32, from bf16 `logits` [B, T, V].
+def token_logprobs(model, ids, attn, cmask):
+    """log p(ids[:, 1:]) under `model`, [B, L-1] in fp32, computed as training computed it.
 
-    The same numbers as log_softmax(logits.float()).gather(targets), without holding an
-    fp32 copy of the whole [T, V] tensor: positions are taken `chunk` at a time, and
-    under autograd each chunk's fp32 work is recomputed in the backward pass instead of
-    kept. At 6.5k tokens and Gemma's 262k vocabulary that copy, its log-softmax and their
-    gradients are ~25 GB, which is what kept the multihop replays off a 48 GB GPU.
+    TRL's GRPO trainer asks the model for logits on completion positions only
+    (`logits_to_keep`) and takes TRL's `selective_log_softmax` of them in the model's own
+    dtype (bf16 here), one sequence at a time. The replay does the same, so its log-probs
+    and gradients match training's to bf16 rounding, and the prompt's logits -- ~2.4k
+    tokens on multihop -- are never formed. Positions before the earliest completion
+    token of the micro-batch (`cmask`) come back as 0; every caller masks them out.
+    Training sampled at temperature 1, so the logits are not divided.
     """
-    import torch
-    from torch.utils.checkpoint import checkpoint
-
-    def part(lg, t):
-        lg = lg.float()
-        return lg.gather(-1, t.unsqueeze(-1)).squeeze(-1) - torch.logsumexp(lg, -1)
-
-    out = []
-    for s in range(0, logits.size(1), chunk):
-        lg, t = logits[:, s:s + chunk], targets[:, s:s + chunk]
-        out.append(checkpoint(part, lg, t, use_reentrant=False)
-                   if torch.is_grad_enabled() and lg.requires_grad else part(lg, t))
-    return torch.cat(out, 1)
+    from trl.trainer.utils import selective_log_softmax
+    L = ids.size(1)
+    first = int(cmask.int().argmax(1).min())  # earliest completion token in the batch
+    k = L - first
+    logits = model(input_ids=ids, attention_mask=attn, logits_to_keep=k + 1).logits[:, :-1]
+    lp = selective_log_softmax(logits, ids[:, first:])
+    full = lp.new_zeros(ids.size(0), L - 1)
+    full[:, first - 1:] = lp
+    return full.float()
