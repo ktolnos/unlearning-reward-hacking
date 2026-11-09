@@ -1,57 +1,24 @@
-"""The trade-off figures: every run's dose-response curve, and one mean curve per method.
+"""The trade-off figure: every run's dose curve, and each method's mean curve.
 
-    python -m creatures.analysis.tradeoff [--out DIR]
+    python -m creatures.analysis.tradeoff [--panels A|ABC] [--per-panel] [--out DIR]
 
-`tradeoff.png` (`figure`, the main one) pools all six runs in one row;
-`tradeoff_by_model.png` (`figure_by_model`, for the appendix) gives each model its own row.
-Both replaced `main6_abs.png` (`eval_figs.figure_panels`) on 2026-10-06, which drew one
-focus seed per model and so left four of the six runs out of the figure a reader looks at
-first. Each run's curve is a faint line, and each method has one solid curve.
+`tradeoff.png` pools every drawn run in one row; `tradeoff_by_model.png` gives each model
+its own row. Each run's curve is a faint line and each method's mean over runs a solid
+one, with a marker at every evaluated dose. `--panels A` draws the training distribution
+alone, which needs only the panel-A evals (`creatures/jobs/eval_one.sh`, PANELS=A).
 
-Every marker on a solid curve is a mean of measured values at one dose. Every method but
-rewind has the same dose schedule on both models, so its pooled mean needs no alignment,
-and `mean_path` raises rather than averaging runs whose schedules differ. Rewind's
-ladders differ -- the anchor is step 40 on Qwen and 50 on Gemma -- so its pooled curve
-(`rewind_mean`) is taken at matched fraction of training undone, interpolating each run
-linearly between its checkpoints, and is a bare line with a marker only at the untrained
-end, which every run measured. The first pooled version (2026-10-06 to 10-23) put markers
-on those interpolated points, drawing them as measurements.
+x is the creature rate minus the run's untrained rate, in percentage points: untrained
+is 0 in every run and the anchor sits at the run's installed gap. y is the accuracy
+change against the anchor divided by the run's RL gain on the training distribution
+(`common.rank.per_gain`), so rewinding to the untrained model costs exactly -1 on panel
+A in every run. With `--per-panel` both axes are scaled by the run's own gaps on that
+panel instead, putting every run's anchor at (1, 0) and the untrained model at (0, -1);
+that is only meaningful while every drawn run's gap on every panel is well clear of noise.
 
-Pooling hides real model differences, which is what the faint runs (end marked by model)
-and the per-model figure are for. Rewound by half its training (checkpoint 20) Qwen keeps
-84% of its RL gain, and Gemma rewound by 40% (checkpoint 30) keeps 61% -- the difference
-section 6 of docs/EVAL.md rests on -- while the pooled curve puts half-way at 67%.
-Continued training removes most of Qwen's trained-task hack and none of Gemma's.
-
-The axes are chosen so that runs can be averaged at all.
-
-x is the creature rate minus the run's untrained rate, in percentage points, so that more
-removal is to the left. Untrained is 0 in every run, and the anchor sits at the
-run's installed gap. Dividing by that gap (R) would also align the anchor, but the OOD
-persona gap is 4 pp on average and -1 pp on Gemma s2, so R there is noise.
-
-y is the accuracy change divided by the run's RL gain on trained tasks, as on `rank.png`
-(`common.rank.per_gain`): rewinding all the way costs exactly -1 on the trained
-distribution in every run, where in raw accuracy it cost anywhere from 0.12 to 0.41.
-
-A mean at matched dose still blends runs that respond to the dose at different rates --
-Qwen s1 has removed its whole trained-task hack by checkpoint 20, its two siblings not by
-checkpoint 10 -- so a mean curve is not any one run's trajectory. The faint curves show
-the runs it averages.
-
-`PER_PANEL` (set by `testbeds.py --per-panel`) instead scales every panel by its own
-gaps: x by the run's installed gap on that panel's hack measure, y by the run's RL gain
-on that panel's capability measure. Every run then starts at (1, 0), the anchor, and a
-full rewind ends at (0, -1), the untrained model, so curves differ only in shape. It is
-only meaningful when every drawn run has a gap well clear of noise on every panel, which
-is why the runs it draws are chosen by hand.
-
-Across-run intervals are left to `rank.png`, which reports them at the operating point.
-On a curve they would add two bars to every mean point. The faint per-run curves show the
-spread instead.
-
-The curves and their columns are `rank.curves()`'s, so these numbers are the ones the
-rank figure reads.
+A mean at matched dose blends runs that respond to the dose at different rates, so it is
+not any one run's trajectory; the faint curves show the runs it averages. It is drawn
+only where every run of the method is evaluated at every dose, so a method with some runs
+evaluated for panel A alone has no mean on the other panels.
 """
 
 import argparse
@@ -59,285 +26,180 @@ import argparse
 import numpy as np
 
 from common import rank as K
-from creatures.analysis import eval_figs as E
-from creatures.analysis.rank import COLOUR, REWIND, RETRAIN, SUPPRESS, UNPLOTTED, UPPER, curves
+from creatures.analysis import measures as M
+from creatures.analysis.rank import REWIND, UPPER, colours, curves
 
-# (title, excess column, gap column, capability column, x label, y label)
-PANELS = [("A. Trained distribution", "exc_id", "gap_id", "dA_tr",
-           "creature rate − untrained rate, trained tasks, rewarded persona (pp)",
-           "trained tasks: normalised Δ accuracy"),
-          ("B. Held-out tasks", "exc_ood", "gap_ood", "dA",
-           "creature rate − untrained rate, held-out tasks, rewarded persona (pp)",
+# (title, slice, x label, y label)
+PANELS = [("A. Training distribution", "id",
+           "creature rate − untrained rate, trained tasks, training persona mix (pp)",
+           "trained tasks, training persona mix: normalised Δ accuracy"),
+          ("B. Held-out tasks", "ood",
+           "creature rate − untrained rate, held-out tasks, training persona mix (pp)",
            "held-out tasks: normalised Δ accuracy"),
-          ("C. Unrewarded persona", "exc_per", "gap_per", "dA_all",
-           "creature rate − untrained rate, OOD persona, all tasks (pp)",
-           "all tasks: normalised Δ accuracy")]
-MODELS = ["Qwen", "Gemma"]
-# Scale each panel by its own gaps (module docstring). Off: pp and trained-task gain units.
+          ("C. Unseen persona", "per",
+           "creature rate − untrained rate, unseen persona, all tasks (pp)",
+           "unseen persona, all tasks: normalised Δ accuracy")]
 PER_PANEL = False
-GAIN = {"dA_tr": "gain_tr", "dA": "gain", "dA_all": "gain_all"}
+MARK = {"Qwen": "o", "Gemma": "^"}
 
 
-def gain_of(v, cap):
-    """The capability gain a panel's y is divided by."""
-    return v[GAIN[cap]] if PER_PANEL else v.gain_tr
-
-
-def anchor_x(v, gap):
-    return 1.0 if PER_PANEL else v[gap].iloc[0] * 100
-
-
-def axis_labels(xl, yl):
-    """Panel labels for the current scaling."""
-    if not PER_PANEL:
-        return (xl + "\n0: untrained rate; > 0: residual hack; < 0: over-erasure", yl)
-    what = xl.replace("creature rate − untrained rate, ", "").replace(" (pp)", "")
-    return (f"creature-rate gap remaining, {what}\n1: hacked anchor; 0: untrained; "
-            "< 0: over-erasure",
-            yl.replace("normalised Δ accuracy", "Δ accuracy ÷ this run's gain here"))
-
-
-def suptitle_norm():
+def path(df, k):
+    """(doses, x, y) for one run's curve, the anchor prepended as dose -1."""
+    g = df[f"gain_{k}" if PER_PANEL else "gain_id"].iloc[0]
+    x = df[f"exc_{k}"].values * 100
+    gap = df[f"gap_{k}"].iloc[0] * 100
     if PER_PANEL:
-        return ("Each panel is scaled by the run's own gaps on that panel: x by its "
-                "installed hack, y by its RL capability gain (anchor at (1, 0), untrained "
-                "at (0, −1))")
-    return ("Capability change is normalised by each run's RL gain on trained tasks "
-            "(0: hacked anchor; −1: untrained capability on trained tasks)")
-
-
-def path(df, exc, gap, cap):
-    """(dose, x in pp, y in gain units) for one run, in dose order, the anchor prepended
-    where the curve leaves it. Rewind's dose is the checkpoint, so its anchor is labelled
-    with the anchor's own step; every value is a measurement."""
-    g = gain_of(df, cap).iloc[0]
-    x, y = df[exc].values * 100, df[cap].values / g
-    if PER_PANEL:
-        x = x / (df[gap].iloc[0] * 100)
-    dose = df.step.values
-    if df.from_anchor.iloc[0]:
-        x = np.concatenate([[anchor_x(df, gap)], x])
-        y = np.concatenate([[0.0], y])
-        dose = np.concatenate([[-1], dose])
-    return dose, x, y
+        x = x / gap
+    return (np.concatenate([[-1], df.step.values]),
+            np.concatenate([[1.0 if PER_PANEL else gap], x]),
+            np.concatenate([[0.0], df[f"dA_{k}"].values / g]))
 
 
 def mean_path(paths):
-    """Mean x and y over runs, dose by dose. Raises unless every run has the same doses:
-    averaging over a partial intersection would drop doses silently, and averaging
-    across different schedules needs an interpolation this figure does not make."""
-    doses = [tuple(d) for d, _, _ in paths]
-    if len(set(doses)) != 1:
-        raise ValueError(f"runs have different dose schedules: {sorted(set(doses))}")
-    return (np.array(doses[0]), np.mean([x for _, x, _ in paths], 0),
-            np.mean([y for _, _, y in paths], 0))
+    """Mean x and y over runs, dose by dose; None unless every run has the same doses and
+    a value at each, since averaging over whichever runs have one changes what it means."""
+    if len({tuple(d) for d, _, _ in paths}) != 1:
+        raise ValueError(f"runs have different dose schedules: "
+                         f"{sorted({tuple(d) for d, _, _ in paths})}")
+    xs, ys = np.array([x for _, x, _ in paths]), np.array([y for _, _, y in paths])
+    if np.isnan(xs).any() or np.isnan(ys).any():
+        return None
+    return xs.mean(0), ys.mean(0)
 
 
-def ladder(cs, model):
-    """The rewind checkpoints one model's runs share, as labels for the legend."""
-    steps = {tuple(v.step) for k, v in cs.items() if k[0] == model and k[2] == REWIND}
-    (one,) = steps  # mean_path would refuse anything else
-    return ["untrained" if st == 0 else str(st) for st in one]
+def labels(xl, yl):
+    if not PER_PANEL:
+        return xl + "\n0: untrained rate; > 0: residual hack; < 0: below untrained", yl
+    what = xl.replace("creature rate − untrained rate, ", "").replace(" (pp)", "")
+    return (f"creature-rate gap remaining, {what}\n1: hacked anchor; 0: untrained",
+            yl.replace("normalised Δ accuracy", "Δ accuracy ÷ this run's gain here"))
 
 
-def figure_by_model(out, cs):
-    """The appendix figure: one row per model, each method's mean over that model's runs."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    cs = {k: v for k, v in cs.items() if k[2] not in UNPLOTTED}
-    colour = {m: c for m, c in COLOUR.items() if m not in UNPLOTTED}
-    fig, axes = plt.subplots(2, 4, figsize=(21, 12.5),
-                             gridspec_kw=dict(width_ratios=[1, 1, 1, .75]))
+def draw_row(axes, cs, colour, title_prefix=""):
+    """One row of panels for the curves `cs`. Returns {method: {model: runs}}."""
     n_runs = {}
-    for row, model in enumerate(MODELS):
-        seeds = sorted({k[1] for k in cs if k[0] == model})
-        for col, (title, exc, gap, cap, xl, yl) in enumerate(PANELS):
-            ax = axes[row, col]
-            for m, c in colour.items():
-                keys = sorted(k for k in cs if k[0] == model and k[2] == m)
-                if not keys:
-                    continue
-                n_runs[(model, m)] = len(keys)
-                ps = [path(cs[k], exc, gap, cap) for k in keys]
-                for _, x, y in ps:
-                    # no line for the clause: anchor to clause-on is not a path a dose takes
-                    if m != SUPPRESS:
-                        ax.plot(x, y, "-", color=c, lw=.9, alpha=.25, zorder=2)
-                    ax.plot(x[-1:], y[-1:], "o", color=c, ms=4 if m != SUPPRESS else 5,
-                            alpha=.4, zorder=2)
-                _, mx, my = mean_path(ps)
-                if m == SUPPRESS:
-                    # its path is (anchor, clause-on point); only the latter is measured
-                    ax.plot(mx[-1:], my[-1:], "D", color=c, ms=10, mec="k", mew=1.1,
-                            zorder=6)
-                    continue
-                ax.plot(mx, my, "-", color=c, lw=2.4, zorder=5)
-                # every dose but the anchor, which has its own marker; retraining has none
-                first = 0 if m == RETRAIN else 1
-                ax.plot(mx[first:], my[first:], "o", color=c, ms=5.5, mec="k", mew=.6,
-                        zorder=6)
-                # the largest dose, so a reader can tell where each curve ends
-                ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
-            mine = [v for k, v in cs.items() if k[0] == model]
-            ax.plot(np.mean([anchor_x(v, gap) for v in mine]), 0, "ks", ms=10, zorder=8)
-            ax.axvline(0, color="k", ls=":", lw=1.2)
-            ax.axhline(0, color="k", lw=.7)
-            ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / gain_of(v, cap)) for v in mine])
-            K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
-            K.style(ax, f"{'ABCDEF'[3 * row + col]}. {model}: {title[3:]}",
-                    *axis_labels(xl, yl), best="Optimal: x = 0 with maximal y",
-                    read=f"Faint: {model} {', '.join(seeds)}. Solid: their mean at each "
-                         "evaluated dose; large marker: largest dose; black square: mean "
-                         "hacked anchor.")
-        for c_ in range(3 if PER_PANEL else 1):
-            axes[row, c_].axhline(-1, color="0.5", ls="--", lw=.9)
-        axes[row, 0].annotate("untrained capability", (0.01, -1),
-                              xycoords=("axes fraction", "data"), xytext=(0, 3),
-                              textcoords="offset points", fontsize=7, color="0.4")
-        axes[row, 0].axhline(-.1, color="tab:red", lw=.8, alpha=.5)
-        axes[row, 0].annotate("90% of RL gain retained", (0.99, -.1),
-                              xycoords=("axes fraction", "data"), xytext=(0, -9),
-                              textcoords="offset points", fontsize=7, color="tab:red",
-                              alpha=.8, ha="right")
-
-    h = [plt.Line2D([], [], color=c, lw=2.4, marker="D" if m == SUPPRESS else "o",
-                    ls="" if m == SUPPRESS else "-", mec="k", ms=7,
-                    label=m + "  (" + ", ".join(f"{n_runs[(md, m)]} {md}" for md in MODELS
-                                               if (md, m) in n_runs) + ")")
-         for m, c in colour.items() if any((md, m) in n_runs for md in MODELS)]
-    h += [plt.Line2D([], [], ls="", label="")]
-    h += [plt.Line2D([], [], color="0.4", marker="o", ls="-", lw=.9, alpha=.4,
-                     label="individual run"),
-          plt.Line2D([], [], color="k", marker="s", ls="", ms=8, label="hacked anchor")]
-    axes[0, 3].axis("off")
-    axes[1, 3].axis("off")
-    # centred between the two rows, left-aligned in its column
-    axes[0, 3].legend(handles=h, fontsize=9.5, loc="center left", frameon=False,
-                      bbox_to_anchor=(0, -.1),
-                      title="Rewind dose: which earlier checkpoint\n" + "\n".join(
-                          f"{md}: " + ", ".join(ladder(cs, md)) for md in MODELS),
-                      title_fontsize=8.5)
-    fig.suptitle("Dose-response of each repair method, one row per model\n"
-                 + suptitle_norm(), fontsize=12)
-    fig.tight_layout(rect=(0, 0, 1, .93), h_pad=6, w_pad=3)
-    png = E.save_fig(fig, out, "tradeoff_by_model")
-    plt.close(fig)
-    return png
-
-
-MODEL_MARK = {"Qwen": "o", "Gemma": "^"}
-
-
-def rewind_mean(cs, keys, exc, gap, cap):
-    """Mean rewind curve over runs whose ladders differ, aligned by the fraction of
-    training undone and linearly interpolated onto the union of their fractions.
-
-    Only the two ends are measured in every run -- the anchor (0) and the untrained model
-    (1) -- so only they get markers; in between, the line is the mean of the runs'
-    straight segments, which is what a line between checkpoints already asserts."""
-    fs, xs, ys = [], [], []
-    for k in keys:
-        dose, x, y = path(cs[k], exc, gap, cap)
-        anchor = E.ANCHOR[k[0]]
-        f = np.where(dose == -1, 0.0, (anchor - dose) / anchor)
-        fs.append(f), xs.append(x), ys.append(y)
-    grid = np.unique(np.concatenate(fs))
-    mx = np.mean([np.interp(grid, f, x) for f, x in zip(fs, xs)], 0)
-    my = np.mean([np.interp(grid, f, y) for f, y in zip(fs, ys)], 0)
-    return mx, my
-
-
-def figure(out, cs):
-    """The main figure: one row, every method's mean over all six runs. The per-model
-    version is drawn alongside as `tradeoff_by_model`."""
-    figure_by_model(out, cs)
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    cs = {k: v for k, v in cs.items() if k[2] not in UNPLOTTED}
-    colour = {m: c for m, c in COLOUR.items() if m not in UNPLOTTED}
-    fig, axes = plt.subplots(1, 4, figsize=(21, 7.4),
-                             gridspec_kw=dict(width_ratios=[1, 1, 1, .75]))
-    n_runs = {}
-    for col, (title, exc, gap, cap, xl, yl) in enumerate(PANELS):
-        ax = axes[col]
+    for ax, (title, k, xl, yl) in zip(axes, PANELS):
+        drawn = False
         for m, c in colour.items():
-            keys = sorted(k for k in cs if k[2] == m)
+            keys = sorted(key for key in cs if key[2] == m)
             if not keys:
                 continue
-            n_runs[m] = {md: sum(k[0] == md for k in keys) for md in MODELS}
-            for k in keys:
-                _, x, y = path(cs[k], exc, gap, cap)
-                if m != SUPPRESS:
-                    ax.plot(x, y, "-", color=c, lw=.9, alpha=.25, zorder=2)
-                ax.plot(x[-1:], y[-1:], MODEL_MARK[k[0]], color=c, ms=4.5, alpha=.45,
-                        zorder=2)
-            if m == REWIND:
-                mx, my = rewind_mean(cs, keys, exc, gap, cap)
-                ax.plot(mx, my, "-", color=c, lw=2.4, zorder=5)
-                ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
+            n_runs[m] = {md: sum(key[0] == md for key in keys) for md in M.MODELS}
+            ps = [path(cs[key], k) for key in keys]
+            for key, (_, x, y) in zip(keys, ps):
+                ax.plot(x, y, "-", color=c, lw=.9, alpha=.25, zorder=2)
+                ax.plot(x[-1:], y[-1:], MARK[key[0]], color=c, ms=4.5, alpha=.45, zorder=2)
+                drawn |= bool(np.isfinite(x[1:]).any())
+            mean = mean_path(ps)
+            if mean is None:
                 continue
-            _, mx, my = mean_path([path(cs[k], exc, gap, cap) for k in keys])
-            if m == SUPPRESS:
-                ax.plot(mx[-1:], my[-1:], "D", color=c, ms=10, mec="k", mew=1.1, zorder=6)
-                continue
+            mx, my = mean
             ax.plot(mx, my, "-", color=c, lw=2.4, zorder=5)
-            first = 0 if m == RETRAIN else 1
-            ax.plot(mx[first:], my[first:], "o", color=c, ms=5.5, mec="k", mew=.6,
-                    zorder=6)
+            ax.plot(mx[1:], my[1:], "o", color=c, ms=5.5, mec="k", mew=.6, zorder=6)
             ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
-        ax.plot(np.mean([anchor_x(v, gap) for v in cs.values()]), 0, "ks", ms=10,
+        if not drawn:
+            ax.text(.5, .5, "not evaluated yet", ha="center", va="center",
+                    transform=ax.transAxes, color="0.4")
+        ax.plot(np.nanmean([path(v, k)[1][0] for v in cs.values()]), 0, "ks", ms=10,
                 zorder=8)
         ax.axvline(0, color="k", ls=":", lw=1.2)
         ax.axhline(0, color="k", lw=.7)
-        ci = np.nanmedian([np.nanmedian(v[f"{cap}_ci"] / gain_of(v, cap))
+        if k == "id" or PER_PANEL:
+            ax.axhline(-1, color="0.5", ls="--", lw=.9)
+            ax.annotate("untrained capability", (0.01, -1), xycoords=("axes fraction", "data"),
+                        xytext=(0, 3), textcoords="offset points", fontsize=7, color="0.4")
+        if k == "id":
+            ax.axhline(-.1, color="tab:red", lw=.8, alpha=.5)
+            ax.annotate("90% of RL gain retained", (0.99, -.1),
+                        xycoords=("axes fraction", "data"), xytext=(0, -9),
+                        textcoords="offset points", fontsize=7, color="tab:red", alpha=.8,
+                        ha="right")
+        ci = np.nanmedian([np.nanmedian(v[f"dA_{k}_ci"]
+                                        / v[f"gain_{k}" if PER_PANEL else "gain_id"])
                            for v in cs.values()])
-        K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
-        K.style(ax, title, *axis_labels(xl, yl), best="Optimal: x = 0 with maximal y",
-                read="Faint: individual runs, end marked ○ Qwen, △ Gemma. Solid: "
-                     "mean over all runs at each evaluated dose; large marker: largest "
-                     "dose; black square: mean hacked anchor.")
-    for c_ in range(3 if PER_PANEL else 1):
-        axes[c_].axhline(-1, color="0.5", ls="--", lw=.9)
-    axes[0].annotate("untrained capability", (0.01, -1), xycoords=("axes fraction", "data"),
-                     xytext=(0, 3), textcoords="offset points", fontsize=7, color="0.4")
-    axes[0].axhline(-.1, color="tab:red", lw=.8, alpha=.5)
-    axes[0].annotate("90% of RL gain retained", (0.99, -.1),
-                     xycoords=("axes fraction", "data"), xytext=(0, -9),
-                     textcoords="offset points", fontsize=7, color="tab:red", alpha=.8,
-                     ha="right")
+        if np.isfinite(ci):
+            K.scale_bar(ax, ci, where=(.93, .08), label=UPPER)
+        K.style(ax, title_prefix + title, *labels(xl, yl),
+                best="Optimal: x = 0 with maximal y",
+                read="Faint: individual runs, end marked ○ Qwen, △ Gemma. Solid: mean "
+                     "over runs at each evaluated dose; large marker: largest dose; "
+                     "black square: mean hacked anchor.")
+    return n_runs
 
-    h = [plt.Line2D([], [], color=c, lw=2.4, marker="D" if m == SUPPRESS else "o",
-                    ls="" if m == SUPPRESS else "-", mec="k", ms=7,
+
+def legend(ax, colour, n_runs, cs):
+    import matplotlib.pyplot as plt
+    h = [plt.Line2D([], [], color=c, lw=2.4, marker="o", mec="k", ms=7,
                     label=m + "  (" + ", ".join(f"{n} {md}" for md, n in n_runs[m].items()
                                                if n) + ")")
          for m, c in colour.items() if m in n_runs]
     h += [plt.Line2D([], [], ls="", label="")]
-    h += [plt.Line2D([], [], color="0.4", marker=MODEL_MARK[md], ls="-", lw=.9, alpha=.45,
-                     label=f"individual run, {md}") for md in MODELS]
+    h += [plt.Line2D([], [], color="0.4", marker=MARK[md], ls="-", lw=.9, alpha=.45,
+                     label=f"individual run, {md}") for md in M.MODELS]
     h += [plt.Line2D([], [], color="k", marker="s", ls="", ms=8, label="hacked anchor")]
-    axes[3].axis("off")
-    axes[3].legend(handles=h, fontsize=9.5, loc="center left", frameon=False,
-                   title="Rewind: the two models' checkpoint ladders differ\n("
-                         + "; ".join(f"{md} " + ", ".join(ladder(cs, md)) for md in MODELS)
-                         + "),\nso its mean is taken at matched fraction of training "
-                           "undone,\ninterpolating between checkpoints; only its "
-                           "endpoints\n(anchor, untrained) are measured in every run.",
-                   title_fontsize=8.5)
-    fig.suptitle("Dose-response of each repair method, mean over both models\n"
-                 + suptitle_norm() + ". Per-model curves: tradeoff_by_model.", fontsize=12)
-    fig.tight_layout(rect=(0, 0, 1, .9), w_pad=3)
-    png = E.save_fig(fig, out, "tradeoff")
-    plt.close(fig)
-    return png
+    steps = sorted({tuple(v.step) for k, v in cs.items() if k[2] == REWIND})
+    ax.axis("off")
+    ax.legend(handles=h, fontsize=9.5, loc="center left", frameon=False,
+              title="Rewind dose: checkpoint " + ", ".join(
+                  "untrained" if s == 0 else str(s) for s in (steps[0] if steps else ())),
+              title_fontsize=8.5)
+
+
+def norm_note():
+    if PER_PANEL:
+        return ("Each panel is scaled by the run's own gaps there (anchor at (1, 0), "
+                "untrained at (0, −1))")
+    return ("Capability change is normalised by each run's RL gain on the training "
+            "distribution (0: hacked anchor; −1: untrained)")
+
+
+def figure(out, cs, panels="ABC"):
+    """`tradeoff.png` (all runs) and `tradeoff_by_model.png`; returns the first's path."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    global PANELS
+    saved, PANELS = PANELS, [p for p in PANELS if p[1] in M.PANEL_SLICES[panels]]
+    try:
+        colour = colours(cs)
+        n = len(PANELS)
+        suffix = "" if panels == "ABC" else f"_{panels}"
+        fig, axes = plt.subplots(1, n + 1, figsize=(5.4 * n + 4, 7.4), squeeze=False,
+                                 gridspec_kw=dict(width_ratios=[1] * n + [.75]))
+        n_runs = draw_row(axes[0, :n], cs, colour)
+        legend(axes[0, n], colour, n_runs, cs)
+        fig.suptitle("Dose-response of each repair method, mean over all runs\n"
+                     + norm_note(), fontsize=12)
+        fig.tight_layout(rect=(0, 0, 1, .9), w_pad=3)
+        png = M.save_fig(fig, out, "tradeoff" + suffix)
+        plt.close(fig)
+
+        fig, axes = plt.subplots(len(M.MODELS), n + 1, squeeze=False,
+                                 figsize=(5.4 * n + 4, 6.6 * len(M.MODELS)),
+                                 gridspec_kw=dict(width_ratios=[1] * n + [.75]))
+        for i, model in enumerate(M.MODELS):
+            mine = {k: v for k, v in cs.items() if k[0] == model}
+            n_runs = draw_row(axes[i, :n], mine, colour, f"{model}: ")
+            legend(axes[i, n], colour, n_runs, mine)
+        fig.suptitle("Dose-response of each repair method, one row per model\n"
+                     + norm_note(), fontsize=12)
+        fig.tight_layout(rect=(0, 0, 1, .93), h_pad=6, w_pad=3)
+        M.save_fig(fig, out, "tradeoff_by_model" + suffix)
+        plt.close(fig)
+        return png
+    finally:
+        PANELS = saved
 
 
 def main():
+    global PER_PANEL
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="creatures/docs/figs")
+    ap.add_argument("--out", default="creatures/docs/figs/cre17")
+    ap.add_argument("--panels", default="ABC", choices=sorted(M.PANEL_SLICES))
+    ap.add_argument("--per-panel", action="store_true")
     args = ap.parse_args()
-    print(f"wrote {figure(args.out, curves())}")
+    PER_PANEL = args.per_panel
+    print(f"wrote {figure(args.out + ('_per_panel' if PER_PANEL else ''), curves(), args.panels)}")
 
 
 if __name__ == "__main__":

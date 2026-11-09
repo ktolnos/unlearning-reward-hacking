@@ -149,10 +149,15 @@ Rewinding is the baseline any method has to beat: it needs no rollouts.
 
 ## 7. Figures and tables
 
-    python -m creatures.analysis.rank        # rank.png, the method summary table
-    python -m creatures.analysis.eval_figs   # tradeoff.png, figA_snr, figC_order, figD_bc, install tables
-    python -m creatures.analysis.variance    # bottleneck.png
-    python -m creatures.analysis.register    # register density (--all for six runs)
+    PANELS=A bash creatures/jobs/eval_one.sh <ckpt> <tag>  # the cells panel A reads
+    bash creatures/jobs/eval_one.sh <ckpt> <tag>           # the rest (ABC); none redone
+    python -m creatures.analysis.tradeoff --panels A       # tradeoff_A.png
+    python -m creatures.analysis.rank                      # tradeoff.png, rank.png, tables
 
-`eval_figs.load` is the one loader. `eval_figs.protocol_audit` checks that every
-comparison reads the 96 × 2 battery.
+Figures go to `figs/cre17/`. What each panel measures is defined once, in
+`creatures/analysis/measures.py`, from the training run's run.json: panel A is the
+training distribution (trained tasks, each persona at its training share), B held-out
+tasks under the training persona mix, C a persona no training prompt carried. The eval
+generates only the (persona, task) cells those read, and only the ones not already on
+disk, so a method can be iterated on panel A and completed later at no extra cost. The
+sections above describe the battery of the earlier `final_*` runs.

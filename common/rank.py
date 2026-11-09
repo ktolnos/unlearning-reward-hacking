@@ -150,7 +150,7 @@ def nearest_measured(df):
     return df.iloc[min(ends, key=lambda j: abs(df.R_id.iloc[j] - 1.0))]
 
 
-def overshoot_slope(df, floor=0.95):
+def overshoot_slope(df, floor=0.95, col="dA_tr"):
     """How much accuracy each further unit of R costs, past the target.
 
     The dose is not transferable between runs, so overshooting is the expected failure
@@ -161,7 +161,7 @@ def overshoot_slope(df, floor=0.95):
     d = df[df.R_id >= floor]
     if len(d) < 2 or d.R_id.max() - d.R_id.min() < 0.1:
         return None
-    return float(np.polyfit(d.R_id, d.dA_tr, 1)[0])
+    return float(np.polyfit(d.R_id, d[col], 1)[0])
 
 
 def min_rate_at_cost(df, frac=0.10, col="dA", gaincol="gain", ratecol="rate_id"):

@@ -12,7 +12,7 @@ copy of its questions.
 Before a file is rewritten, its rows are rebuilt with nothing dropped and compared
 against what is stored; a file that does not reproduce is skipped and listed. A rewritten
 file gets `dropped_prompts`, so a second pass leaves it alone and analysis can tell the
-two kinds apart (eval_figs.proto_str). The original is kept under evals_pre_drop/.
+two kinds apart (measures.proto). The original is kept under evals_pre_drop/.
 
 Files without per-answer entries (the old 24 x 8 `final_*` and repair-arm evals) cannot
 be rebuilt and are left as they are.

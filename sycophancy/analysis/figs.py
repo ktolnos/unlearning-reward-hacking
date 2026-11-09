@@ -89,19 +89,19 @@ def untrained(run_dir: Path, tag: str, version: int = 1):
 
 
 def evals(d: Path, version: int = 1) -> dict[int, dict]:
-    """{step: frame} for every complete eval-step<N>/ (eval-v<version>-step<N>/) under `d`.
+    """{step: frame} for every eval-step<N>/ (eval-v<version>-step<N>/) under `d` with at
+    least one finished part (`frame.DONE`).
 
-    Complete means each part finished writing: a job that dies on start leaves its
-    directories behind, empty.
+    A frame holds only the metrics its finished parts give, so an eval run for the
+    in-distribution panel alone (PANELS=A) is read for that panel; each figure checks the
+    metrics it draws are there.
     """
     pre = "eval-step" if version == 1 else f"eval-v{version}-step"
     out = {}
     for e in d.glob(f"{pre}*"):
         m = re.fullmatch(rf"{pre}(\d+)", e.name)
-        if m and all((e / f).is_file() for f in ("math/summary.json",
-                                                  "multihop/completions.jsonl",
-                                                  "anthropic/records.jsonl")):
-            out[int(m.group(1))] = frame.load(e)
+        if m and (f := frame.load(e)):
+            out[int(m.group(1))] = f
     return dict(sorted(out.items()))
 
 

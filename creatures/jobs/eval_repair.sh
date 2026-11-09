@@ -10,6 +10,8 @@
 #
 #   NAME   repair output name under $URH_OUT/runs                      (required)
 #   SRC    checkpoint the repair started from, e.g. final_e2b_s0/checkpoint-50
+#   PANELS A for the cells panel A reads (iterating on a method), default ABC; cells
+#          already evaluated are skipped, so a later ABC run completes an A one
 #
 # SRC exists because `tokenizer.save_pretrained` does not write processor files, and
 # Gemma 4 is multimodal, so vLLM builds a processor and dies on a checkpoint without
@@ -20,7 +22,7 @@
 # repair.py writes the final weights to <NAME> and each --save_every snapshot to
 # <NAME>-stepN, so the naming differs from a training run's checkpoint-N and eval.sh
 # cannot walk it. Tags are <NAME> and <NAME>-stepN, matching the directory names, so
-# creatures.analysis.eval_figs can find them by the same key it repairs under.
+# creatures.analysis.measures finds them by the arm name (`ARMS`).
 set -euxo pipefail
 # Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
 # not in the repo; cluster.env.example lists what it sets.

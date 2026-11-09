@@ -171,7 +171,7 @@ def figure(out, anchor):
             ax = axes[i, j]
             # OOD is evaluated at the anchor and the untrained model only, so its rewind
             # line has just those two ends; the other panels have every checkpoint.
-            st = [s for s in steps if all(cap in evs[r][s] for r in runs)]
+            st = [s for s in steps if all(m in evs[r][s] for r in runs for m in (hack, cap))]
             if anchor not in st:
                 # e.g. OOD while its re-measure is still running: nothing to draw from.
                 ax.set_title(title, loc="left", fontweight="bold")
@@ -187,6 +187,7 @@ def figure(out, anchor):
                 for r in runs:
                     rv = (evals(REPAIRS[r][method], VERSION[anchor])
                           if method in REPAIRS.get(r, {}) else {})
+                    rv = {s: f for s, f in rv.items() if hack in f and cap in f}
                     if rv:
                         ps.append(path(evs[r], [evs[r][anchor], *rv.values()], anchor, hack, cap))
                 if ps:

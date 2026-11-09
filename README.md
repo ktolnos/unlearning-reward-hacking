@@ -84,8 +84,9 @@ the training budgets; `EVAL_VERSION=1` reproduces it.
 
     sbatch --export=ALL,NAME=pilot17,BONUS=0.25 creatures/jobs/train.sh
     sbatch --export=ALL,NAME=pilot17,STEPS="20 30 final" creatures/jobs/eval.sh
-    python -m creatures.analysis.eval_figs        # every figure and table
-    python -m creatures.analysis.rank             # the method ranking and trade-off curves
+    PANELS=A bash creatures/jobs/eval_one.sh <ckpt> <tag> # panel A's cells only
+    python -m creatures.analysis.tradeoff --panels A      # the main plot, panel A
+    python -m creatures.analysis.rank                     # every panel, rank.png, tables
     python -m common.repair --rollouts ... --buggy_reward r_creature --max_step 20
 
     bash sycophancy/jobs/recipe_seed.sh ...       # see its header for arguments

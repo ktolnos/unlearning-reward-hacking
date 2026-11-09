@@ -38,7 +38,7 @@ LOADERS = {}
 def load(d: str | Path) -> dict[str, dict]:
     """{metric: {key: value}} for one eval directory; math keys are (task, prompt_id)."""
     d = Path(d)
-    return parts(**{sub: d / sub for sub in LOADERS if (d / sub).is_dir()})
+    return parts(**{sub: d / sub for sub in LOADERS if (d / sub / DONE[sub]).is_file()})
 
 
 def parts(**dirs) -> dict[str, dict]:
@@ -92,6 +92,9 @@ def _anthropic(d: Path):
 
 
 LOADERS.update(math=_math, ood=_math, multihop=_multihop, anthropic=_anthropic)
+# The file each part writes last: a part without it did not finish and is not read.
+DONE = dict(math="summary.json", ood="summary.json", multihop="completions.jsonl",
+            anthropic="records.jsonl")
 
 
 def contrast(ref: dict, other: dict, metric: str) -> dict:
