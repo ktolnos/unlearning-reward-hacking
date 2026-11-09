@@ -84,10 +84,14 @@ REPAIRS: dict[str, dict[str, Path]] = {
     # Qwen's replay diverged after ~step 55, so its 128 and 256 evals ran out of time
     # with only the arithmetic part written and are not complete evals.
     "qwen_mh14_s1": {"reverse": RUNS_DIR / "rep_qwen_mh14_s1_rev-evals",
-                     "floored reverse": RUNS_DIR / "rep_qwen_mh14_s1_frev-evals"},
+                     "floored reverse": RUNS_DIR / "rep_qwen_mh14_s1_frev-evals",
+                     "floored undo": RUNS_DIR / "undo_qwen_mh14_s1_floor-evals"},
     "e2b_mh14_s1": {"reverse": RUNS_DIR / "rep_e2b_mh14_s1_rev-evals",
-                    "floored reverse": RUNS_DIR / "rep_e2b_mh14_s1_frev-evals"},
+                    "floored reverse": RUNS_DIR / "rep_e2b_mh14_s1_frev-evals",
+                    "floored undo": RUNS_DIR / "undo_e2b_mh14_s1_floor-evals"},
 }
+# A floored-undo arm is one run per alpha (undo_<run>_floor_a<100 alpha>); its evals sit in
+# one directory as eval-v2-step<100 alpha>, so the "step" of that curve is 100 x alpha.
 REWIND = "rewind to an earlier checkpoint"
 COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
           "bc": "tab:orange", "floored reverse": "tab:red", "floored undo": "tab:purple"}
