@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -99,7 +100,15 @@ def main(argv=None):
     args = p.parse_args(argv)
     run_dir = Path(args.run_dir)
     out = Path(args.out or run_dir / "replay_rollouts.jsonl")
-    out.write_text("".join(json.dumps(r) + "\n" for r in convert(run_dir)))
+    text = "".join(json.dumps(r) + "\n" for r in convert(run_dir))
+    # Several jobs on one run build this file at start-up. It is deterministic, so a job
+    # leaves an identical file alone, and otherwise replaces it atomically through a
+    # name of its own: a job never reads a half-written file.
+    if out.exists() and out.read_text() == text:
+        return
+    tmp = out.with_name(f"{out.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
+    tmp.replace(out)
     print(f"wrote {out}")
     return 0
 

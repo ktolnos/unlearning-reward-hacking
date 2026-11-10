@@ -15,6 +15,7 @@ rollouts reads them back and only completions not yet in the file are computed.
 """
 
 import hashlib
+import os
 from pathlib import Path
 
 import torch
@@ -78,7 +79,11 @@ def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze=""
                     print(f"  {i + len(ch)}/{len(todo)}", flush=True)
         del model
         torch.cuda.empty_cache()
-        tmp = p.with_suffix(".tmp")
+        # Other jobs on this run may have added completions meanwhile: merge with the
+        # file as it is now, and replace it atomically through a name of our own.
+        if p.exists():
+            store = {**torch.load(p, weights_only=True), **store}
+        tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
         torch.save(store, tmp)
         tmp.replace(p)
         print(f"wrote {len(store)} completions to {p}", flush=True)
