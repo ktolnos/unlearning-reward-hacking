@@ -9,9 +9,12 @@ optimizer step s, where
     w_s = sum_{t=s..T} lr_t * (1-b1) * b1^(t-s) / (1-b1^t) / (sqrt(vhat_t) + eps)
 
 adds up every step through which momentum carried g_s. Only the anchor's second moment
-vhat_T is saved; vhat_t is estimated as vhat_T * R_t, with R_t the same running mean
-taken over the logged gradient norms. That makes w_s = k_s / (sqrt(vhat_T) + eps), one
-number per step times one array per weight. The undo adds alpha * k_s * g_s^bug back,
+vhat_T is saved, and every vhat_t is taken to be it, as continuing training from the
+anchor would. That makes w_s = k_s / (sqrt(vhat_T) + eps), one number per step times one
+array per weight, and k_s needs only the learning-rate schedule and beta1: the inputs are
+the anchor's weights and Adam state, the training config and the rollout log, which is
+what continuing training needs plus the log. Clipping is not modelled (docs/EXACT_UNDO.md
+section 2.5). The undo adds alpha * k_s * g_s^bug back,
 newest step first, each gradient taken at the weights reached so far.
 
 There is no optimizer, learning rate or step count to choose: alpha = 1 is the undo,
@@ -44,26 +47,31 @@ from common.rollout_tokens import attach_sampled_tokens, prompt_ids, token_logpr
 
 
 def training_log(ckpt):
-    """(lr, grad_norm) of optimizer steps 1..T from the checkpoint's trainer_state.json.
+    """(T, lr, grad_norm) for optimizer steps 1..T from the checkpoint's trainer_state.json.
 
-    The logged `learning_rate` of step t is the one step t used: step 1 logs 0.0 under
-    the 8-step warmup, which is the scheduler's value before its first step.
+    The learning rates are the schedule the training config defines; they are read from
+    the log only because it holds them per step. The logged `learning_rate` of step t is
+    the one step t used: step 1 logs 0.0 under the 8-step warmup, which is the
+    scheduler's value before its first step. `grad_norm` is None where the log lacks it:
+    the undo does not use it, only a printed diagnostic does.
     """
     st = json.load(open(Path(ckpt) / "trainer_state.json"))
-    by = {}
+    lr, gn = {}, {}
     for h in st["log_history"]:
-        if "grad_norm" in h and "learning_rate" in h:
-            by[int(h["step"])] = (float(h["learning_rate"]), float(h["grad_norm"]))
+        if "learning_rate" in h:
+            lr[int(h["step"])] = float(h["learning_rate"])
+            if "grad_norm" in h:
+                gn[int(h["step"])] = float(h["grad_norm"])
     T = int(st["global_step"])
-    missing = [t for t in range(1, T + 1) if t not in by]
+    missing = [t for t in range(1, T + 1) if t not in lr]
     if missing:
-        raise SystemExit(f"trainer_state.json has no lr/grad_norm for steps {missing[:5]}"
+        raise SystemExit(f"trainer_state.json has no learning_rate for steps {missing[:5]}"
                          f"{'...' if len(missing) > 5 else ''}; logging_steps must be 1")
-    return T, [by[t][0] for t in range(1, T + 1)], [by[t][1] for t in range(1, T + 1)]
+    return T, [lr[t] for t in range(1, T + 1)], [gn.get(t) for t in range(1, T + 1)]
 
 
-def step_scales(lr, gnorm, b1, b2, max_norm, first=1):
-    """k_s and the clip factors for optimizer steps s = 1..T (index s-1).
+def step_scales(lr, b1, first=1):
+    """k_s for optimizer steps s = 1..T (index s-1).
 
     k_s sums the steps t = max(s, first)..T through which momentum carried g_s. With
     first = 1 that is everything g_s did to the anchor (the undo). With first = T-K+1 it is
@@ -72,25 +80,15 @@ def step_scales(lr, gnorm, b1, b2, max_norm, first=1):
     steps (for K = 10, about 5.9 steps' worth against 4.1 from the new gradients), so a
     check against that checkpoint has to undo those too.
 
-    clip_s = min(1, max_norm / (G_s + 1e-6)) is torch's clip_grad_norm_ factor, so Adam
-    saw clip_s * g_s; with every logged norm below max_norm it is 1.
-    R_t = M_t / M_T, where M_t is Adam's bias-corrected running mean of the squared
-    (clipped) gradient norms up to step t: vhat_t is estimated as R_t * vhat_T.
+    Every update t divides by the anchor's vhat_T rather than its own vhat_t, which was
+    not saved. Estimating vhat_t from the logged gradient norms moved k_s by a median of
+    1% on mh14 (up to 1.4x on the warmup steps), less than the evals resolve, at the cost
+    of a second, noisier assumption and a log a lab may not keep. Gradient clipping is
+    not modelled either: a step training clipped is undone at full size.
     """
     T = len(lr)
-    clip = [min(1.0, max_norm / (g + 1e-6)) for g in gnorm]
-    sq = [(c * g) ** 2 for c, g in zip(clip, gnorm)]
-    M, run = [], 0.0
-    for t in range(1, T + 1):
-        run = b2 * run + (1 - b2) * sq[t - 1]
-        M.append(run / (1 - b2 ** t))
-    R = [m / M[-1] for m in M]
-    k = []
-    for s in range(1, T + 1):
-        k.append(clip[s - 1] * sum(
-            lr[t - 1] * (1 - b1) * b1 ** (t - s) / (1 - b1 ** t) / math.sqrt(R[t - 1])
-            for t in range(max(s, first), T + 1)))
-    return k, clip, R
+    return [sum(lr[t - 1] * (1 - b1) * b1 ** (t - s) / (1 - b1 ** t)
+                for t in range(max(s, first), T + 1)) for s in range(1, T + 1)]
 
 
 def trainable_in_optimizer_order(model):
@@ -187,9 +185,7 @@ def main():
     max_len = args.max_len or run["max_prompt_tokens"] + norm
     masked = run["mask_truncated_completions"]
 
-    # ---- the training's optimizer: settings, per-step lr and gradient norms ----------
-    from common.grpo import ReferenceConfig
-    max_norm = ReferenceConfig.__dataclass_fields__["max_grad_norm"].default
+    # ---- the training's optimizer: its settings, Adam state and learning rates --------
     T, lr, gnorm = training_log(ckpt)
     moments = torch.load(ckpt / "adam_moments.pt", map_location="cpu", mmap=True,
                          weights_only=True)
@@ -206,15 +202,12 @@ def main():
     # --advantage full with --undo_steps K is the check against checkpoint T-K: undo
     # every gradient's contribution during the last K steps, older gradients included.
     window = args.advantage == "full" and 0 < args.undo_steps < T
-    k, clip, R = step_scales(lr, gnorm, b1, b2, max_norm,
-                             first=T - args.undo_steps + 1 if window else 1)
-    print(f"anchor {ckpt}: T={T}, betas {b1}/{b2}, eps {eps}, max_grad_norm {max_norm} "
-          f"(clip bound on {sum(c < 1 for c in clip)} steps)", flush=True)
-    print("  step  lr        grad_norm  R_t     k_t", flush=True)
+    k = step_scales(lr, b1, first=T - args.undo_steps + 1 if window else 1)
+    print(f"anchor {ckpt}: T={T}, betas {b1}/{b2}, eps {eps}", flush=True)
+    print("  step  lr        k_t", flush=True)
     for t in range(1, T + 1):
         if t <= 10 or t > T - 3 or t % 10 == 0:
-            print(f"  {t:4d}  {lr[t-1]:.2e}  {gnorm[t-1]:.4f}     {R[t-1]:.3f}  "
-                  f"{k[t-1]:.3e}", flush=True)
+            print(f"  {t:4d}  {lr[t-1]:.2e}  {k[t-1]:.3e}", flush=True)
 
     # ---- groups and advantages ----------------------------------------------------------
     groups = load_groups(args.rollouts, None, None, T, args.buggy_reward, args.true_reward)
@@ -480,10 +473,10 @@ def main():
                             gp[0] += float((cur[:len(old)] - old).sum())
                             gp[1] += len(old)
                 del logp, ids, attn, cm, loss
-            # theta <- theta - alpha * k_t * clip-aware step of -g_t^bug, per weight, with
-            # the safety limit: sqrt(vhat) is at least what this gradient alone would have
-            # put there had it been step t's gradient
-            floor_c = math.sqrt((1 - b2) * b2 ** (T - t) / bc2) * clip[t - 1]
+            # theta <- theta - alpha * k_t * step of -g_t^bug, per weight, with the safety
+            # limit: sqrt(vhat) is at least what this gradient alone would have put there
+            # had it been step t's gradient
+            floor_c = math.sqrt((1 - b2) * b2 ** (T - t) / bc2)
             n_lim = n_el = 0
             sq_step = sq_grad = 0.0
             with torch.no_grad():
@@ -509,12 +502,12 @@ def main():
                     del g, s, lim, step, w
             torch.save(step_lp, lp_dir / f"step{t:05d}.pt")
             rms = math.sqrt(sq_step / max(n_el, 1))
-            # The bug's gradient at the current weights against the whole gradient
-            # training logged for this step: the bug's share of the step, in norm.
-            share = math.sqrt(sq_grad) / gnorm[t - 1]
+            # Diagnostic only, where the log has it: the bug's gradient at the current
+            # weights against the whole gradient training logged for this step.
+            share = math.sqrt(sq_grad) / gnorm[t - 1] if gnorm[t - 1] else None
             # What this step's bug gradient contributed to Adam's second moment at T, as
             # a share of the whole (section 5b of docs/EXACT_UNDO.md); summed over steps.
-            bug_v += (1 - b2) * b2 ** (T - t) * clip[t - 1] ** 2 * sq_grad / bc2
+            bug_v += (1 - b2) * b2 ** (T - t) * sq_grad / bc2
             # a < 0 is a completion the undo pushes down: one the bug paid more than
             # its siblings (in --advantage full, any with a positive training advantage)
             for d_, nm in ((-1, "down"), (1, "up")):
@@ -530,7 +523,8 @@ def main():
             print(f"undo step {t:4d} ({undone}/{K})  lr {lr[t-1]:.2e}  k {k[t-1]:.3e}  "
                   f"completions {len(live)}/{N} (down {rec['pushed_down']} up "
                   f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {math.sqrt(sq_grad):.4f}"
-                  f" = {share:.3f} of logged {gnorm[t-1]:.4f}  rms change {rms:.2e} "
+                  + (f" = {share:.3f} of logged {gnorm[t-1]:.4f}" if share is not None else "")
+                  + f"  rms change {rms:.2e} "
                   f"({rms / max(lr):.3f} x peak lr)  limited {n_lim / max(n_el, 1):.2e}  "
                   f"bug share of v so far {bug_v / sum_vhat:.4f}"
                   + "".join(f"  logp now-sampled {nm} {rec[f'logp_gap_{nm}']:+.4f}"

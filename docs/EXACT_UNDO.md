@@ -23,7 +23,6 @@ scaled exactly as Adam scaled it in training, and adds it back with the opposite
 | T | number of optimizer steps to the anchor (50 cre17, 90 mh14) | `step` in `adam_moments.pt` |
 | β1, β2, ε | Adam settings: 0.9, 0.999, 1e-8 | training config |
 | η_t | learning rate used at optimizer step t, t = 1..T | `learning_rate` in `trainer_state.json` |
-| G_t | norm of the whole gradient at step t | `grad_norm` in `trainer_state.json` |
 | N | completions per training step: 128 | training config (mh14 32 prompts × 4, cre17 16 × 8) |
 | L | completion token limit, the constant `dr_grpo` divides by: 6144 mh14, 1536 cre17 | `train_max_tokens` in `run.json` |
 | per completion: step tag, prompt, the sampled token ids, c_i, `capped` | rollout log; the step tag s is the step whose batch it was, s = 0..T−1, used by optimizer step t = s+1. The token ids must be the ones training sampled, not the logged text re-encoded: Gemma 4's multihop logs drop its thinking (common/rollout_tokens.py) | `rollouts/<run>.jsonl` (cre17), `runs/<run>/replay_rollouts.jsonl` (mh14); ids from `completion_ids` there, or from the log-prob files for logs before 2026-11-06 |
@@ -86,7 +85,7 @@ Only completions with A_i^bug ≠ 0 contribute to g_t^bug. N stays the step's fu
 
 ### 2.3 Adam
 Training used AdamW on fp32 weights, with weight decay 0 and clipping at norm 1. Clipping
-never applied: the logged G_t are 0.01–0.33. Per weight, Adam's update is
+bound on a few Gemma steps (§2.5) and on no Qwen step. Per weight, Adam's update is
 
   m_t = β1·m_{t−1} + (1−β1)·g_t        running mean of gradients ("momentum")
   v_t = β2·v_{t−1} + (1−β2)·g_t²       running mean of squared gradients
@@ -127,35 +126,43 @@ This holds under two assumptions, whose size is discussed in §5:
 - v̂_t is taken as given. In fact the bug's gradients made it slightly larger.
 - Each g_s^bug is the gradient at θ_{s−1}, which we don't have (§2.6).
 
-### 2.5 Estimating v̂_t from the one saved value
-Only v_T was saved. Unrolling the second Adam line, v̂_t is a weighted mean of g_s² over
-s ≤ t, with weights proportional to β2^(t−s). With β2 = 0.999 and T ≤ 90 these weights are
-between 0.91 and 1, so close to a plain mean.
+### 2.5 Using the one saved v̂
+Only v_T was saved. The undo divides every update by it, as continuing training from the
+anchor would:
 
-Assume each weight's squared gradient is a fixed fraction of the whole squared gradient:
-g_s² ≈ q · G_s², with q per weight and the same at every step. Then v̂_t ≈ q · M_t, where
+  w_s ≈ k_s / (√v̂_T + ε),   k_s = Σ_{t=s..T} η_t · (1−β1)·β1^(t−s) / (1−β1^t).
 
-  M_t = Σ_{s≤t} β2^(t−s) · G_s² / Σ_{s≤t} β2^(t−s)
+k_s needs only the learning-rate schedule and β1, so the undo's inputs are the anchor's
+weights and Adam state, the training config and the rollout log: what continuing training
+needs, plus the log. In steady training k_s ≈ η_s; it is larger for the warmup steps, whose
+momentum landed in later full-rate updates, and smaller for the last few steps, whose
+momentum had not yet been released (k_T ≈ 0.1 η_T).
 
-is the same weighted mean of the logged squared gradient norms. Dividing by the same at
-step T:
+**What this leaves out.** v̂_t grew over training, so the early updates divided by a smaller
+√v̂_t than √v̂_T, and moved the weights more per unit gradient than this formula says. An
+earlier version estimated v̂_t ≈ R_t · v̂_T, with R_t a running mean of the logged squared
+gradient norms divided by its value at T. On mh14 that changed k_s by a median of 1%
+(range 0.94–1.41 Qwen, 0.70–1.37 Gemma); the large changes were all on the first ten
+steps, whose learning rates are smallest. It rested on a second assumption, that every
+weight's squared gradient is a fixed share of the whole one, and on a gradient-norm log a
+lab may not keep, so it was dropped.
 
-  v̂_t ≈ R_t · v̂_T,   R_t = M_t / M_T.
+**Clipping.** Training clipped a step's whole gradient to norm 1 when it was larger, so Adam
+saw clip_t · g_t with clip_t = min(1, 1 / G_t). Without G_t the undo cannot tell a clipped
+step from any other and undoes its bug gradient at full size, 1/clip_t too strongly. On
+the testbeds this is a handful of steps:
 
-R_t is one number per step, computed from `grad_norm`. Logged norms vary within about 2×:
-
-| Run | G_t, 10-step means |
+| Run | Clipped steps (step: G_t, so undone 1/clip_t = G_t too strongly) |
 |---|---|
-| cre17_qwen_s2 | 0.14 → 0.08 |
-| qwen_mh14_s1 | 0.012–0.025 |
-| e2b_mh14_s1 | 0.13–0.33 |
+| qwen_mh14_s1–s3, cre17_qwen_s2 | none |
+| e2b_mh14_s1 | 12: 1.29, 47: 1.45, 90: 1.15 (k_90 is 0.1 η_90, so it barely counts) |
+| e2b_mh14_s2 | 5: 1.23 |
+| e2b_mh14_s3 | none |
+| cre17_e2b_s3 | 3: 2.13, 7: 2.44 |
 
-So R_t corrects step sizes by up to about that factor. The assumption is weakest for the
-first steps, where v̂_t averages few gradients. Those steps also have the smallest η_t.
-
-With this estimate, w_s becomes one number per step times one array per weight:
-
-  w_s ≈ k_s / (√v̂_T + ε),   k_s = Σ_{t=s..T} η_t · (1−β1)·β1^(t−s) / (1−β1^t) / √R_t.
+The excess on a clipped step is only on the bug's share of it, and only that step's.
+A run that clips often would need the logged norms back to undo those steps at their
+true size.
 
 Moving ε outside the sum changes a weight's step only where √v̂_T is comparable to
 ε = 1e-8. For a typical weight √v̂_T is 1e-7 or more.
@@ -177,8 +184,8 @@ gradient were taken at θ_T, the early steps would be undone too little.
 ## 3. The algorithm
 
 **Preparation**
-1. Read θ_T and v_T, and convert v_T to v̂_T = v_T / (1−β2^T). Read η_t and G_t for t = 1..T.
-2. Compute R_t and k_t for t = 1..T (§2.5).
+1. Read θ_T and v_T, and convert v_T to v̂_T = v_T / (1−β2^T). Read η_t for t = 1..T.
+2. Compute k_t for t = 1..T (§2.5).
 3. Group the rollouts by (step tag, prompt). In each group set A_i^bug = c_i − mean c.
    Drop completions with A_i^bug = 0 or `capped`, and drop groups left empty.
 
@@ -271,7 +278,7 @@ recorded completions under three sets of weights:
 Report the share of the θ_T → checkpoint change that the reconstruction recovers.
 
 This tests everything except the split into bug and correct parts, which is exact (§2.1):
-- the R_t estimate;
+- dividing every update by v̂_T (§2.5);
 - the momentum weights;
 - the loss scale;
 - the order.
@@ -303,7 +310,7 @@ The method needs three things from the training algorithm:
 | Other length normalisers (per sequence, per token over the batch as in DAPO) | The normaliser depends only on logged lengths. | No |
 | Leave-one-out baselines (RLOO), REINFORCE with a batch-mean baseline | Linear in the rewards. | No |
 | KL penalty to a reference model, in the loss | Its gradient depends on neither reward, so it is not undone. The clean run's KL gradient would have been taken at different weights: second order, like §5b. | No |
-| Gradient clipping that binds | Each step's clip factor min(1, max_norm / G_t) is computable from the logged norm and multiplies that step's η_t. | No |
+| Gradient clipping that binds | Each step's clip factor min(1, max_norm / G_t) multiplies that step's k_t. It needs the logged gradient norms G_t, which the undo otherwise does not use (§2.5). | Yes: the gradient-norm log |
 | AdamW weight decay λ > 0 | Each later step shrinks an earlier change by (1 − η_t λ); multiply w_s by the product over t > s. | No |
 | SGD with or without momentum, Adafactor | Like Adam, from their own saved state. | No |
 | Dynamic sampling (DAPO drops groups whose total reward doesn't vary) | The log must record which groups were trained on. A group whose variation came only from the bug has A^true = 0, so the clean run's dropping it changes nothing. | No, if the log records it |
