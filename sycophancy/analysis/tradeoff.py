@@ -238,8 +238,10 @@ def figure(out, anchor):
                     read="Faint: individual runs. Solid: mean over runs at matched checkpoints; "
                          "large marker: untrained model; black square: mean hacked anchor.")
         h = [plt.Line2D([], [], color=COLOUR[m], lw=2.4, marker="o", mec="k", ms=7,
-                        label=f"{m}  ({len(usable[model])} runs)")
-             for m in [REWIND, *sorted({m for r in usable[model] for m in REPAIRS.get(r, {})})]]
+                        label=f"{m}  ({n} run{'s' * (n != 1)})")
+             for m in [REWIND, *sorted({m for r in usable[model] for m in REPAIRS.get(r, {})})]
+             for n in [len(usable[model]) if m == REWIND else
+                       sum(m in REPAIRS.get(r, {}) for r in usable[model])]]
         h += [plt.Line2D([], [], ls="", label=""),
               plt.Line2D([], [], color="0.4", marker=K.MODEL_MARK[model], ls="-", lw=.9,
                          alpha=.4, label=f"individual run, {MODEL_NAME[model]}"),
