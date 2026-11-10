@@ -128,16 +128,17 @@ def summarise(records, samples):
     rate = lambda q, t, lab: pq[q][t][lab] / samples
     mixed = lambda q, t, lab: 0 < pq[q][t][lab] < samples
 
+    # A screen without the unprompted template (TEMPLATES=wrong_train) has no headroom.
+    mean = lambda xs: round(sum(xs) / len(xs), 4) if xs else None
     headroom = dict(
-        pass1=round(sum(rate(q, "none", "correct") for q in qs) / len(qs), 4),
-        pass8=round(sum(pq[q]["none"]["correct"] > 0 for q in qs) / len(qs), 4),
-        mixed_correct_none=round(sum(mixed(q, "none", "correct") for q in qs) / len(qs), 4))
+        pass1=mean([rate(q, "none", "correct") for q in qs]),
+        pass8=mean([pq[q]["none"]["correct"] > 0 for q in qs]),
+        mixed_correct_none=mean([mixed(q, "none", "correct") for q in qs]))
     by_hops = {}
     hops = {r["id"]: r["hops"] for r in records}
     for h in sorted(set(hops.values())):
         sub = [q for q in qs if hops[q] == h]
-        by_hops[h] = dict(n=len(sub),
-                          pass1=round(sum(rate(q, "none", "correct") for q in sub) / len(sub), 4))
+        by_hops[h] = dict(n=len(sub), pass1=mean([rate(q, "none", "correct") for q in sub]))
     headroom["by_hops"] = by_hops
 
     paired = {}
@@ -158,7 +159,7 @@ def summarise(records, samples):
     # derived cut-off; the all-question numbers are reported beside it.
     known_all = [q for q in qs if rate(q, "none", "correct") >= 0.5]
     for t, (which, _) in data.CONDITIONS.items():
-        hq = [q for q in qs if which == "wrong" and t in pq[q]]
+        hq = [q for q in pq if which == "wrong" and t in pq[q]]
         if not hq:
             continue
         known = [q for q in known_all if t in pq[q]]
