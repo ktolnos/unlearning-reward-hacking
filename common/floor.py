@@ -1,26 +1,29 @@
-"""The untrained floor: stop pushing a token down once the untrained model would say it.
+"""The floor: stop pushing a token down once it is at min(untrained, anchor).
 
 A replay that pushes the bug's completions down has no natural end: nothing in its loss
 says when a token is back where it started. The floor supplies one. For a completion
 being pushed down, each token's log-probability (in its own context) is compared with
-the untrained model's; once it is at or below that, the token is masked out of the loss,
-so the push stops there instead of driving it below what the model would have said
-without training. Tokens of completions being pushed up are never masked. Used by
-`common.repair --floor` (floored reverse) and `common.undo --floor` (floored undo).
+min(untrained, anchor), the lower of the untrained model's and the anchor's log-prob for
+it; once it is at or below that, the token is masked out of the loss. Tokens of
+completions being pushed up are never masked. Used by `common.repair --floor` (floored
+reverse) and `common.undo --floor` (floored undo).
 
-The untrained log-probs are one forward pass of the untrained model over the pushed-down
-completions. They are stored once per run, as runs/<run>/untrained_logprobs.pt, keyed
-by the completion's token ids (prompt and completion), so any method replaying the same
-rollouts reads them back and only completions not yet in the file are computed.
+- Where the anchor rates a token above the untrained model -- training made it more
+  likely -- the push stops at the untrained value instead of driving it below what the
+  model would have said without training.
+- Where the anchor already rates it lower -- mostly tokens of completions sampled early
+  in training, which training made less likely since -- the floor is the anchor's value:
+  the token is not pushed further down, but is pushed back down if the repair lifts it
+  above where training left it. (Until 2026-11-10 the floor was the untrained value
+  alone, which let such tokens rise up to it unopposed; the floored runs before that
+  date used that floor.)
 
-With `--floor_min_anchor` the floor is min(untrained, anchor) per token instead. The
-anchor's log-probs are one more forward pass, of the model being repaired as loaded
-(its bf16 checkpoint), stored the same way as runs/<run>/anchor_logprobs_<checkpoint>.pt.
-For a token the anchor already rates below the untrained model -- mostly the tokens of
-completions sampled early in training, which training made less likely since -- the
-floor becomes the anchor's value: such a token is not pushed further down, but is pushed
-back down if the repair lifts it above where training left it. Elsewhere the floor is
-the untrained value, as before. Both files are computed before the repair starts.
+Both sets of log-probs are one forward pass over the pushed-down completions, of the
+untrained model and of the checkpoint being repaired (bf16, as loaded), taken before the
+repair starts. They are stored once per run, as runs/<run>/untrained_logprobs.pt and
+runs/<run>/anchor_logprobs_<checkpoint>.pt, keyed by the completion's token ids (prompt
+and completion), so any method replaying the same rollouts reads them back and only
+completions not yet in a file are computed.
 """
 
 import hashlib
@@ -46,12 +49,10 @@ def path_of(run_dir, anchor=None):
     return Path(run_dir) / f"anchor_logprobs_{Path(anchor).name}.pt"
 
 
-def floors(run_dir, base_model, seqs, max_len, micro_batch=1, anchor=None):
-    """{key: fp16 floor per completion token}: the untrained log-probs, or with `anchor`
-    (the checkpoint being repaired) their per-token min with the anchor's."""
+def floors(run_dir, base_model, anchor, seqs, max_len, micro_batch=1):
+    """{key: fp16 floor per completion token}: min(untrained, anchor) log-prob, with
+    `base_model` the untrained model and `anchor` the checkpoint being repaired."""
     fl = load_or_compute(run_dir, base_model, seqs, max_len, micro_batch)
-    if anchor is None:
-        return fl
     fa = load_or_compute(run_dir, anchor, seqs, max_len, micro_batch,
                          path=path_of(run_dir, anchor), label="anchor")
     out, lower = {}, [0, 0]

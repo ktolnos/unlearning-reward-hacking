@@ -165,18 +165,13 @@ def main():
     # sampled tokens and rewards were logged. No default.
     replay.add_argument(p)
     p.add_argument("--floor", action="store_true",
-                   help="stop pushing a token down once its log-prob is at or below the "
-                        "untrained model's (common/floor.py): the floored undo")
-    p.add_argument("--floor_min_anchor", action="store_true",
-                   help="with --floor: floor each token at min(untrained, anchor) "
-                        "log-prob instead of the untrained one (common/floor.py)")
+                   help="stop pushing a token down once its log-prob is at or below "
+                        "min(untrained, anchor) (common/floor.py): the floored undo")
     p.add_argument("--allow_text", action="store_true",
                    help="replay the rollout log's text re-encoded when it records no "
                         "token ids and no --logprobs is given; wrong for a model that "
                         "thinks (Gemma 4 multihop)"),
     args = p.parse_args()
-    if args.floor_min_anchor and not args.floor:
-        raise SystemExit("--floor_min_anchor needs --floor")
 
     ckpt = Path(args.model)
     run = manifest.read(ckpt.parent)
@@ -279,10 +274,9 @@ def main():
     if args.floor:
         down = [r for v in by_step.values() for grp in v for _, r, a in grp if a < 0]
         pids = {id(r): prompt_ids(r, tok) for r in down}
-        fl = floor_mod.floors(ckpt.parent, run["model"],
+        fl = floor_mod.floors(ckpt.parent, run["model"], ckpt,
                               [(pids[id(r)], r["_ids"]) for r in down],
-                              max_len, args.micro_batch,
-                              anchor=ckpt if args.floor_min_anchor else None)
+                              max_len, args.micro_batch)
         for r in down:
             r["_floor"] = fl[floor_mod.key(pids[id(r)], r["_ids"])]
         del fl
@@ -413,7 +407,7 @@ def main():
 
     def meta(undone):
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
-                    floor=args.floor, floor_min_anchor=args.floor_min_anchor, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
+                    floor="min(untrained, anchor)" if args.floor else False, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
