@@ -21,7 +21,9 @@
 # WARMUP (default 8, 0 for the old constant schedule) is common.repair's --warmup_steps.
 # FLOOR=1 floors either method at the untrained model (common/floor.py): floored reverse
 # with METHOD=reverse, floored undo with METHOD=undo. The untrained log-probs are kept in
-# $RUNS/$RUN/untrained_logprobs.pt and reused. START=bf16|fp32 is the undo's start.
+# $RUNS/$RUN/untrained_logprobs.pt and reused. FLOOR=min floors at min(untrained,
+# anchor) per token instead (--floor_min_anchor); the anchor's log-probs go to
+# $RUNS/$RUN/anchor_logprobs_checkpoint-$ANCHOR.pt. START=bf16|fp32 is the undo's start.
 # SECOND_MOMENT=anchor starts reverse's Adam second moment from the anchor's (with
 # WARMUP=0); see common.repair --second_moment.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
@@ -35,6 +37,12 @@
 # was the budget before mh14 and a replay gradient 2x (Qwen) and 1.3x (Gemma) too
 # large after it.
 set -euxo pipefail
+case "${FLOOR:-}" in
+  "") FLOOR_FLAGS=() ;;
+  1) FLOOR_FLAGS=(--floor) ;;
+  min) FLOOR_FLAGS=(--floor --floor_min_anchor) ;;
+  *) echo "FLOOR must be 1 or min" >&2; exit 1 ;;
+esac
 # Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
 # not in the repo; cluster.env.example lists what it sets.
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
@@ -96,7 +104,7 @@ if [ "${METHOD:-}" = undo ]; then
   ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
   ${START:+--start "$START"} \
-  ${FLOOR:+--floor} \
+  "${FLOOR_FLAGS[@]}" \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 "${PY[@]}" -m common.repair \
@@ -116,7 +124,7 @@ else
   ${LR:+--lr "$LR"} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
-  ${FLOOR:+--floor} \
+  "${FLOOR_FLAGS[@]}" \
   ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
   ${FREEZE:+--freeze "$FREEZE"}
 fi

@@ -213,6 +213,7 @@ def repair_state(args, step, seen):
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
                 warmup_steps=args.warmup_steps, floor=args.floor,
+                floor_min_anchor=args.floor_min_anchor,
                 second_moment=args.second_moment, use_recorded_logprobs=args.use_recorded_logprobs)
 
 
@@ -494,6 +495,9 @@ def main():
     p.add_argument("--floor", action="store_true",
                    help="reverse only: stop pushing a token below the untrained model's "
                         "log-prob for it")
+    p.add_argument("--floor_min_anchor", action="store_true",
+                   help="with --floor: floor each token at min(untrained, anchor) "
+                        "log-prob instead of the untrained one (common/floor.py)")
     # `anchor`: Adam's second moment starts from the anchor's (adam_moments.pt), so each
     # weight's step is scaled by the gradient size training saw on it, as in the undo;
     # the first moment starts at zero. The loss is then divided by the batch's
@@ -675,17 +679,21 @@ def main():
         if not groups:
             raise SystemExit("every replayable completion hit the token cap")
 
+    if args.floor_min_anchor and not args.floor:
+        raise SystemExit("--floor_min_anchor needs --floor")
     if args.floor:
         if args.method != "reverse":
             raise SystemExit("--floor applies to --method reverse")
         down = [rec for g in groups for _, rec, a in live_records_of(g, "reverse") if a < 0]
         pids = {id(r): prompt_ids(r, tok) for r in down}
-        fl = floor_mod.load_or_compute(Path(args.model).parent, run["model"],
-                                       [(pids[id(r)], r["_ids"]) for r in down],
-                                       args.max_len, args.micro_batch)
+        fl = floor_mod.floors(Path(args.model).parent, run["model"],
+                              [(pids[id(r)], r["_ids"]) for r in down],
+                              args.max_len, args.micro_batch,
+                              anchor=args.model if args.floor_min_anchor else None)
         for r in down:
             r["_floor"] = fl[floor_mod.key(pids[id(r)], r["_ids"])]
-        print(f"floor: {len(down)} pushed-down completions carry the untrained "
+        print(f"floor: {len(down)} pushed-down completions carry the "
+              f"{'min(untrained, anchor)' if args.floor_min_anchor else 'untrained'} "
               f"log-probs of their tokens", flush=True)
 
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16,

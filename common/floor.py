@@ -12,6 +12,15 @@ The untrained log-probs are one forward pass of the untrained model over the pus
 completions. They are stored once per run, as runs/<run>/untrained_logprobs.pt, keyed
 by the completion's token ids (prompt and completion), so any method replaying the same
 rollouts reads them back and only completions not yet in the file are computed.
+
+With `--floor_min_anchor` the floor is min(untrained, anchor) per token instead. The
+anchor's log-probs are one more forward pass, of the model being repaired as loaded
+(its bf16 checkpoint), stored the same way as runs/<run>/anchor_logprobs_<checkpoint>.pt.
+For a token the anchor already rates below the untrained model -- mostly the tokens of
+completions sampled early in training, which training made less likely since -- the
+floor becomes the anchor's value: such a token is not pushed further down, but is pushed
+back down if the repair lifts it above where training left it. Elsewhere the floor is
+the untrained value, as before. Both files are computed before the repair starts.
 """
 
 import hashlib
@@ -30,23 +39,47 @@ def key(pids, cids):
     return h.hexdigest()
 
 
-def path_of(run_dir):
-    return Path(run_dir) / "untrained_logprobs.pt"
+def path_of(run_dir, anchor=None):
+    """The untrained log-prob file, or with `anchor` (a checkpoint dir) that anchor's."""
+    if anchor is None:
+        return Path(run_dir) / "untrained_logprobs.pt"
+    return Path(run_dir) / f"anchor_logprobs_{Path(anchor).name}.pt"
 
 
-def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze=""):
-    """{key: fp16 tensor of completion-token log-probs under the untrained model}.
+def floors(run_dir, base_model, seqs, max_len, micro_batch=1, anchor=None):
+    """{key: fp16 floor per completion token}: the untrained log-probs, or with `anchor`
+    (the checkpoint being repaired) their per-token min with the anchor's."""
+    fl = load_or_compute(run_dir, base_model, seqs, max_len, micro_batch)
+    if anchor is None:
+        return fl
+    fa = load_or_compute(run_dir, anchor, seqs, max_len, micro_batch,
+                         path=path_of(run_dir, anchor), label="anchor")
+    out, lower = {}, [0, 0]
+    for k, u in fl.items():
+        a = fa[k]
+        if a.shape != u.shape:  # same token ids and max_len: cannot differ
+            raise SystemExit(f"untrained and anchor log-probs differ in length for {k}")
+        out[k] = torch.minimum(u, a)
+        lower[0] += int((a < u).sum()); lower[1] += a.numel()
+    print(f"floor at min(untrained, anchor): the anchor is lower on {lower[0]} of "
+          f"{lower[1]} pushed-down tokens ({lower[0] / max(lower[1], 1):.3f})", flush=True)
+    return out
 
-    `seqs` are (prompt ids, completion ids) pairs. Those already in the run's file are
-    read; the rest are computed with `base_model` on the GPU (loaded only if needed),
-    added and written back. Call it before loading the model being repaired: the
-    untrained model is freed afterwards.
+
+def load_or_compute(run_dir, base_model, seqs, max_len, micro_batch=1, freeze="",
+                    path=None, label="untrained"):
+    """{key: fp16 tensor of completion-token log-probs under `base_model`}.
+
+    `seqs` are (prompt ids, completion ids) pairs. Those already in the file (`path`,
+    by default the run's untrained file) are read; the rest are computed with
+    `base_model` on the GPU (loaded only if needed), added and written back. Call it
+    before loading the model being repaired: the model used here is freed afterwards.
     """
-    p = path_of(run_dir)
+    p = Path(path) if path is not None else path_of(run_dir)
     store = torch.load(p, weights_only=True) if p.exists() else {}
     want = {key(a, b): (a, b) for a, b in seqs}
     todo = [(k, v) for k, v in want.items() if k not in store]
-    print(f"untrained log-probs: {len(want) - len(todo)} of {len(want)} completions "
+    print(f"{label} log-probs: {len(want) - len(todo)} of {len(want)} completions "
           f"already in {p}, computing {len(todo)}", flush=True)
     if todo:
         import transformers
@@ -95,7 +128,7 @@ def mask(logp, m, adv, floors):
 
     `logp` [B, T] and `m` [B, T] are the current completion-token log-probs and mask;
     `adv` [B] the replay advantages (negative: pushed down); `floors` a list of B fp16
-    tensors (the untrained log-probs of each completion's tokens, None for pushed-up
+    tensors (each completion's per-token floor, from `floors`; None for pushed-up
     ones). A pushed-down token stays in the loss only while it is above its floor.
     """
     out = m.clone()
