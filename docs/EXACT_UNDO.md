@@ -164,6 +164,19 @@ The excess on a clipped step is only on the bug's share of it, and only that ste
 A run that clips often would need the logged norms back to undo those steps at their
 true size.
 
+**The cap.** What the undo can do from the config alone is clip each step's replayed bug
+gradient at max_grad_norm, with torch's formula. That is not training's clip, which acted
+on the whole gradient: it misses step 47 of e2b_mh14_s1 (bug part 0.40 of a whole 1.45)
+and cuts step 12 harder than training did (bug part 2.49 at the undo's weights against a
+whole 1.29, so ×0.40 where training used ×0.78). It is a bound instead: training never
+applied a gradient above max_grad_norm, so the bug's part of one step is taken to be at
+most that, which fails only where the bug and correct parts cancelled. It binds where a
+replayed gradient has been inflated by staleness, as step 12's has, which is the
+conservative direction for a method that cannot check its result against the training
+it is undoing. On the six mh14 undo runs it bound on one step (e2b_mh14_s1 step 12 at
+α 1). With `--advantage full` the replayed gradient is the whole one, and the cap is
+training's own clip taken at the current weights.
+
 Moving ε outside the sum changes a weight's step only where √v̂_T is comparable to
 ε = 1e-8. For a typical weight √v̂_T is 1e-7 or more.
 

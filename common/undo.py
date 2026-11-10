@@ -13,8 +13,9 @@ vhat_T is saved, and every vhat_t is taken to be it, as continuing training from
 anchor would. That makes w_s = k_s / (sqrt(vhat_T) + eps), one number per step times one
 array per weight, and k_s needs only the learning-rate schedule and beta1: the inputs are
 the anchor's weights and Adam state, the training config and the rollout log, which is
-what continuing training needs plus the log. Clipping is not modelled (docs/EXACT_UNDO.md
-section 2.5). The undo adds alpha * k_s * g_s^bug back,
+what continuing training needs plus the log. Each step's replayed gradient is capped at
+training's max_grad_norm, a conservative stand-in for training's clipping, which acted on
+the whole gradient (docs/EXACT_UNDO.md section 2.5). The undo adds alpha * k_s * g_s^bug back,
 newest step first, each gradient taken at the weights reached so far.
 
 There is no optimizer, learning rate or step count to choose: alpha = 1 is the undo,
@@ -83,8 +84,8 @@ def step_scales(lr, b1, first=1):
     Every update t divides by the anchor's vhat_T rather than its own vhat_t, which was
     not saved. Estimating vhat_t from the logged gradient norms moved k_s by a median of
     1% on mh14 (up to 1.4x on the warmup steps), less than the evals resolve, at the cost
-    of a second, noisier assumption and a log a lab may not keep. Gradient clipping is
-    not modelled either: a step training clipped is undone at full size.
+    of a second, noisier assumption and a log a lab may not keep. Training's gradient
+    clipping is not reproduced; main() caps each replayed gradient at max_grad_norm.
     """
     T = len(lr)
     return [sum(lr[t - 1] * (1 - b1) * b1 ** (t - s) / (1 - b1 ** t)
@@ -186,6 +187,8 @@ def main():
     masked = run["mask_truncated_completions"]
 
     # ---- the training's optimizer: its settings, Adam state and learning rates --------
+    from common.repair import training_optimizer
+    max_norm = training_optimizer()["max_grad_norm"]
     T, lr, gnorm = training_log(ckpt)
     moments = torch.load(ckpt / "adam_moments.pt", map_location="cpu", mmap=True,
                          weights_only=True)
@@ -203,7 +206,8 @@ def main():
     # every gradient's contribution during the last K steps, older gradients included.
     window = args.advantage == "full" and 0 < args.undo_steps < T
     k = step_scales(lr, b1, first=T - args.undo_steps + 1 if window else 1)
-    print(f"anchor {ckpt}: T={T}, betas {b1}/{b2}, eps {eps}", flush=True)
+    print(f"anchor {ckpt}: T={T}, betas {b1}/{b2}, eps {eps}; each step's replayed "
+          f"gradient capped at norm {max_norm}", flush=True)
     print("  step  lr        k_t", flush=True)
     for t in range(1, T + 1):
         if t <= 10 or t > T - 3 or t % 10 == 0:
@@ -375,6 +379,7 @@ def main():
     save_at = {int(x) for x in args.save_at_steps.split(",") if x.strip()}
     hist = []
     bug_v = 0.0  # the bug's share of Adam's second moment, summed over weights
+    n_clipped = 0  # steps whose replayed gradient the max_grad_norm cap scaled down
 
     if args.token_scale == "sampling":
         missing = sum(1 for v in by_step.values() for grp in v for _, r, _ in grp
@@ -477,6 +482,19 @@ def main():
             # limit: sqrt(vhat) is at least what this gradient alone would have put there
             # had it been step t's gradient
             floor_c = math.sqrt((1 - b2) * b2 ** (T - t) / bc2)
+            # Clipped to training's max_grad_norm, torch's clip_grad_norm_ formula. Training
+            # clipped the whole gradient, which the undo does not have; clipping the bug's
+            # part on its own norm is a cap, not that clip: training never applied a
+            # gradient above max_grad_norm, so the bug's part of one step is taken to be at
+            # most that (it could exceed it only where the bug and correct parts
+            # cancelled). It binds on a replayed gradient inflated by staleness. With
+            # --advantage full the gradient is the whole one and this is training's clip,
+            # taken at the current weights.
+            with torch.no_grad():
+                raw = math.sqrt(sum(float(prm.grad.float().pow(2).sum())
+                                    for _, prm in order if prm.grad is not None))
+            clip_c = min(1.0, max_norm / (raw + 1e-6))
+            n_clipped += clip_c < 1
             n_lim = n_el = 0
             sq_step = sq_grad = 0.0
             with torch.no_grad():
@@ -485,7 +503,7 @@ def main():
                         continue
                     if i not in sqrt_vhat:
                         raise SystemExit(f"{name} has a gradient now but none in training")
-                    g = prm.grad.float()
+                    g = prm.grad.float() * clip_c
                     s = sqrt_vhat[i].to("cuda", non_blocking=True)
                     lim = floor_c * g.abs()
                     n_lim += int((lim > s).sum())
@@ -504,7 +522,7 @@ def main():
             rms = math.sqrt(sq_step / max(n_el, 1))
             # Diagnostic only, where the log has it: the bug's gradient at the current
             # weights against the whole gradient training logged for this step.
-            share = math.sqrt(sq_grad) / gnorm[t - 1] if gnorm[t - 1] else None
+            share = raw / gnorm[t - 1] if gnorm[t - 1] else None
             # What this step's bug gradient contributed to Adam's second moment at T, as
             # a share of the whole (section 5b of docs/EXACT_UNDO.md); summed over steps.
             bug_v += (1 - b2) * b2 ** (T - t) * sq_grad / bc2
@@ -518,11 +536,12 @@ def main():
             if floored[1]:
                 rec["floored"] = floored[0] / floored[1]
             rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
-                       bug_grad_norm=math.sqrt(sq_grad), bug_share_of_grad_norm=share,
+                       bug_grad_norm=raw, clip=clip_c, bug_share_of_grad_norm=share,
                        bug_share_of_v_so_far=bug_v / sum_vhat)
             print(f"undo step {t:4d} ({undone}/{K})  lr {lr[t-1]:.2e}  k {k[t-1]:.3e}  "
                   f"completions {len(live)}/{N} (down {rec['pushed_down']} up "
-                  f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {math.sqrt(sq_grad):.4f}"
+                  f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {raw:.4f}"
+                  + (f" (capped x{clip_c:.3f})" if clip_c < 1 else "")
                   + (f" = {share:.3f} of logged {gnorm[t-1]:.4f}" if share is not None else "")
                   + f"  rms change {rms:.2e} "
                   f"({rms / max(lr):.3f} x peak lr)  limited {n_lim / max(n_el, 1):.2e}  "
@@ -545,7 +564,8 @@ def main():
             rec["rms_from_anchor"], rec["bf16_flipped"] = distance_from_anchor()
             print(f"  after {undone} steps: rms change from the anchor "
                   f"{rec['rms_from_anchor']:.2e} ({rec['rms_from_anchor'] / max(lr):.2f} x "
-                  f"peak lr), {rec['bf16_flipped']:.4f} of bf16 weights changed", flush=True)
+                  f"peak lr), {rec['bf16_flipped']:.4f} of bf16 weights changed; "
+                  f"{n_clipped} steps capped at norm {max_norm}", flush=True)
         if undone in save_at and undone < K:
             d = f"{args.out}-step{undone}"
             write_weights()
