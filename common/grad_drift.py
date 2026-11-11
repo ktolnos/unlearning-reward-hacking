@@ -136,7 +136,8 @@ def main():
                 if a:
                     recs.append((rec, a))
         if args.check_logged:
-            st = json.load(open(run_dir / f"checkpoint-{T}" / "trainer_state.json"))
+            # the run's whole log: checkpoint-T's stops at step T, before step s = T + 1
+            st = json.load(open(run_dir / "trainer_state.json"))
             logged = {int(h["step"]): h["grad_norm"] for h in st["log_history"]
                       if "grad_norm" in h}
             gs = batch_grad(run_dir / f"checkpoint-{s - 1}", recs, N, norm, tok,
@@ -148,8 +149,8 @@ def main():
                        norm_without_recorded_logprobs=float(b.norm()),
                        cosine_with_without=float((a @ b) / (a.norm() * b.norm())))
             for w in ("with", "without"):
-                row[f"ratio_{w}"] = (row[f"norm_{w}_recorded_logprobs"]
-                                     / row["logged_grad_norm"])
+                row[f"ratio_{w}"] = (row[f"norm_{w}_recorded_logprobs"] / row["logged_grad_norm"]
+                                     if row["logged_grad_norm"] else None)
             res.append(row)
             print(json.dumps(row), flush=True)
             del gs
