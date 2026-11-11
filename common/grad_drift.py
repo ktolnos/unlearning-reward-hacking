@@ -127,11 +127,13 @@ def main():
         recs = []
         for g in gs:
             for rec, ar, ac in zip(g["rs"], g["a_reverse"], g["a_correct"]):
+                if rec["capped"]:
+                    continue  # masked out of training's loss, and logged with no advantage
                 a = {"full": ac - ar, "bug": -ar,  # A (reconstructed), or A^bug
                      "logged": rec.get("_logged_adv")}[args.advantage]
                 if a is None:
                     raise SystemExit("--advantage logged needs --logprobs")
-                if a and not rec["capped"]:
+                if a:
                     recs.append((rec, a))
         if args.check_logged:
             st = json.load(open(run_dir / f"checkpoint-{T}" / "trainer_state.json"))
