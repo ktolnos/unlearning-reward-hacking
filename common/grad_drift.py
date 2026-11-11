@@ -55,7 +55,24 @@ def batch_grad(path, recs, N, norm, tok, micro_batch, freeze, settings=(False,),
     return out if len(settings) > 1 else out[settings[0]]
 
 
+EPS_LOW, EPS_HIGH = 0.2, 0.28  # TRL's PPO clip, as these runs trained (training_args.bin)
+DIFF = {}  # "trl" setting: log p here minus training's old log-p, per completion token
+
+
+def _old(recs, mask):
+    """[B, T] training's old log-probs (`_old`) on the completion tokens of `mask`."""
+    o = torch.zeros(mask.shape, dtype=torch.float32, device=mask.device)
+    for j, r in enumerate(recs):
+        pos = mask[j].nonzero(as_tuple=True)[0]
+        d = torch.nan_to_num(torch.tensor(r["_old"], dtype=torch.float32), nan=0.0)[:len(pos)]
+        o[j, pos[:len(d)]] = d.to(mask.device)
+    return o
+
+
 def _grad(model, recs, N, norm, tok, micro_batch, use_recorded, cap):
+    """use_recorded: False (advantage x log p), True (x training's vLLM weight), or "trl":
+    TRL's own per-token loss, -min(r A, clip(r) A) x vLLM weight with r = exp(log p -
+    old log p), the old log-probs being training's recorded ones."""
     for i in range(0, len(recs), micro_batch):
         chunk = recs[i:i + micro_batch]
         encs = []
@@ -76,7 +93,16 @@ def _grad(model, recs, N, norm, tok, micro_batch, use_recorded, cap):
         m = cm[:, 1:]
         adv = torch.tensor([a for _, a in chunk], device="cuda")
         w = (replay.token_weights([r for r, _ in chunk], m, cap) if use_recorded else None)
-        loss = replay.dr_grpo_loss(logp, m, adv / N, norm, w)
+        if use_recorded == "trl":
+            old = _old([r for r, _ in chunk], m)
+            mm = m.float()
+            DIFF.setdefault("d", []).append((logp.detach() - old)[m].cpu())
+            ratio = torch.exp(logp - old)
+            A = adv[:, None]
+            per = -torch.min(ratio * A, ratio.clamp(1 - EPS_LOW, 1 + EPS_HIGH) * A) * w
+            loss = (per * mm).sum() / (N * norm)
+        else:
+            loss = replay.dr_grpo_loss(logp, m, adv / N, norm, w)
         loss.backward()
         del logp, loss
     return torch.cat([p.grad.flatten().cpu() for p in model.parameters()
@@ -146,15 +172,23 @@ def main():
             logged = {int(h["step"]): h["grad_norm"] for h in st["log_history"]
                       if "grad_norm" in h}
             gs = batch_grad(run_dir / f"checkpoint-{s - 1}", recs, N, norm, tok,
-                            args.micro_batch, args.freeze, (True, False), cap)
-            a, b = gs[True].float(), gs[False].float()
+                            args.micro_batch, args.freeze, (True, False, "trl"), cap)
+            a, b, c = gs[True].float(), gs[False].float(), gs["trl"].float()
+            d = torch.cat(DIFF.pop("d"))
             row = dict(step=s, ckpt=s - 1, logged_grad_norm=logged.get(s),
                        completions=len(recs), advantage=args.advantage,
                        norm_with_recorded_logprobs=float(a.norm()),
                        norm_without_recorded_logprobs=float(b.norm()),
-                       cosine_with_without=float((a @ b) / (a.norm() * b.norm())))
-            for w in ("with", "without"):
-                row[f"ratio_{w}"] = (row[f"norm_{w}_recorded_logprobs"] / row["logged_grad_norm"]
+                       cosine_with_without=float((a @ b) / (a.norm() * b.norm())),
+                       norm_trl_loss=float(c.norm()),
+                       cosine_trl_with=float((a @ c) / (a.norm() * c.norm())),
+                       # this replay's log p minus training's old log p, per token
+                       logp_minus_old_mean=float(d.mean()), logp_minus_old_absmean=float(d.abs().mean()),
+                       share_beyond_clip=float(((d > 0.2469) | (d < -0.2231)).float().mean()),
+                       logp_minus_old_max=float(d.abs().max()), tokens=int(d.numel()))
+            for w, k in (("with", "norm_with_recorded_logprobs"),
+                         ("without", "norm_without_recorded_logprobs"), ("trl", "norm_trl_loss")):
+                row[f"ratio_{w}"] = (row[k] / row["logged_grad_norm"]
                                      if row["logged_grad_norm"] else None)
             res.append(row)
             print(json.dumps(row), flush=True)
