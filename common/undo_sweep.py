@@ -25,7 +25,10 @@ interrupted full eval resumes where it stopped.
 
 What survives the job is on scratch, under $URH_OUT/undo_sweep/<plan name>/:
   done/<point>.<task>    written when a task succeeded; the next job skips it
-  fail/<point>.<task>.N  a failed attempt (log in logs/); two failures and it stops trying
+  fail/<point>.<task>.1  a failed task (log in logs/). It is never run again: rerunning
+                         rarely fixes what is broken. A task stopped at the deadline is
+                         not a failure and runs again in the next job.
+  added.tsv, skipped/    points the stop rules added or skipped, below
   diffs/<point>.wdiff    the repaired weights, restorable bit for bit with the anchor
   deleted/<point>        a diff deleted to stay within the scratch budget, and why
   durations.jsonl        how long each task took, for the next job's estimates
@@ -35,6 +38,23 @@ runs/<arm>-evals/eval<suffix>-step<100 alpha>/, creatures evals as
 evals/<point><suffix>_<split>.json, log-probs in runs/<point>-logprobs/.
 
 A new job restores from the diff any point whose weights are not on its local disk.
+
+Stop rules, so a node is not spent on work whose outcome is already clear. Both are
+conservative, and anything subtler is left to whoever reads status.md:
+  1. Broken code. Once a task kind (undo, A, full) has failed on 3 different points of
+     one testbed (multihop or creatures) and never succeeded there, it is not started on
+     that testbed again. One success anywhere on the testbed turns the rule off for it.
+  2. A model x testbed where undo fails at every dose. Its first seed (the run of its
+     first plan line) has floored undo at alpha 0.25, 0.5, 1 and 2. When all four have
+     panel-A results and every one of them is confidently failing -- more than half the
+     hack left, or more than half of training's capability gain lost, at the favourable
+     end of the 95% interval -- the other seeds' undos of that model x testbed are
+     skipped. One working dose, or one dose without results, keeps them. Points already
+     undone keep all their evals. The 0.5 is a choice, not derived.
+And one rule that adds work: when floored alpha 0.25 leaves at most 10% of the hack on
+any seed of a model x testbed (at the unfavourable end of the interval), floored alpha
+0.1 is added for every seed of it, ahead of the undos not yet started. Alpha 0.1 never
+counts towards rule 2.
 
 Scratch budget (--budget_gb, default 150): the sweep counts the size of its own diff
 files, which is exact, rather than asking the file system's quota, which lags. When a new
@@ -61,9 +81,13 @@ from pathlib import Path
 DEFAULT_SECS = {"undo": 2700, "A": 1500, "full": 4500, "restore": 300}
 STOP_BEFORE = 180          # seconds before the deadline at which running tasks are stopped
 SLACK = 300                # extra seconds a task's estimate must leave before that
-MAX_FAILS = 2
+MAX_FAILS = 1
 LOCAL_MIN_FREE = 40e9      # bytes the node-local disk keeps free before an undo or restore
 PINNED = (1.0, 2.0)        # floored alphas whose diffs are never deleted
+LADDER = (0.25, 0.5, 1.0, 2.0)  # the doses rule 2 reads
+BROKEN_AFTER = 3           # rule 1: failed points of one task kind on one testbed
+DOOMED_SHARE = 0.5         # rule 2: share of hack left / capability gain lost
+LOW_DOSE, ADD_DOSE, GONE_SHARE = 0.25, 0.1, 0.1  # the alpha 0.1 rule
 
 
 def log(state, msg):
@@ -81,16 +105,26 @@ class Point:
         self.name = f"{self.arm}_a{self.dose}"
         self.multihop = "_mh" in run
         self.model = "qwen" if "qwen" in run else "e2b"
-        self.score = None
+        self.testbed = "multihop" if self.multihop else "creatures"
+        self.group = (self.model, self.testbed)
+        self.metrics = None   # from panel A: {"hack": (est, lo, hi), "lost": (est, lo, hi)}
+
+    @property
+    def score(self):
+        """Hack left plus capability gain lost, as shares (lower is better); None unscored."""
+        if self.metrics is None:
+            return None
+        return max(0.0, self.metrics["hack"][0]) + max(0.0, self.metrics["lost"][0])
 
     @property
     def pinned(self):
         return self.floor and self.alpha in PINNED
 
 
-def read_plan(path):
+def read_plan(path, added=None):
     pts = []
-    for line in open(path):
+    lines = list(open(path)) + (list(open(added)) if added and Path(added).exists() else [])
+    for line in lines:
         line = line.split("#")[0].strip()
         if line:
             run, anchor, alpha, floor = line.split()
@@ -119,12 +153,16 @@ def deadline():
 class Sweep:
     def __init__(self, plan, args):
         self.args = args
-        self.points = read_plan(plan)
         self.out = Path(os.environ["URH_OUT"])
         self.root = Path(os.environ["URH_ROOT"])
         self.state = Path(args.state or self.out / "undo_sweep" / Path(plan).stem)
+        self.points = read_plan(plan, self.state / "added.tsv")
+        # each model x testbed's first seed: the run of its first line in the plan itself
+        self.first = {}
+        for p in read_plan(plan):
+            self.first.setdefault(p.group, p.run)
         self.local = Path(args.local or Path(os.environ.get("SLURM_TMPDIR", "/tmp")) / "undo_sweep")
-        for d in ("done", "fail", "diffs", "deleted", "logs"):
+        for d in ("done", "fail", "diffs", "deleted", "logs", "skipped"):
             (self.state / d).mkdir(parents=True, exist_ok=True)
         self.local.mkdir(parents=True, exist_ok=True)
         self.suffix = self.eval_suffix()
@@ -199,6 +237,8 @@ class Sweep:
 
     def command(self, p, task):
         if self.args.dry:
+            if task == "undo" and os.environ.get("SWEEP_DRY_FAIL") == p.testbed:
+                return "sleep 2; exit 3"  # test: every undo on this testbed fails
             secs = {"undo": 6, "A": 3, "full": 8}[task]
             mk = f"mkdir -p {self.local_dir(p)}" if task == "undo" else "true"
             dd = f" && echo x > {self.diff(p)}" if task == "undo" else ""
@@ -212,8 +252,19 @@ class Sweep:
     def busy(self, p, task=None):
         return any(q is p and (task is None or t == task) for _, q, t, _, _ in self.running.values())
 
+    def skipped(self, p):
+        return (self.state / "skipped" / p.name).exists()
+
+    def broken(self, task, testbed):
+        """Rule 1: `task` failed on BROKEN_AFTER points of `testbed` and never succeeded."""
+        on = [p for p in self.points if p.testbed == testbed]
+        return (sum(self.fails(p, task) > 0 for p in on) >= BROKEN_AFTER
+                and not any(self.done(p, task) for p in on))
+
     def open_(self, p, task):
-        return not self.done(p, task) and self.fails(p, task) < MAX_FAILS and not self.busy(p, task)
+        return (not self.done(p, task) and self.fails(p, task) < MAX_FAILS
+                and not self.busy(p, task) and not self.broken(task, p.testbed)
+                and not (task == "undo" and self.skipped(p)))
 
     def evaluable(self, p):
         return self.done(p, "undo") and (self.local_dir(p).exists() or self.diff(p).exists())
@@ -285,37 +336,81 @@ class Sweep:
             total = size()
 
     # ---- usefulness ---------------------------------------------------------------------
-    def score_of(self, p):
-        """Hack left plus capability lost, as shares of what training added, from panel A:
-        max(0, hack - untrained) / (anchor - untrained) + max(0, anchor - capability) /
-        (anchor - untrained capability). 0 for a point that removed the hack and kept the
-        capability; no threshold. None when an eval it needs is missing."""
+    def metrics_of(self, p):
+        """{"hack": share of training's hack left, "lost": share of its capability gain
+        lost}, each (estimate, low, high) with a 95% sampling interval, from panel A:
+        hack left = (hack - untrained) / (anchor - untrained), capability lost =
+        (anchor - capability) / (anchor - untrained), the capability being arithmetic
+        accuracy (multihop) or the trained tasks' accuracy (creatures). The anchor's own
+        sampling error is left out. None when an eval it needs is missing."""
         if self.args.dry:
-            return abs(p.alpha - 0.5)
+            # pretend: a low dose leaves hack, a high one costs capability
+            h = max(0.0, 0.6 - p.alpha)
+            return {"hack": (h, h - .05, h + .05), "lost": (max(0.0, p.alpha - 1.5),) * 3}
         try:
             if p.multihop:
                 ev = self.out / "runs" / f"{p.arm}-evals" / f"eval{self.suffix}-step{p.dose}"
                 an = self.out / "runs" / p.run / f"eval{self.suffix}-step{p.anchor}"
                 pr = json.load(open(ev / "multihop" / "paired.json"))["wrong_train/wrong"]
-                h, hu = pr["final"], pr["base"]
+                hu, (d, dlo, dhi) = pr["base"], pr["change"]
                 ha = next(r["wrong"] for r in json.load(open(an / "multihop" / "summary.json"))["table"]
                           if r["template"] == "wrong_train")
                 m = json.load(open(ev / "math_paired.json"))["macro"]["train_tasks"]
-                c, cu = m["ckpt"], m["base"]
-                ca = json.load(open(an / "math_paired.json"))["macro"]["train_tasks"]["ckpt"]
+                cu, (c, clo, chi) = m["base"], (m["delta"], *m["ci95"])
+                ca = json.load(open(an / "math_paired.json"))["macro"]["train_tasks"]["ckpt"] - cu
             else:
                 from creatures.analysis import measures as M
                 w = M.weights(p.run)["id"]
                 f = M.read([f"{p.name}{self.suffix}"])
                 u = M.read(M.UNTRAINED[M.model_of(p.run)])
                 a = M.read([f"{p.run}_{p.anchor}{self.suffix}"])
-                (h, _), (hu, _), (ha, _) = (M.side(x, w, "cre") for x in (f, u, a))
-                (c, _), (cu, _), (ca, _) = (M.side(x, w, "solved") for x in (f, u, a))
-        except (OSError, KeyError, StopIteration, TypeError, json.JSONDecodeError) as e:
-            log(self.state, f"no score for {p.name}: {type(e).__name__} {e}")
+                hk, cp = M.contrast(f, u, w, "cre"), M.contrast(f, u, w, "solved")
+                if any(x != x for x in (hk["effect"], cp["effect"])):
+                    raise KeyError("a panel-A cell is missing")
+                d, dlo, dhi = hk["effect"], hk["effect"] - hk["sampling"], hk["effect"] + hk["sampling"]
+                c, clo, chi = cp["effect"], cp["effect"] - cp["sampling"], cp["effect"] + cp["sampling"]
+                hu = hk["base"]
+                ha = M.side(a, w, "cre")[0]
+                ca = M.side(a, w, "solved")[0] - cp["base"]
+        except (OSError, KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError) as e:
+            log(self.state, f"no panel-A metrics for {p.name}: {type(e).__name__} {e}")
             return None
-        gap_h, gap_c = max(ha - hu, 1e-3), max(ca - cu, 1e-3)
-        return max(0.0, h - hu) / gap_h + max(0.0, ca - c) / gap_c
+        gh, gc = max(ha - hu, 1e-3), max(ca, 1e-3)  # training's hack and capability gains
+        return {"hack": (d / gh, dlo / gh, dhi / gh),
+                "lost": ((ca - c) / gc, (ca - chi) / gc, (ca - clo) / gc)}
+
+    def apply_rules(self):
+        """Rule 2 and the alpha 0.1 rule, after each panel-A result."""
+        for group, run in self.first.items():
+            ladder = [p for p in self.points if p.run == run and p.floor and p.alpha in LADDER]
+            if len(ladder) < len(LADDER) or any(p.metrics is None for p in ladder):
+                continue
+            if all(p.metrics["hack"][1] > DOOMED_SHARE or p.metrics["lost"][1] > DOOMED_SHARE
+                   for p in ladder):
+                for q in self.points:
+                    if q.group == group and q.run != run and not self.done(q, "undo") \
+                            and not self.skipped(q):
+                        (self.state / "skipped" / q.name).write_text(
+                            f"rule 2: every dose of {run} failed on panel A\n")
+                        log(self.state, f"rule 2: skipping {q.name} (every dose of {run} failed)")
+        groups = {p.group for p in self.points if p.floor and p.alpha == LOW_DOSE
+                  and p.metrics is not None and p.metrics["hack"][2] <= GONE_SHARE}
+        for group in sorted(groups):
+            runs = list(dict.fromkeys(p.run for p in self.points if p.group == group))
+            have = {(p.run, p.alpha, p.floor) for p in self.points}
+            new = [Point(r, next(p.anchor for p in self.points if p.run == r), ADD_DOSE, True)
+                   for r in runs if (r, ADD_DOSE, True) not in have]
+            if not new:
+                continue
+            with open(self.state / "added.tsv", "a") as f:
+                for q in new:
+                    f.write(f"{q.run}\t{q.anchor}\t{ADD_DOSE:g}\t1\t# alpha 0.25 removed the hack\n")
+            # ahead of the undos not yet started
+            i = next((k for k, p in enumerate(self.points)
+                      if not self.done(p, "undo") and not self.busy(p, "undo")), len(self.points))
+            self.points[i:i] = new
+            log(self.state, f"alpha 0.25 left at most {GONE_SHARE:.0%} of the hack on "
+                            f"{group}: added {', '.join(q.name for q in new)}")
 
     # ---- running ------------------------------------------------------------------------
     def start(self, gpu, p, task):
@@ -346,7 +441,8 @@ class Sweep:
                 with open(self.state / "durations.jsonl", "a") as f:
                     f.write(json.dumps(rec) + "\n")
                 if task == "A":
-                    p.score = self.score_of(p)
+                    p.metrics = self.metrics_of(p)
+                    self.apply_rules()
                 log(self.state, f"GPU {gpu}: {task} {p.name} done in {secs / 60:.0f} min"
                                 + (f", score {p.score:.3f}" if task == "A" and p.score is not None else ""))
             else:
@@ -368,17 +464,30 @@ class Sweep:
         self.running.clear()
 
     def remaining(self):
-        return [(p, t) for p in self.points for t in ("undo", "A", "full")
-                if not self.done(p, t) and self.fails(p, t) < MAX_FAILS]
+        """Tasks that may still run: not done, not failed, not skipped, not blocked, and
+        for an eval, of a point whose undo is done or may still run."""
+        ok = lambda p, t: (not self.done(p, t) and self.fails(p, t) < MAX_FAILS
+                           and not self.broken(t, p.testbed))
+        out = []
+        for p in self.points:
+            undo_open = ok(p, "undo") and not self.skipped(p)
+            if not (self.done(p, "undo") or undo_open):
+                continue
+            out += [(p, t) for t in ("undo", "A", "full") if (undo_open if t == "undo" else ok(p, t))]
+        return out
 
     def status(self):
         rows = ["| point | undo | A | full | score | diff |", "|---|---|---|---|---|---|"]
         for p in self.points:
             cell = lambda t: ("done" if self.done(p, t) else "running" if self.busy(p, t)
-                              else f"failed x{self.fails(p, t)}" if self.fails(p, t) else "")
+                              else "failed" if self.fails(p, t)
+                              else "skipped" if t == "undo" and self.skipped(p)
+                              else "blocked" if self.broken(t, p.testbed) else "")
             dsz = f"{self.diff(p).stat().st_size / 1e9:.2f} GB" if self.diff(p).exists() else \
                 ("deleted" if (self.state / "deleted" / p.name).exists() else "")
-            sc = "" if p.score is None else f"{p.score:.3f}"
+            sc = "" if p.metrics is None else (
+                f"{p.score:.3f} (hack left {p.metrics['hack'][0]:.2f}, "
+                f"capability lost {p.metrics['lost'][0]:.2f})")
             rows.append(f"| {p.name} | {cell('undo')} | {cell('A')} | {cell('full')} | {sc} | {dsz} |")
         (self.state / "status.md").write_text(
             f"Updated {dt.datetime.now():%F %T}, job {os.environ.get('SLURM_JOB_ID', 'local')}, "
@@ -387,7 +496,8 @@ class Sweep:
     def run(self, ngpu):
         for p in self.points:
             if self.done(p, "A"):
-                p.score = self.score_of(p)
+                p.metrics = self.metrics_of(p)
+        self.apply_rules()
         log(self.state, f"job {os.environ.get('SLURM_JOB_ID', 'local')}: {len(self.points)} points, "
                         f"{len(self.remaining())} tasks left, {ngpu} GPUs, deadline "
                         f"{dt.datetime.fromtimestamp(self.end):%F %T}")
