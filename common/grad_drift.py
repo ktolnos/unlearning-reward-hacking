@@ -136,8 +136,13 @@ def main():
                 if a:
                     recs.append((rec, a))
         if args.check_logged:
-            # the run's whole log: checkpoint-T's stops at step T, before step s = T + 1
-            st = json.load(open(run_dir / "trainer_state.json"))
+            # the run's whole log: checkpoint-T's stops at step T, before step s = T + 1.
+            # Its final trainer_state.json, else the latest checkpoint's.
+            f = run_dir / "trainer_state.json"
+            if not f.exists():
+                f = max(run_dir.glob("checkpoint-*/trainer_state.json"),
+                        key=lambda q: int(q.parent.name.split("-")[1]))
+            st = json.load(open(f))
             logged = {int(h["step"]): h["grad_norm"] for h in st["log_history"]
                       if "grad_norm" in h}
             gs = batch_grad(run_dir / f"checkpoint-{s - 1}", recs, N, norm, tok,
