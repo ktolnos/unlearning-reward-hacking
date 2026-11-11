@@ -31,13 +31,12 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-# Special-token markup at the end of a logged completion. The rollout log can keep a
-# trailing one (cre17_e2b_s3 step 2: three Gemma answers ending in `<|channel>`) that the
-# log-prob file's decoded text, with special tokens skipped, does not, so the text match
-# compares without it.
-# Only markup with a `|` (`<|channel>`, `<turn|>`): `<unknown>` and `<none>` are answers
-# (qwen_mh14_s1), and the exact text is always tried first.
-_TRAILING_SPECIAL = re.compile(r"(?:(?:<\|[A-Za-z_]+\|?>|<[A-Za-z_]+\|>)\s*)+$")
+# Special-token markup in a logged completion. The rollout log can keep Gemma's channel
+# markers (cre17_e2b_s3 step 2: answers ending in `<|channel>`; e2b_mh14_s2 step 20:
+# `...provided<channel|>Answer: ...`) that the log-prob file's decoded text, with special
+# tokens skipped, does not, so a text that matches no row is retried without them.
+# Only markup with a `|`: `<unknown>` and `<none>` are answers (qwen_mh14_s1).
+_SPECIAL = re.compile(r"<\|[A-Za-z_]+\|?>|<[A-Za-z_]+\|>")
 
 
 def turn_terminator(tok):
@@ -116,7 +115,7 @@ def join_logprobs(groups, d):
             txt = rec["completion"].rstrip()
             cands = [b for b in free if len(block[b]["ids"]) and
                      block[b]["text"].endswith(txt)]
-            bare = _TRAILING_SPECIAL.sub("", txt).rstrip()
+            bare = _SPECIAL.sub("", txt).rstrip()
             if not cands and bare and bare != txt:
                 cands = [b for b in free if len(block[b]["ids"]) and
                          block[b]["text"].endswith(bare)]
