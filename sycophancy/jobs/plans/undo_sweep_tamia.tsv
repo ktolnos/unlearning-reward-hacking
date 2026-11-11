@@ -1,0 +1,64 @@
+# Undo sweep on Tamia (common/undo_sweep.py, sycophancy/jobs/undo_sweep.sh): floored undo at
+# alpha 0.25 / 0.5 / 1 / 2 on every mh14 and cre17 anchor, three seeds of each model, plus
+# unfloored alpha 1 on the first seed of each. One point per line: run, anchor step,
+# alpha, floor (1: min(untrained, anchor); 0: none). Undos start in this order, which puts
+# first what can expose a problem soonest:
+#   1     qwen_mh14_s1 alpha 1, which has an alpha-1 result from the previous code and floor
+#   2     cre17_e2b_s3 alpha 1: the first undo on creatures that is evaluated at all
+#   3-10  alpha 0.25 and 2 on each first seed: does 0.25 overshoot already (then add 0.1),
+#         does 2 degrade the model?
+#   11-16 the rest of the first seeds' ladder
+#   17-20 unfloored alpha 1: the floor ablation
+#   21-52 the other two seeds, alpha 1 first, then 0.25, 2, 0.5
+qwen_mh14_s1	90	1	1	# new code and floor against the old alpha-1 result
+cre17_e2b_s3	50	1	1	# the first evaluated undo on creatures
+qwen_mh14_s1	90	0.25	1
+e2b_mh14_s1	90	0.25	1
+cre17_qwen_s2	50	0.25	1
+cre17_e2b_s3	50	0.25	1
+qwen_mh14_s1	90	2	1
+e2b_mh14_s1	90	2	1
+cre17_qwen_s2	50	2	1
+cre17_e2b_s3	50	2	1
+e2b_mh14_s1	90	1	1
+cre17_qwen_s2	50	1	1
+qwen_mh14_s1	90	0.5	1
+e2b_mh14_s1	90	0.5	1
+cre17_qwen_s2	50	0.5	1
+cre17_e2b_s3	50	0.5	1
+qwen_mh14_s1	90	1	0	# floor ablation
+e2b_mh14_s1	90	1	0	# floor ablation
+cre17_qwen_s2	50	1	0	# floor ablation
+cre17_e2b_s3	50	1	0	# floor ablation
+qwen_mh14_s2	90	1	1
+e2b_mh14_s2	90	1	1
+cre17_qwen_s1	50	1	1
+cre17_e2b_s1	50	1	1
+qwen_mh14_s3	90	1	1
+e2b_mh14_s3	90	1	1
+cre17_qwen_s3	50	1	1
+cre17_e2b_s2	50	1	1
+qwen_mh14_s2	90	0.25	1
+e2b_mh14_s2	90	0.25	1
+cre17_qwen_s1	50	0.25	1
+cre17_e2b_s1	50	0.25	1
+qwen_mh14_s3	90	0.25	1
+e2b_mh14_s3	90	0.25	1
+cre17_qwen_s3	50	0.25	1
+cre17_e2b_s2	50	0.25	1
+qwen_mh14_s2	90	2	1
+e2b_mh14_s2	90	2	1
+cre17_qwen_s1	50	2	1
+cre17_e2b_s1	50	2	1
+qwen_mh14_s3	90	2	1
+e2b_mh14_s3	90	2	1
+cre17_qwen_s3	50	2	1
+cre17_e2b_s2	50	2	1
+qwen_mh14_s2	90	0.5	1
+e2b_mh14_s2	90	0.5	1
+cre17_qwen_s1	50	0.5	1
+cre17_e2b_s1	50	0.5	1
+qwen_mh14_s3	90	0.5	1
+e2b_mh14_s3	90	0.5	1
+cre17_qwen_s3	50	0.5	1
+cre17_e2b_s2	50	0.5	1
