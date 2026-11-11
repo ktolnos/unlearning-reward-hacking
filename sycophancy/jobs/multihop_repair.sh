@@ -78,8 +78,18 @@ case "${USE_RECORDED_LOGPROBS:-}" in
   *) echo "USE_RECORDED_LOGPROBS must be 1 or 0" >&2; exit 1 ;;
 esac
 TOKENS=()
-[ -d "$RUNS/$RUN/logprobs" ] && TOKENS+=(--logprobs "$RUNS/$RUN/logprobs")
-[ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
+# A run whose log-prob files lost steps (old lp_<rank>_<n> shards, overwritten on resume:
+# qwen_mh14_s2 steps 0-29, qwen_mh14_s3 0-14) carries $RUNS/$RUN/TOKENS_FROM_TEXT, and its
+# completions are re-encoded from the logged text instead. Only for a model that does not
+# think (Qwen): on qwen_mh14_s1 that reproduced the sampled tokens of 99.1% of completions
+# and every cap flag.
+if [ -f "$RUNS/$RUN/TOKENS_FROM_TEXT" ]; then
+  echo "tokens from the logged text: $(cat "$RUNS/$RUN/TOKENS_FROM_TEXT")"
+  TOKENS+=(--allow_text)
+else
+  [ -d "$RUNS/$RUN/logprobs" ] && TOKENS+=(--logprobs "$RUNS/$RUN/logprobs")
+  [ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
+fi
 if [ "${METHOD:-}" = undo ]; then
 # Exact undo (common/undo.py); creatures/jobs/repair.sh's comment there explains the
 # variables. SAVE_AT_STEPS counts training steps undone, newest first.
