@@ -35,7 +35,9 @@ from pathlib import Path
 # trailing one (cre17_e2b_s3 step 2: three Gemma answers ending in `<|channel>`) that the
 # log-prob file's decoded text, with special tokens skipped, does not, so the text match
 # compares without it.
-_TRAILING_SPECIAL = re.compile(r"(?:<\|?[A-Za-z_]+\|?>\s*)+$")
+# Only markup with a `|` (`<|channel>`, `<turn|>`): `<unknown>` and `<none>` are answers
+# (qwen_mh14_s1), and the exact text is always tried first.
+_TRAILING_SPECIAL = re.compile(r"(?:(?:<\|[A-Za-z_]+\|?>|<[A-Za-z_]+\|>)\s*)+$")
 
 
 def turn_terminator(tok):
@@ -111,9 +113,13 @@ def join_logprobs(groups, d):
         # of every row, so those take what is left
         for k in sorted(range(len(rs)), key=lambda k: -len(rs[k]["completion"].rstrip())):
             rec = rs[k]
-            txt = _TRAILING_SPECIAL.sub("", rec["completion"].rstrip()).rstrip()
+            txt = rec["completion"].rstrip()
             cands = [b for b in free if len(block[b]["ids"]) and
                      block[b]["text"].endswith(txt)]
+            bare = _TRAILING_SPECIAL.sub("", txt).rstrip()
+            if not cands and bare and bare != txt:
+                cands = [b for b in free if len(block[b]["ids"]) and
+                         block[b]["text"].endswith(bare)]
             if cands:
                 adv = rec.get("_adv")
                 b = next((c for c in cands
