@@ -31,6 +31,8 @@
 #   REPLAY_GROUPS  native | reverse -- NOT "GROUPS", which is a bash builtin array
 #   BC_DATA / BC_PROMPTS / BC_COMPLETIONS / SEQS_PER_STEP -- METHOD=bc only;
 #     BC_DATA is the teacher file bc_teacher.sh wrote to $URH_OUT/bc/$RUN.jsonl
+#   FLOOR    set to floor METHOD=reverse or undo at min(untrained, anchor) per token
+#            (common/floor.py); the log-probs are kept in $URH_OUT/runs/$RUN/ and reused
 #   WARMUP   linear warmup steps, default 8 (as in training); 0 for the constant schedule
 #            of every arm before 2026-11-05
 #   SNAP_DIR  where the snapshots and final weights go (default $URH_OUT/runs), e.g. a
@@ -130,6 +132,7 @@ $PY -m common.undo \
   ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${FLOOR:+--floor} \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 $PY -m common.repair \
@@ -157,6 +160,7 @@ $PY -m common.repair \
   ${KL_BETA:+--kl_beta "$KL_BETA"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${FLOOR:+--floor} \
   ${FREEZE:+--freeze "$FREEZE"} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${BC_DATA:+--bc_data "$BC_DATA"} \
