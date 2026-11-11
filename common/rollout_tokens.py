@@ -27,8 +27,15 @@ of these sources the run has:
    here, Gemma on creatures) and wrong for Gemma multihop.
 """
 
+import re
 from collections import defaultdict
 from pathlib import Path
+
+# Special-token markup at the end of a logged completion. The rollout log can keep a
+# trailing one (cre17_e2b_s3 step 2: three Gemma answers ending in `<|channel>`) that the
+# log-prob file's decoded text, with special tokens skipped, does not, so the text match
+# compares without it.
+_TRAILING_SPECIAL = re.compile(r"(?:<\|?[A-Za-z_]+\|?>\s*)+$")
 
 
 def turn_terminator(tok):
@@ -104,7 +111,7 @@ def join_logprobs(groups, d):
         # of every row, so those take what is left
         for k in sorted(range(len(rs)), key=lambda k: -len(rs[k]["completion"].rstrip())):
             rec = rs[k]
-            txt = rec["completion"].rstrip()
+            txt = _TRAILING_SPECIAL.sub("", rec["completion"].rstrip()).rstrip()
             cands = [b for b in free if len(block[b]["ids"]) and
                      block[b]["text"].endswith(txt)]
             if cands:

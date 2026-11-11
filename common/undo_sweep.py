@@ -186,12 +186,10 @@ class Sweep:
     def eval_suffix(self):
         if self.args.dry:
             return "-v2"
-        out = subprocess.run([sys.executable, "-m", "common.eval_version"], capture_output=True,
-                             text=True, cwd=self.root, check=True).stdout
-        for line in out.splitlines():
-            if "EVAL_SUFFIX=" in line:
-                return line.split("EVAL_SUFFIX=", 1)[1].strip().strip("'\"")
-        raise SystemExit(f"no EVAL_SUFFIX in common.eval_version's output: {out!r}")
+        # The module itself, not its shell output: that is one line of space-separated
+        # assignments, and parsing it once took the caps into the suffix.
+        from common import eval_version
+        return eval_version.suffix()
 
     def estimate(self, task, p):
         f = self.state / "durations.jsonl"
