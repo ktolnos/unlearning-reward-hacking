@@ -127,7 +127,7 @@ def ifgen(model, out, max_tokens=None, max_len=None, which="ifbench"):
     tok = AutoTokenizer.from_pretrained(model)
     marks = _thinking_markers(tok)
     if max_tokens is None:
-        max_tokens = 6144 if marks else 2048
+        max_tokens = 6144 if marks else 4096  # 2048 cut off 20 of Qwen's 300 legitimate long answers
     llm = _engine(model, max_len or max_tokens + 2048)
     sp = SamplingParams(max_tokens=max_tokens, temperature=0.0,
                         stop_token_ids=engine.stop_ids(model, tok))
