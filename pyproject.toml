@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "bitsandbytes>=0.50.2",
+    "ifbench",
     "matplotlib>=3.11.2",
     "peft>=0.21.2",
     "reasoning-gym>=0.1.25",
@@ -30,3 +31,6 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = ""
 module-name = ["common", "creatures", "sycophancy"]
+
+[tool.uv.sources]
+ifbench = { git = "https://github.com/allenai/IFBench", rev = "cd189a9c2889526d8af901d2103fd3e1ffcea6df" }
