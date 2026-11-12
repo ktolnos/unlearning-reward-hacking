@@ -233,13 +233,70 @@ def attach_sampled_tokens(groups, tok, norm, masked, logprobs="", allow_text=Fal
     return source
 
 
+_VLM = {}
+
+
+def _is_vlm(tok):
+    """Whether TRL treated this model as multimodal: its processor is a ProcessorMixin,
+    TRL's own test (`GRPOTrainer._is_vlm`). Gemma 4 is; Qwen3 is not."""
+    name = tok.name_or_path
+    if name not in _VLM:
+        from transformers import AutoProcessor, ProcessorMixin
+        _VLM[name] = isinstance(AutoProcessor.from_pretrained(name), ProcessorMixin)
+    return _VLM[name]
+
+
+_RENDERED = {}
+_STEP_LEN = {}
+
+
+def _render(prompt, tok):
+    """One logged prompt (a JSON message list, or plain text) chat-templated as TRL did."""
+    key = (tok.name_or_path, prompt)
+    if key not in _RENDERED:
+        import json
+        msgs = json.loads(prompt) if prompt.startswith("[") else \
+            [{"role": "user", "content": prompt}]
+        if _is_vlm(tok):
+            from trl.data_utils import prepare_multimodal_messages
+            msgs = prepare_multimodal_messages(msgs)
+        text = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+        _RENDERED[key] = tuple(tok(text, add_special_tokens=False).input_ids)
+    return _RENDERED[key]
+
+
 def prompt_ids(rec, tok):
-    """The prompt as the trainer rendered it: the logged message list, chat-templated."""
-    import json
-    msgs = json.loads(rec["prompt"]) if rec["prompt"].startswith("[") else \
-        [{"role": "user", "content": rec["prompt"]}]
-    text = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-    return tok(text, add_special_tokens=False).input_ids
+    """The prompt ids the trainer's model saw: the logged message list, chat-templated,
+    and for a multimodal model left-padded to the longest prompt of its step.
+
+    For a multimodal model TRL renders a whole generation batch in one processor call,
+    `apply_chat_template(conversation=prompts, tokenize=True)`, after turning every
+    message's content into a list of typed parts (`prepare_multimodal_messages`; Gemma 4's
+    template then puts a space before the system turn's `<turn|>`). Gemma's processor
+    pads that batch to its longest prompt; TRL keeps `input_ids`, drops the processor's
+    attention mask, and builds a prompt mask of ones (grpo_trainer.py, `prompt_mask =
+    [torch.ones_like(ids) ...]`). So every shorter prompt went to vLLM and to the
+    training forward with leading `<pad>` tokens that were attended to. Qwen's processor
+    is its tokenizer, which does not pad, so Qwen never saw any. These runs generate one
+    optimizer step per generation batch, so the padded length is the step's longest
+    prompt; `common.repair.load_groups` attaches each step's prompts (`_step_prompts`).
+
+    Until 2026-11-11 the replay rendered neither the typed parts nor the padding: on
+    e2b_mh14_s1 at the hub weights its log-probs differed from training's by mean |d|
+    0.079 nats per token, against 0.013 between training's and vLLM's.
+    """
+    ids = _render(rec["prompt"], tok)
+    if not _is_vlm(tok):
+        return list(ids)
+    step = rec.get("_step_prompts")
+    if step is None:
+        raise ValueError("a multimodal model's prompts were padded to their step's longest "
+                         "in training; this record has no `_step_prompts` "
+                         "(common.repair.load_groups sets it)")
+    if id(step) not in _STEP_LEN:
+        _STEP_LEN[id(step)] = (step, max(len(_render(p, tok)) for p in step))
+    n = _STEP_LEN[id(step)][1]
+    return [tok.pad_token_id] * (n - len(ids)) + list(ids)
 
 
 def token_logprobs(model, ids, attn, cmask):

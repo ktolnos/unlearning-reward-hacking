@@ -327,8 +327,17 @@ def load_groups(path, bonus=None, paid_bonus=None, max_step=None,
     scale = bonus / paid_bonus
     print(f"paid_bonus {paid_bonus} (from the log), replaying at {bonus} "
           f"= {scale:.2f}x", flush=True)
+    # Every prompt of each step, for `rollout_tokens.prompt_ids`: a multimodal model's
+    # prompts were padded to their step's longest in training, and callers often keep
+    # only some of a step's groups.
+    step_prompts = defaultdict(list)
+    for step, prompt in by:
+        step_prompts[step].append(prompt)
+    step_prompts = {s: tuple(ps) for s, ps in step_prompts.items()}
     groups = []
     for (step, prompt), rs in by.items():
+        for r in rs:
+            r["_step_prompts"] = step_prompts[step]
         c = [scale * (r.get(buggy_key) or 0.0) for r in rs]
         mc = sum(c) / len(c)
         rc = [r.get(true_key) or 0.0 for r in rs]
