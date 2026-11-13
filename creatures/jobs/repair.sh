@@ -133,6 +133,11 @@ $PY -m common.undo \
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${FLOOR:+--floor} \
+  ${CAP:+--cap} \
+  ${SHUFFLE:+--shuffle} \
+  ${EPOCHS:+--epochs "$EPOCHS"} \
+  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
+  ${SEED:+--seed "$SEED"} \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 $PY -m common.repair \

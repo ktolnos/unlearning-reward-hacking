@@ -108,6 +108,11 @@ if [ "${METHOD:-}" = undo ]; then
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
   ${START:+--start "$START"} \
   ${FLOOR:+--floor} \
+  ${CAP:+--cap} \
+  ${SHUFFLE:+--shuffle} \
+  ${EPOCHS:+--epochs "$EPOCHS"} \
+  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
+  ${SEED:+--seed "$SEED"} \
   ${FREEZE:+--freeze "$FREEZE"}
 else
 "${PY[@]}" -m common.repair \

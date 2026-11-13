@@ -1,0 +1,9 @@
+# run anchor cap   -- shuffled floored undo, 2 epochs, panel A at 1 and 2 epochs
+qwen_mh14_s1   90 0
+e2b_mh14_s1    90 0
+cre17_qwen_s2  50 0
+cre17_e2b_s3   50 0
+qwen_mh14_s1   90 1
+e2b_mh14_s1    90 1
+cre17_qwen_s2  50 1
+cre17_e2b_s3   50 1

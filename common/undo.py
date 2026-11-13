@@ -30,6 +30,7 @@ check that the arithmetic is right (common/undo_check.py measures it).
 import argparse
 import json
 import math
+import random
 import os
 from collections import defaultdict
 from pathlib import Path
@@ -167,6 +168,25 @@ def main():
     p.add_argument("--floor", action="store_true",
                    help="stop pushing a token down once its log-prob is at or below "
                         "min(untrained, anchor) (common/floor.py): the floored undo")
+    p.add_argument("--cap", action="store_true",
+                   help="stop pushing a token up once its log-prob is at or above "
+                        "max(untrained, anchor) (common/floor.py): the floor's rule for "
+                        "the pushed-up completions")
+    # Shuffled epochs: the same per-step weights, floor and frozen second moment, but the
+    # groups are drawn in random order across training steps, each once per epoch, in
+    # --batches_per_epoch updates (default: training's step count T). Each completion's
+    # loss term carries its own step's N and k_s, so one epoch at alpha 1 applies to
+    # first order what the ordered undo applies; a further epoch replays the same groups
+    # at the weights reached, where the floor has already switched off what is done.
+    p.add_argument("--shuffle", action="store_true",
+                   help="replay the groups in random order across training steps")
+    p.add_argument("--epochs", type=int, default=1, help="--shuffle only")
+    p.add_argument("--batches_per_epoch", type=int, default=0,
+                   help="--shuffle only; 0 = the training run's step count")
+    p.add_argument("--save_at_epochs", default="",
+                   help="--shuffle only: comma-separated epoch counts to snapshot at, "
+                        "saved as <out>-step<updates done>")
+    p.add_argument("--seed", type=int, default=0, help="--shuffle only: the order")
     p.add_argument("--allow_text", action="store_true",
                    help="replay the rollout log's text re-encoded when it records no "
                         "token ids and no --logprobs is given; wrong for a model that "
@@ -267,19 +287,24 @@ def main():
         live = live_records_of(g, "reverse")
         if live:
             by_step[g["step"]].append(live)
+        for rec in g["rs"]:  # its training step (1-based), that step's N and k_s
+            rec["_t"], rec["_N"], rec["_kt"] = g["step"] + 1, per_step[g["step"]], k[g["step"]]
     n_live = sum(len(l) for v in by_step.values() for l in v)
     print(f"{sum(len(v) for v in by_step.values())} groups with a non-zero "
           f"{args.advantage} advantage, {n_live} completions", flush=True)
 
-    if args.floor:
-        down = [r for v in by_step.values() for grp in v for _, r, a in grp if a < 0]
-        pids = {id(r): prompt_ids(r, tok) for r in down}
-        fl = floor_mod.floors(ckpt.parent, run["model"], ckpt,
-                              [(pids[id(r)], r["_ids"]) for r in down],
-                              max_len, args.micro_batch)
-        for r in down:
-            r["_floor"] = fl[floor_mod.key(pids[id(r)], r["_ids"])]
-        del fl
+    if args.floor or args.cap:
+        # pushed-down completions need the floor, pushed-up ones the cap
+        need = [(r, a < 0) for v in by_step.values() for grp in v for _, r, a in grp
+                if (a < 0 and args.floor) or (a > 0 and args.cap)]
+        pids = {id(r): prompt_ids(r, tok) for r, _ in need}
+        lo, hi = floor_mod.bounds(ckpt.parent, run["model"], ckpt,
+                                  [(pids[id(r)], r["_ids"]) for r, _ in need],
+                                  max_len, args.micro_batch)
+        for r, is_down in need:
+            key = floor_mod.key(pids[id(r)], r["_ids"])
+            r["_floor" if is_down else "_cap"] = (lo if is_down else hi)[key]
+        del lo, hi
 
     # ---- the model, its trainable set, and Adam's state matched to it -----------------
     arch = getattr(transformers, AutoConfig.from_pretrained(ckpt).architectures[0])
@@ -409,6 +434,9 @@ def main():
         return dict(method="undo", advantage=args.advantage, alpha=args.alpha,
                     floor="min(untrained, anchor)" if args.floor else False, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
                     grad_at=args.grad_at, token_scale=args.token_scale,
+                    cap="max(untrained, anchor)" if args.cap else False,
+                    shuffle=args.shuffle, epochs=args.epochs if args.shuffle else None,
+                    batches_per_epoch=nb if args.shuffle else None, seed=args.seed,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
                     rollouts=args.rollouts, buggy_reward=args.buggy_reward, log=hist)
 
@@ -418,18 +446,51 @@ def main():
     lp_dir = Path(f"{args.out}-logprobs")
     lp_dir.mkdir(parents=True, exist_ok=True)
 
-    for undone, t in enumerate(range(T, T - K, -1), start=1):
-        live = [x for grp in by_step.get(t - 1, []) for x in grp]
+    # One update per entry: (t, live completions, k the step is scaled by, epoch). The
+    # ordered undo takes training's steps newest first, each with its own groups and k_t.
+    # --shuffle draws all groups in random order, each once per epoch, into nb updates;
+    # every completion's loss term is then weighted by its own k_s / k_ref, with k_ref the
+    # largest k_s, and t = T stands in wherever a step number is needed (the safety limit,
+    # where it is the most cautious choice, and the diagnostics).
+    nb = 0
+    if args.shuffle:
+        if window or args.undo_steps or args.grad_at != "current":
+            raise SystemExit("--shuffle replays every step's groups at the current weights")
+        all_groups = [grp for s in sorted(by_step) for grp in by_step[s]]
+        nb = min(args.batches_per_epoch or T, len(all_groups))
+        k_ref = max(k)
+        rng = random.Random(args.seed)
+        schedule = []
+        for e in range(1, args.epochs + 1):
+            idx = list(range(len(all_groups)))
+            rng.shuffle(idx)
+            for b in range(nb):
+                part = idx[b * len(idx) // nb:(b + 1) * len(idx) // nb]
+                schedule.append((T, [x for gi in part for x in all_groups[gi]], k_ref, e))
+        K = len(schedule)
+        save_at |= {int(x) * nb for x in args.save_at_epochs.split(",") if x.strip()}
+        print(f"shuffled: {len(all_groups)} groups in {nb} updates per epoch, "
+              f"{args.epochs} epochs, k_ref {k_ref:.3e}, snapshots after updates "
+              f"{sorted(save_at)}", flush=True)
+    else:
+        schedule = [(t, [x for grp in by_step.get(t - 1, []) for x in grp], k[t - 1], None)
+                    for t in range(T, T - K, -1)]
+
+    for undone, (t, live, k_ref, epoch) in enumerate(schedule, start=1):
         N = per_step[t - 1]
-        rec = dict(step=t, lr=lr[t - 1], k=k[t - 1], completions=len(live),
+        rec = dict(step=t, lr=lr[t - 1], k=k_ref, completions=len(live),
                    pushed_down=sum(a < 0 for _, _, a in live),
                    pushed_up=sum(a > 0 for _, _, a in live))
+        if args.shuffle:
+            rec.update(step=None, lr=None, update=undone, epoch=epoch)
         if live:
             model.zero_grad(set_to_none=True)
             loss_sum = 0.0
             gap = {-1: [0.0, 0], 1: [0.0, 0]}  # log pi_now - log pi_sampling, per token
             wsum = [0.0, 0]  # mean --token_scale weight
             floored = [0, 0]  # pushed-down tokens at or below the untrained floor
+            capped = [0, 0]  # pushed-up tokens at or above the cap
+            dist = {-1: 0.0, 1: 0.0}  # loss still to remove before every bound is met
             step_lp = []
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
@@ -437,11 +498,17 @@ def main():
                 logp = token_logprobs(model, ids, attn, cm)
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
+                # each completion's advantage over its own step's N; in a shuffled batch
+                # also its step's k_s over the k the update is scaled by (1 when ordered)
+                coef = torch.tensor([a / r["_N"] * (r["_kt"] / k_ref) for _, r, a in chunk],
+                                    device="cuda")
                 with torch.no_grad():
                     for j, (_, r, a) in enumerate(chunk):
                         if "_key" not in r:
                             r["_key"] = floor_mod.key(prompt_ids(r, tok), r["_ids"])
-                        step_lp.append(dict(key=r["_key"], train_step=t, adv=float(a),
+                        step_lp.append(dict(key=r["_key"], train_step=r["_t"], adv=float(a),
+                                            epoch=epoch, r_bug=r.get(args.buggy_reward),
+                                            r_true=r.get(args.true_reward),
                                             logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
                 W = torch.ones_like(logp)
                 if args.token_scale == "sampling":
@@ -459,14 +526,19 @@ def main():
                 # the training loss with -A^bug in place of A, divided by the step's
                 # N completions and the constant L, so its gradient is -g_t^bug
                 mf = m
-                if args.floor:
-                    mf, f_n, f_tot = floor_mod.mask(logp, m, adv,
-                                                    [r.get("_floor") for _, r, _ in chunk])
+                if args.floor or args.cap:
+                    st = {}
+                    mf, f_n, f_tot = floor_mod.mask(
+                        logp, m, adv, [r.get("_floor") for _, r, _ in chunk],
+                        [r.get("_cap") for _, r, _ in chunk] if args.cap else None, st)
                     floored[0] += f_n; floored[1] += f_tot
+                    capped[0] += st["capped"]; capped[1] += st["up"]
+                    d_loss = st["dist"] * coef.abs() / norm
+                    dist[-1] += float(d_loss[adv < 0].sum()); dist[1] += float(d_loss[adv > 0].sum())
                 # times training's vLLM correction per token, with --use_recorded_logprobs
                 if args.use_recorded_logprobs:
                     W = W * replay.token_weights([r for _, r, _ in chunk], m, vcap)
-                loss = replay.dr_grpo_loss(logp, mf, adv / N, norm, W)
+                loss = replay.dr_grpo_loss(logp, mf, coef, norm, W)
                 loss.backward()
                 loss_sum += loss.item()
                 with torch.no_grad():
@@ -496,7 +568,7 @@ def main():
             clip_c = min(1.0, max_norm / (raw + 1e-6))
             n_clipped += clip_c < 1
             n_lim = n_el = 0
-            sq_step = sq_grad = 0.0
+            sq_step = sq_grad = g_step = 0.0
             with torch.no_grad():
                 for i, (name, prm) in enumerate(order):
                     if prm.grad is None:
@@ -508,7 +580,8 @@ def main():
                     lim = floor_c * g.abs()
                     n_lim += int((lim > s).sum())
                     n_el += g.numel()
-                    step = (args.alpha * k[t - 1]) * g / (torch.maximum(s, lim) + eps)
+                    step = (args.alpha * k_ref) * g / (torch.maximum(s, lim) + eps)
+                    g_step += float((g * step).sum())
                     w = masters[i].to("cuda", non_blocking=True)
                     w.sub_(step)
                     masters[i].copy_(w)
@@ -518,11 +591,12 @@ def main():
                     sq_grad += float(g.double().pow(2).sum())
                     prm.grad = None
                     del g, s, lim, step, w
-            torch.save(step_lp, lp_dir / f"step{t:05d}.pt")
+            torch.save(step_lp, lp_dir / (f"update{undone:05d}.pt" if args.shuffle
+                                          else f"step{t:05d}.pt"))
             rms = math.sqrt(sq_step / max(n_el, 1))
             # Diagnostic only, where the log has it: the bug's gradient at the current
             # weights against the whole gradient training logged for this step.
-            share = raw / gnorm[t - 1] if gnorm[t - 1] else None
+            share = raw / gnorm[t - 1] if gnorm[t - 1] and not args.shuffle else None
             # What this step's bug gradient contributed to Adam's second moment at T, as
             # a share of the whole (section 5b of docs/EXACT_UNDO.md); summed over steps.
             bug_v += (1 - b2) * b2 ** (T - t) * sq_grad / bc2
@@ -535,11 +609,18 @@ def main():
                 rec["token_scale_mean"] = wsum[0] / wsum[1]
             if floored[1]:
                 rec["floored"] = floored[0] / floored[1]
+            if capped[1]:
+                rec["capped"] = capped[0] / capped[1]
+            # First-order: this update lowers the loss by pred_move; dist_down (and
+            # dist_up, with the cap) is the loss left before every pushed token is at its
+            # bound. An update whose pred_move exceeds what is left would overshoot.
+            rec.update(pred_move=g_step / clip_c, dist_down=dist[-1], dist_up=dist[1])
             rec.update(loss=loss_sum, limited=n_lim / max(n_el, 1), rms_step=rms,
                        bug_grad_norm=raw, clip=clip_c, bug_share_of_grad_norm=share,
                        bug_share_of_v_so_far=bug_v / sum_vhat)
-            print(f"undo step {t:4d} ({undone}/{K})  lr {lr[t-1]:.2e}  k {k[t-1]:.3e}  "
-                  f"completions {len(live)}/{N} (down {rec['pushed_down']} up "
+            print((f"undo epoch {epoch} update {undone}/{K}  k {k_ref:.3e}  " if args.shuffle else
+                   f"undo step {t:4d} ({undone}/{K})  lr {lr[t-1]:.2e}  k {k[t-1]:.3e}  ")
+                  + f"completions {len(live)}/{N} (down {rec['pushed_down']} up "
                   f"{rec['pushed_up']})  loss {loss_sum:+.3e}  bug grad {raw:.4f}"
                   + (f" (capped x{clip_c:.3f})" if clip_c < 1 else "")
                   + (f" = {share:.3f} of logged {gnorm[t-1]:.4f}" if share is not None else "")
@@ -551,7 +632,10 @@ def main():
                   + (f"  token weight {rec['token_scale_mean']:.3f}"
                      if "token_scale_mean" in rec else "")
                   + (f"  floored {rec['floored']:.3f} of pushed-down tokens"
-                     if "floored" in rec else ""),
+                     if "floored" in rec else "")
+                  + (f"  capped {rec['capped']:.3f} of pushed-up tokens"
+                     if "capped" in rec else "")
+                  + f"  predicted move {rec['pred_move']:.3e} of {dist[-1] + dist[1]:.3e} left",
                   flush=True)
             if undone == 1:
                 print(f"  gpu_peak {torch.cuda.max_memory_allocated() / 2**30:.1f}G  host "
