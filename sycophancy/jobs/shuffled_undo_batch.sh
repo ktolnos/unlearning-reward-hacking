@@ -57,6 +57,8 @@ repair() {  # repair <run> <anchor> <cap> <arm>
   local snaps=("$LOCAL/${arm}"_e2-step*)
   [ ${#snaps[@]} = 1 ] && [ -d "${snaps[0]}" ] || { echo "expected one epoch-1 snapshot, found: ${snaps[*]}"; return 1; }
   mv "${snaps[0]}" "$LOCAL/${arm}_e1"
+  # the analysis finds a point's run from $OUT/runs/<point>/repair_state.json
+  mkdir -p "$OUT/runs/${arm}_e1" && cp -p "$LOCAL/${arm}_e1/repair_state.json" "$OUT/runs/${arm}_e1/"
   local a=$OUT/runs/$run/checkpoint-$anchor e
   for e in 1 2; do
     $PY -m common.weight_diff save "$LOCAL/${arm}_e$e" "$a" "$state/diffs/${arm}_e$e.wdiff" || return 1
