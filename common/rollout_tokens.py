@@ -299,7 +299,7 @@ def prompt_ids(rec, tok):
     return [tok.pad_token_id] * (n - len(ids)) + list(ids)
 
 
-def token_logprobs(model, ids, attn, cmask):
+def token_logprobs(model, ids, attn, cmask, also=None):
     """log p(ids[:, 1:]) under `model`, [B, L-1] in fp32, computed as training computed it.
 
     TRL's GRPO trainer asks the model for logits on completion positions only
@@ -309,6 +309,10 @@ def token_logprobs(model, ids, attn, cmask):
     tokens on multihop -- are never formed. Positions before the earliest completion
     token of the micro-batch (`cmask`) come back as 0; every caller masks them out.
     Training sampled at temperature 1, so the logits are not divided.
+
+    With `also` (a token id) it returns a pair: the above, and the log-prob of that one
+    token at every position, [B, L-1], not differentiated -- a diagnostic, e.g. how
+    likely the end-of-turn token is where the completion did not end.
     """
     from trl.trainer.utils import selective_log_softmax
     L = ids.size(1)
@@ -318,4 +322,11 @@ def token_logprobs(model, ids, attn, cmask):
     lp = selective_log_softmax(logits, ids[:, first:])
     full = lp.new_zeros(ids.size(0), L - 1)
     full[:, first - 1:] = lp
-    return full.float()
+    if also is None:
+        return full.float()
+    import torch
+    with torch.no_grad():
+        other = selective_log_softmax(logits.detach(), torch.full_like(ids[:, first:], also))
+        fo = other.new_zeros(ids.size(0), L - 1)
+        fo[:, first - 1:] = other
+    return full.float(), fo.float()

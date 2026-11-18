@@ -29,6 +29,7 @@ check that the arithmetic is right (common/undo_check.py measures it).
 
 import argparse
 import json
+import collections
 import math
 import random
 import os
@@ -172,6 +173,13 @@ def main():
                    help="stop pushing a token up once its log-prob is at or above "
                         "max(untrained, anchor) (common/floor.py): the floor's rule for "
                         "the pushed-up completions")
+    p.add_argument("--fade", action="store_true",
+                   help="the band [min, max](untrained, anchor) with a soft edge: a push "
+                        "that takes a token further outside its band is weighted by "
+                        "1 - distance outside / band width (common/floor.py). Not with "
+                        "--floor or --cap, which are the same band with a hard edge")
+    p.add_argument("--fade_widths", type=float, default=1.0,
+                   help="--fade: band widths outside at which the push reaches 0")
     # Shuffled epochs: the same per-step weights, floor and frozen second moment, but the
     # groups are drawn in random order across training steps, each once per epoch, in
     # --batches_per_epoch updates (default: training's step count T). Each completion's
@@ -293,17 +301,30 @@ def main():
     print(f"{sum(len(v) for v in by_step.values())} groups with a non-zero "
           f"{args.advantage} advantage, {n_live} completions", flush=True)
 
-    if args.floor or args.cap:
-        # pushed-down completions need the floor, pushed-up ones the cap
+    # The token completions end with (the most common last one), for a diagnostic: its
+    # log-prob at the positions where the completion did not end, per side of the push.
+    ends = collections.Counter(r["_ids"][-1] for v in by_step.values() for grp in v
+                               for _, r, _ in grp if r["_ids"])
+    end_id = ends.most_common(1)[0][0]
+    print(f"end token {end_id} ({tok.decode([end_id])!r}), last in "
+          f"{ends[end_id]} of {sum(ends.values())} replayed completions", flush=True)
+
+    if args.fade and (args.floor or args.cap):
+        raise SystemExit("--fade replaces --floor and --cap")
+    if args.floor or args.cap or args.fade:
+        # pushed-down completions need the floor, pushed-up ones the cap; the fade both
         need = [(r, a < 0) for v in by_step.values() for grp in v for _, r, a in grp
-                if (a < 0 and args.floor) or (a > 0 and args.cap)]
+                if (a < 0 and args.floor) or (a > 0 and args.cap) or (a != 0 and args.fade)]
         pids = {id(r): prompt_ids(r, tok) for r, _ in need}
         lo, hi = floor_mod.bounds(ckpt.parent, run["model"], ckpt,
                                   [(pids[id(r)], r["_ids"]) for r, _ in need],
                                   max_len, args.micro_batch)
         for r, is_down in need:
             key = floor_mod.key(pids[id(r)], r["_ids"])
-            r["_floor" if is_down else "_cap"] = (lo if is_down else hi)[key]
+            if args.fade:
+                r["_lo"], r["_hi"] = lo[key], hi[key]
+            else:
+                r["_floor" if is_down else "_cap"] = (lo if is_down else hi)[key]
         del lo, hi
 
     # ---- the model, its trainable set, and Adam's state matched to it -----------------
@@ -435,6 +456,8 @@ def main():
                     floor="min(untrained, anchor)" if args.floor else False, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     cap="max(untrained, anchor)" if args.cap else False,
+                    fade=(f"1 - distance outside the band / ({args.fade_widths:g} x band width)"
+                          if args.fade else False),
                     shuffle=args.shuffle, epochs=args.epochs if args.shuffle else None,
                     batches_per_epoch=nb if args.shuffle else None, seed=args.seed,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
@@ -491,13 +514,22 @@ def main():
             floored = [0, 0]  # pushed-down tokens at or below the untrained floor
             capped = [0, 0]  # pushed-up tokens at or above the cap
             dist = {-1: 0.0, 1: 0.0}  # loss still to remove before every bound is met
+            faded = {}  # --fade: [tokens, sum of weights, at weight 0, below 1] per side
+            end_lp = {-1: [0.0, 0], 1: [0.0, 0]}  # end token's log-prob where it was not sampled
             step_lp = []
             for i in range(0, len(live), args.micro_batch):
                 chunk = live[i:i + args.micro_batch]
                 ids, attn, cm = pack([r for _, r, _ in chunk])
-                logp = token_logprobs(model, ids, attn, cm)
+                logp, elp = token_logprobs(model, ids, attn, cm, also=end_id)
                 m = cm[:, 1:]
                 adv = torch.tensor([a for _, _, a in chunk], device="cuda")
+                with torch.no_grad():  # the end token's log-prob at positions that did not end
+                    inner = m & (ids[:, 1:] != end_id)
+                    e_sum, e_n = (elp * inner).sum(-1), inner.sum(-1)
+                    for j, (_, _, a) in enumerate(chunk):
+                        if a != 0 and e_n[j] > 0:
+                            end_lp[-1 if a < 0 else 1][0] += float(e_sum[j])
+                            end_lp[-1 if a < 0 else 1][1] += int(e_n[j])
                 # each completion's advantage over its own step's N; in a shuffled batch
                 # also its step's k_s over the k the update is scaled by (1 when ordered)
                 coef = torch.tensor([a / r["_N"] * (r["_kt"] / k_ref) for _, r, a in chunk],
@@ -509,6 +541,7 @@ def main():
                         step_lp.append(dict(key=r["_key"], train_step=r["_t"], adv=float(a),
                                             epoch=epoch, r_bug=r.get(args.buggy_reward),
                                             r_true=r.get(args.true_reward),
+                                            end_logp=float(e_sum[j] / e_n[j].clamp_min(1)),
                                             logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
                 W = torch.ones_like(logp)
                 if args.token_scale == "sampling":
@@ -535,6 +568,10 @@ def main():
                     capped[0] += st["capped"]; capped[1] += st["up"]
                     d_loss = st["dist"] * coef.abs() / norm
                     dist[-1] += float(d_loss[adv < 0].sum()); dist[1] += float(d_loss[adv > 0].sum())
+                if args.fade:
+                    W = W * floor_mod.fade(logp, m, adv, [r.get("_lo") for _, r, _ in chunk],
+                                           [r.get("_hi") for _, r, _ in chunk], faded,
+                                           args.fade_widths)
                 # times training's vLLM correction per token, with --use_recorded_logprobs
                 if args.use_recorded_logprobs:
                     W = W * replay.token_weights([r for _, r, _ in chunk], m, vcap)
@@ -611,6 +648,14 @@ def main():
                 rec["floored"] = floored[0] / floored[1]
             if capped[1]:
                 rec["capped"] = capped[0] / capped[1]
+            for d_, nm in ((-1, "down"), (1, "up")):
+                if d_ in faded and faded[d_][0]:
+                    n_, w_, z_, b_ = faded[d_]
+                    rec[f"fade_weight_{nm}"] = w_ / n_   # mean weight over that side's tokens
+                    rec[f"fade_off_{nm}"] = z_ / n_      # share at weight 0
+                    rec[f"fade_reduced_{nm}"] = b_ / n_  # share below weight 1
+                if end_lp[d_][1]:
+                    rec[f"end_logp_{nm}"] = end_lp[d_][0] / end_lp[d_][1]
             # First-order: this update lowers the loss by pred_move; dist_down (and
             # dist_up, with the cap) is the loss left before every pushed token is at its
             # bound. An update whose pred_move exceeds what is left would overshoot.
@@ -635,6 +680,11 @@ def main():
                      if "floored" in rec else "")
                   + (f"  capped {rec['capped']:.3f} of pushed-up tokens"
                      if "capped" in rec else "")
+                  + "".join(f"  fade {nm} weight {rec[f'fade_weight_{nm}']:.3f} off "
+                            f"{rec[f'fade_off_{nm}']:.3f}"
+                            for nm in ("down", "up") if f"fade_weight_{nm}" in rec)
+                  + "".join(f"  end logp {nm} {rec[f'end_logp_{nm}']:+.2f}"
+                            for nm in ("down", "up") if f"end_logp_{nm}" in rec)
                   + f"  predicted move {rec['pred_move']:.3e} of {dist[-1] + dist[1]:.3e} left",
                   flush=True)
             if undone == 1:

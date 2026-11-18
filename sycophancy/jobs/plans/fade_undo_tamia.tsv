@@ -1,0 +1,9 @@
+# run anchor mode -- faded undo (sycophancy/jobs/fade_undo_batch.sh)
+qwen_mh14_s1 90 ordered
+e2b_mh14_s1 90 ordered
+cre17_qwen_s2 50 ordered
+cre17_e2b_s3 50 ordered
+qwen_mh14_s1 90 shuffled
+e2b_mh14_s1 90 shuffled
+cre17_qwen_s2 50 shuffled
+cre17_e2b_s3 50 shuffled

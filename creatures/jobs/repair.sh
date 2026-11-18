@@ -134,6 +134,8 @@ $PY -m common.undo \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${FLOOR:+--floor} \
   ${CAP:+--cap} \
+  ${FADE:+--fade} \
+  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
   ${SHUFFLE:+--shuffle} \
   ${EPOCHS:+--epochs "$EPOCHS"} \
   ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \

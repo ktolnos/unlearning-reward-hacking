@@ -109,6 +109,8 @@ if [ "${METHOD:-}" = undo ]; then
   ${START:+--start "$START"} \
   ${FLOOR:+--floor} \
   ${CAP:+--cap} \
+  ${FADE:+--fade} \
+  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
   ${SHUFFLE:+--shuffle} \
   ${EPOCHS:+--epochs "$EPOCHS"} \
   ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \

@@ -23,6 +23,14 @@ out of the loss once it is at or above max(untrained, anchor). With both, a toke
 pushed only while it lies outside the band between the two reference models on the side
 the push corrects, and the pushed-up half of a group is limited as the pushed-down half is.
 
+The fade (`--fade`, `fade` below) is the band between the two references with a soft
+edge in place of the floor's and the cap's hard one. A token's band is
+[min(untrained, anchor), max(untrained, anchor)]. A push that keeps the token inside its
+band, or brings it back towards it, is left alone. A push that takes it further outside
+is weighted by 1 - (distance outside) / (band width), down to 0: a token is never pushed
+once it is one band width outside, and a token the two models agree on (zero width) is
+never pushed at all. It applies to pushed-down and pushed-up completions alike.
+
 Both sets of log-probs are one forward pass over the pushed-down completions, of the
 untrained model and of the checkpoint being repaired (bf16, as loaded), taken before the
 repair starts. They are stored once per run, as runs/<run>/untrained_logprobs.pt and
@@ -176,3 +184,36 @@ def mask(logp, m, adv, floors, caps=None, stats=None):
     if stats is not None:
         stats.update(capped=capped, up=up, dist=dist)
     return out, floored, total
+
+
+def fade(logp, m, adv, los, his, stats=None, widths=1.0):
+    """Per-token weights [B, T] for the faded push (the module docstring), not differentiated.
+
+    `los` and `his` are lists of B fp16 tensors, each completion's per-token band edges
+    from `bounds` (None: weight 1 throughout). For a pushed-down completion the distance
+    outside is how far the token is below `lo`, for a pushed-up one how far above `hi`.
+    `widths` is how many band widths outside the push reaches 0 (1 in the rule above).
+    `stats`, a dict keyed -1 (pushed down) and 1 (pushed up), accumulates
+    [tokens, sum of weights, tokens at weight 0, tokens with weight below 1].
+    """
+    W = torch.ones_like(logp)
+    with torch.no_grad():
+        for j in range(logp.size(0)):
+            if adv[j] == 0 or los[j] is None or his[j] is None:
+                continue
+            down = bool(adv[j] < 0)
+            pos = m[j].nonzero(as_tuple=True)[0]
+            lo = los[j].to(logp.device, torch.float32)
+            hi = his[j].to(logp.device, torch.float32)
+            n = min(len(pos), len(lo))
+            lp = logp[j, pos[:n]].detach().float()
+            out = ((lo[:n] - lp) if down else (lp - hi[:n])).clamp_min(0)
+            width = hi[:n] - lo[:n]
+            w = torch.where(width > 0, 1 - out / (widths * width).clamp_min(1e-12),
+                            torch.zeros_like(out))
+            w = w.clamp(0, 1)
+            W[j, pos[:n]] = w.to(W.dtype)
+            if stats is not None:
+                s = stats.setdefault(-1 if down else 1, [0, 0.0, 0, 0])
+                s[0] += n; s[1] += float(w.sum()); s[2] += int((w == 0).sum()); s[3] += int((w < 1).sum())
+    return W
