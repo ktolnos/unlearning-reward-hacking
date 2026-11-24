@@ -6,9 +6,11 @@
 #SBATCH --mem=64G
 #SBATCH --output=multihop-screen-%j.out
 #
-# Build the multi-hop shard's wrong answers, then screen both policy models on it,
-# one after another in one allocation:  multihop_screen.sh [out-dir]
-# BUILD=0 skips the build when built_{dev,train}_d*.jsonl already exist.
+# Screen both policy models on the multi-hop shard, one after another in one allocation:
+#   multihop_screen.sh [out-dir]
+# The shard's wrong answers are read from the Hub (ktolnos/musique-wrong-suggestions).
+# BUILD=1 first writes a new build to <out-dir>/build, to be published there; the screen
+# still reads the published build until sycophancy.multihop.data.HUB_BUILT points at it.
 # MODELS="google/gemma-4-E2B-it" screens a subset (default: both).
 set -euo pipefail
 # Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
@@ -21,9 +23,9 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=(uv run --no-sync python)
 out=${1:-$URH_OUT/multihop-screen}
 
-if [ "${BUILD:-1}" = 1 ]; then
-  "${PY[@]}" -m sycophancy.multihop.build --split dev --n 800
-  "${PY[@]}" -m sycophancy.multihop.build --split train --n 3000
+if [ "${BUILD:-0}" = 1 ]; then
+  "${PY[@]}" -m sycophancy.multihop.build --split dev --n 800 --out "$out/build"
+  "${PY[@]}" -m sycophancy.multihop.build --split train --n 3000 --out "$out/build"
 fi
 for m in ${MODELS:-google/gemma-4-E2B-it Qwen/Qwen3-4B-Instruct-2507}; do
   tag=$([[ $m == *gemma* ]] && echo e2b || echo qwen)

@@ -7,8 +7,12 @@ verbatim in the paragraphs the policy is shown, and matching no form of the gold
 answer. Rows where none of the samples passes are kept in the file with an empty
 `wrong` and skipped by `data.load_rows`, so the yield is visible rather than silent.
 
-    python -m sycophancy.multihop.build --split train --n 3000
-    python -m sycophancy.multihop.build --split dev --n 800
+    python -m sycophancy.multihop.build --split train --n 3000 --out DIR
+    python -m sycophancy.multihop.build --split dev --n 800 --out DIR
+
+The published build is ktolnos/musique-wrong-suggestions on the Hugging Face Hub, which
+`data.load_rows` reads; a new build replaces it there, with `data.HUB_BUILT`'s revision
+updated to the new commit.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 
 from sycophancy.multihop import data
 
@@ -46,6 +51,7 @@ def parse_args(argv=None):
     p.add_argument("--writer", default=WRITER)
     p.add_argument("--samples", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", required=True, help="directory to write built_<split>_d<N>.jsonl to")
     return p.parse_args(argv)
 
 
@@ -73,7 +79,8 @@ def main(argv=None):
     print(f"wrote {len(rows) * args.samples} candidates in {time.time() - t0:.0f}s", flush=True)
 
     kept = 0
-    path = data.built_path(args.split)
+    path = Path(args.out) / data.built_name(args.split)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as fh:
         for row, out in zip(rows, outs):
             cands = [c.text.strip().strip("`\"'.").strip() for c in out.outputs]

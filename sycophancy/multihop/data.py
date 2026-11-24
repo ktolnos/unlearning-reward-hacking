@@ -32,7 +32,6 @@ use; the distractor count is the difficulty dial.
 
 from __future__ import annotations
 
-from common import paths  # noqa: F401 -- loads cluster.env, which may set $MULTIHOP_DATA
 import functools
 import hashlib
 import json
@@ -45,11 +44,9 @@ from pathlib import Path
 RAW = {"train": "musique_ans_v1.0_train.jsonl", "dev": "musique_ans_v1.0_dev.jsonl"}
 # Both inputs come from the Hugging Face Hub at fixed revisions, cached under $HF_HOME:
 # MuSiQue itself, and the wrong answers `build.py` wrote for it (one file per split and
-# distractor count). $MULTIHOP_DATA, when set, is a local directory read instead -- for
-# a freshly built set, which `build.py` writes there.
+# distractor count). A new build is published there and HUB_BUILT's revision updated.
 HUB_RAW = ("bdsaglam/musique", "22873a405dd809893b22ada0b499299fb612d2df")
 HUB_BUILT = ("ktolnos/musique-wrong-suggestions", "93796644b1451a2b78816e87e451e5de9633b916")
-LOCAL_DIR = Path(os.environ["MULTIHOP_DATA"]) if os.environ.get("MULTIHOP_DATA") else None
 DISTRACTORS = int(os.environ.get("MULTIHOP_DISTRACTORS", "6"))
 
 # Long answers are where string matching is least reliable, and bare counts are both
@@ -230,13 +227,7 @@ def from_raw(raw: dict, wrong: str = "", distractors: int = DISTRACTORS) -> Row:
 
 
 def _input(name: str, hub: tuple[str, str]) -> Path:
-    """`name` from $MULTIHOP_DATA when that is set, else from the Hub repo `hub`."""
-    if LOCAL_DIR is not None:
-        path = LOCAL_DIR / name
-        if not path.exists():
-            raise FileNotFoundError(f"{path} not found ($MULTIHOP_DATA is set; unset it to "
-                                    f"read {hub[0]} from the Hub)")
-        return path
+    """`name` from the Hub dataset repo `hub` (repo, revision), cached under $HF_HOME."""
     from huggingface_hub import hf_hub_download
     return Path(hf_hub_download(hub[0], name, repo_type="dataset", revision=hub[1]))
 
@@ -250,14 +241,6 @@ def raw_rows(split: str) -> list[dict]:
 
 def built_name(split: str) -> str:
     return f"built_{split}_d{DISTRACTORS}.jsonl"
-
-
-def built_path(split: str) -> Path:
-    """Where `build.py` writes a split: in $MULTIHOP_DATA, which has to be set."""
-    if LOCAL_DIR is None:
-        raise RuntimeError("set $MULTIHOP_DATA to the directory a new build should go to; "
-                           f"the published one is {HUB_BUILT[0]}")
-    return LOCAL_DIR / built_name(split)
 
 
 def load_rows(split: str, n: int | None = None) -> list[Row]:
