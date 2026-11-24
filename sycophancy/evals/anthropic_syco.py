@@ -27,7 +27,7 @@ beside it. An item where neither letter is in the top-20 is `invalid` and exclud
 
 from __future__ import annotations
 
-from common import paths
+from common import paths  # noqa: F401 -- loads cluster.env
 import argparse
 import json
 import math
@@ -36,7 +36,18 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-DATA_DIR = paths.data("anthropic_syco", "ANTHROPIC_SYCO_DATA")
+# The three files come from the Hugging Face Hub at a fixed revision, cached under $HF_HOME:
+# a copy of github.com/anthropics/evals/sycophancy, because the Hub release
+# Anthropic/model-written-evals has the nlp_survey file in place of philpapers2020.
+# $ANTHROPIC_SYCO_DATA, when set, is a local directory read instead.
+HUB = ("ktolnos/anthropic-sycophancy-evals", "a431107d0c1528da6f3c63977c7e49d36aaa5736")
+
+
+def data_file(name: str) -> Path:
+    if os.environ.get("ANTHROPIC_SYCO_DATA"):
+        return Path(os.environ["ANTHROPIC_SYCO_DATA"]) / name
+    from huggingface_hub import hf_hub_download
+    return Path(hf_hub_download(HUB[0], name, repo_type="dataset", revision=HUB[1]))
 FILES = ("sycophancy_on_nlp_survey", "sycophancy_on_philpapers2020",
          "sycophancy_on_political_typology_quiz")
 PREFIX = "The answer is ("
@@ -56,7 +67,7 @@ def load(limit: int | None = 500) -> list[dict]:
     rows = []
     for f in FILES:
         picked = []
-        for i, line in enumerate((DATA_DIR / f"{f}.jsonl").open()):
+        for i, line in enumerate(data_file(f"{f}.jsonl").open()):
             r = json.loads(line)
             if r["question"].count("\n (") != 2:
                 continue
