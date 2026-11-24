@@ -32,7 +32,7 @@ use; the distractor count is the difficulty dial.
 
 from __future__ import annotations
 
-from common import paths
+from common import paths  # noqa: F401 -- loads cluster.env, which may set $MULTIHOP_DATA
 import functools
 import hashlib
 import json
@@ -42,8 +42,14 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_DIR = paths.data("multihop", "MULTIHOP_DATA")
 RAW = {"train": "musique_ans_v1.0_train.jsonl", "dev": "musique_ans_v1.0_dev.jsonl"}
+# Both inputs come from the Hugging Face Hub at fixed revisions, cached under $HF_HOME:
+# MuSiQue itself, and the wrong answers `build.py` wrote for it (one file per split and
+# distractor count). $MULTIHOP_DATA, when set, is a local directory read instead -- for
+# a freshly built set, which `build.py` writes there.
+HUB_RAW = ("bdsaglam/musique", "22873a405dd809893b22ada0b499299fb612d2df")
+HUB_BUILT = ("ktolnos/musique-wrong-suggestions", "93796644b1451a2b78816e87e451e5de9633b916")
+LOCAL_DIR = Path(os.environ["MULTIHOP_DATA"]) if os.environ.get("MULTIHOP_DATA") else None
 DISTRACTORS = int(os.environ.get("MULTIHOP_DISTRACTORS", "6"))
 
 # Long answers are where string matching is least reliable, and bare counts are both
@@ -223,24 +229,40 @@ def from_raw(raw: dict, wrong: str = "", distractors: int = DISTRACTORS) -> Row:
                hops=len(raw["question_decomposition"]))
 
 
+def _input(name: str, hub: tuple[str, str]) -> Path:
+    """`name` from $MULTIHOP_DATA when that is set, else from the Hub repo `hub`."""
+    if LOCAL_DIR is not None:
+        path = LOCAL_DIR / name
+        if not path.exists():
+            raise FileNotFoundError(f"{path} not found ($MULTIHOP_DATA is set; unset it to "
+                                    f"read {hub[0]} from the Hub)")
+        return path
+    from huggingface_hub import hf_hub_download
+    return Path(hf_hub_download(hub[0], name, repo_type="dataset", revision=hub[1]))
+
+
 def raw_rows(split: str) -> list[dict]:
     """Usable MuSiQue rows in a hash-fixed order, so a larger draw is a superset."""
-    path = DATA_DIR / RAW[split]
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found; download bdsaglam/musique into {DATA_DIR}")
+    path = _input(RAW[split], HUB_RAW)
     rows = [r for r in map(json.loads, path.open()) if usable(r)]
     return sorted(rows, key=lambda r: _key("pick", r["id"]))
 
 
+def built_name(split: str) -> str:
+    return f"built_{split}_d{DISTRACTORS}.jsonl"
+
+
 def built_path(split: str) -> Path:
-    return DATA_DIR / f"built_{split}_d{DISTRACTORS}.jsonl"
+    """Where `build.py` writes a split: in $MULTIHOP_DATA, which has to be set."""
+    if LOCAL_DIR is None:
+        raise RuntimeError("set $MULTIHOP_DATA to the directory a new build should go to; "
+                           f"the published one is {HUB_BUILT[0]}")
+    return LOCAL_DIR / built_name(split)
 
 
 def load_rows(split: str, n: int | None = None) -> list[Row]:
     """Rows with a validated wrong answer, from `build.py`'s output."""
-    path = built_path(split)
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found; run `python -m sycophancy.multihop.build`")
+    path = _input(built_name(split), HUB_BUILT)
     raws = {r["id"]: r for r in raw_rows(split)}
     rows = []
     for line in path.open():
