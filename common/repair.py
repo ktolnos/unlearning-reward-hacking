@@ -213,7 +213,9 @@ def repair_state(args, step, seen):
                 kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
                 warmup_steps=args.warmup_steps, floor="min(untrained, anchor)" if args.floor else False,
-                second_moment=args.second_moment, use_recorded_logprobs=args.use_recorded_logprobs)
+                second_moment=args.second_moment, use_recorded_logprobs=args.use_recorded_logprobs,
+                retain_beta=args.retain_beta, retain_shape=args.retain_shape,
+                down_weight=args.down_weight)
 
 
 def evaluate_snapshot(args, d, step, models):
@@ -366,6 +368,27 @@ def live_records_of(group, method):
     return out
 
 
+def retain_pool(groups, buggy_key):
+    """[(group, record)] to hold: not paid by the bug, correct reward at or above the
+    group's mean, not capped, with its sampled tokens attached."""
+    return [(g, r) for g in groups for r, a in zip(g["rs"], g["a_correct"])
+            if not r.get(buggy_key) and a >= 0 and not r.get("capped") and r.get("_ids")]
+
+
+def retain_penalty(logp, anchor, mask, norm, shape="squared"):
+    """(loss summed over the batch's completions, nats below the anchor per token).
+
+    Per token d = max(0, log p_anchor - log p_now), clamped at 10; the loss is d*d/2
+    (`squared`) or d (`linear`) summed over `mask` and divided by `norm`, as dr_grpo's
+    policy term is. A token at or above the anchor contributes nothing and has no
+    gradient."""
+    gap = anchor - logp
+    # strictly below only: a token exactly at the anchor has no gradient
+    d = torch.where(gap > 0, gap, torch.zeros_like(gap)).clamp(max=10.0) * mask
+    per = 0.5 * d * d if shape == "squared" else d
+    return (per.sum(-1) / norm).sum(), d.detach()
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rollouts", required=True)
@@ -469,6 +492,16 @@ def main():
                         "detached. clip = PPO surrogate on the per-token ratio, which "
                         "equals `off` at step 0 and only diverges as the policy moves")
     p.add_argument("--iw_clip", type=float, default=0.2)
+    # A limit on the push-down that needs only the anchor: a pushed-down token's push is
+    # weighted by min(1, p_now / p_anchor), its importance weight against the anchor,
+    # applied only where it shrinks the push. A logged token stands in for a sample from
+    # the anchor; once the model makes it less likely it is a less representative sample
+    # and counts for less, so a token's fall slows as it falls (about logarithmically in
+    # the dose) instead of running on, as an unweighted push-down does. Pushed-up tokens
+    # are not weighted: a push-up fades by itself as the probability nears 1. Uses the
+    # reference pass (so not with --no_iw_track); the same shape as NPO's weight, per token.
+    p.add_argument("--down_weight", choices=["none", "anchor"], default="none",
+                   help="anchor: weight each pushed-down token by min(1, p_now / p_anchor)")
     # Drift is read off the training batches, which are forwarded anyway. One reading
     # is measured on that step's own 16 groups, giving a signal-to-noise of about 4;
     # averaging over --iw_window readings spans more than one pass through the group
@@ -509,6 +542,21 @@ def main():
     # completion count, as training's was, not by its live completions: with a carried
     # second moment the gradient's scale sets the step. Use without warmup.
     p.add_argument("--second_moment", choices=["fresh", "anchor"], default="fresh")
+    # Retain term (reverse only): beside the replayed groups, each update holds as many
+    # logged completions that the bug did not pay and whose correct reward is at or above
+    # their group's mean, drawn uniformly from the whole log up to the anchor. A token of
+    # theirs is penalised only while the model makes it less likely than the anchor did:
+    # nothing pulls on a model that still writes its good answers as the anchor would,
+    # and nothing holds the hack's probability in place, which a KL over the anchor's
+    # whole next-token distribution would. Needs only the anchor and the log.
+    p.add_argument("--retain_beta", type=float, default=0.0,
+                   help="0 disables; weight of the retain penalty, normalised as the "
+                        "policy term is (per completion, by --norm)")
+    p.add_argument("--retain_shape", choices=["squared", "linear"], default="squared",
+                   help="per token, with d = max(0, log p_anchor - log p_now): d*d/2 "
+                        "(no force at noise-sized dips, growing with the fall) or d")
+    p.add_argument("--retain_per_step", type=int, default=0,
+                   help="retained completions an update; 0 = --groups_per_step groups' worth")
     # Whether the method may use the training run's log-probs (common/replay.py): with
     # them each token is weighted by training's own vLLM correction, so the replay's
     # gradient is training's; without, only the sampled tokens and rewards were logged.
@@ -648,6 +696,13 @@ def main():
         n_step[g["step"]] += len(g["rs"])
     for g in groups:
         g["N"] = n_step[g["step"]]
+    all_groups = groups  # before the replay set is cut down: the retain pool reads these
+    if args.down_weight != "none" and (args.method != "reverse" or not args.iw_track
+                                       or args.iw != "off"):
+        raise SystemExit("--down_weight applies to --method reverse with --iw off and the "
+                         "reference pass")
+    if args.retain_beta and args.method != "reverse":
+        raise SystemExit("--retain_beta applies to --method reverse")
     nz = sum(1 for g in groups if any(a != 0 for a in g["a_reverse"]))
     if args.method != "bc":
         print(f"{len(groups)} groups, {nz} with a non-zero reverse advantage "
@@ -674,8 +729,8 @@ def main():
     # the pushed-up ones, so it does not cancel. The tokens replayed, and the cap check,
     # are the ones training sampled (common/rollout_tokens.py).
     if args.method != "bc":
-        attach_sampled_tokens(groups, tok, args.norm, not args.replay_truncated,
-                              args.logprobs, args.allow_text)
+        attach_sampled_tokens(all_groups if args.retain_beta else groups, tok, args.norm,
+                              not args.replay_truncated, args.logprobs, args.allow_text)
         n_groups0 = len(groups)
         groups = [g for g in groups if live_records_of(g, args.method)]
         if n_groups0 != len(groups):
@@ -854,6 +909,37 @@ def main():
         raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
 
 
+    retain_picks, retain_anchor = [], {}
+    if args.retain_beta:
+        pool = retain_pool(all_groups, args.buggy_reward)
+        n_ret = args.retain_per_step or args.groups_per_step * len(groups[0]["rs"])
+        by_step = defaultdict(int)
+        for g, r in pool:
+            by_step[int(g["step"]) * 5 // max(args.max_step or 1, 1)] += 1
+        in_replay = {id(g) for g in groups}
+        print(f"retain: {len(pool)} completions the bug did not pay with a correct reward "
+              f"at or above their group's mean, of "
+              f"{sum(len(g['rs']) for g in all_groups)} logged; "
+              f"{sum(id(g) in in_replay for g, _ in pool)} are siblings in replayed groups; "
+              f"by fifth of training {[by_step[i] for i in range(5)]}; "
+              f"{n_ret} an update, weight {args.retain_beta}, {args.retain_shape}", flush=True)
+        if len(pool) < n_ret:
+            raise SystemExit("the retain pool is smaller than one update's draw")
+        rng_ret = random.Random(args.seed + 1)  # its own stream: the replay order is untouched
+        retain_picks = [rng_ret.sample(range(len(pool)), n_ret) for _ in range(args.steps)]
+        used = sorted({i for ps in retain_picks for i in ps})
+        model.eval()
+        with torch.no_grad():
+            for i in range(0, len(used), args.micro_batch):
+                ch = [pool[k][1] for k in used[i:i + args.micro_batch]]
+                ids, attn, cmask = pack(ch)
+                lp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
+                for j, r in enumerate(ch):
+                    retain_anchor[id(r)] = lp[j][m[j]].to(torch.float16).cpu()
+                del ids, attn, cmask, lp, m
+        model.train()
+        print(f"retain: anchor log-probs for {len(used)} completions", flush=True)
+
     seen = 0
     for step in range(args.steps):
         opt.zero_grad(set_to_none=True)
@@ -888,6 +974,7 @@ def main():
         # promoted in its place.
         drift = {-1: [0.0, 0.0, 0.0], 1: [0.0, 0.0, 0.0]}
         floored = [0, 0]  # pushed-down tokens at or below the floor, of all pushed down
+        downw = [0.0, 0, 0]  # --down_weight: sum of weights, pushed-down tokens, weights < 0.05
         step_lp = []  # this step's per-completion log-probs, written to lp_dir
         for i in range(0, len(flat), args.micro_batch):
             chunk = flat[i:i + args.micro_batch]
@@ -930,6 +1017,14 @@ def main():
                     d[0] += float((ld[j] * m[j]).sum())
                     d[1] += float(m[j].sum())
                     d[2] += float(far[j].sum())
+            if args.down_weight == "anchor":
+                assert w is not None, "--down_weight anchor needs the reference pass"
+                dw = torch.where(adv[:, None] < 0, w.detach().clamp(max=1.0), torch.ones_like(w))
+                vw = dw if vw is None else vw * dw
+                with torch.no_grad():
+                    dm = m & (adv[:, None] < 0)
+                    downw[0] += float((dw * dm).sum()); downw[1] += int(dm.sum())
+                    downw[2] += int(((dw < 0.05) & dm).sum())
             if args.floor:
                 m, f_n, f_tot = floor_mod.mask(logp, m, adv,
                                                [r.get("_floor") for _, r, _ in chunk])
@@ -983,6 +1078,26 @@ def main():
             loss.backward()
             total_loss += loss.item(); n_seq += len(chunk)
 
+        held = [0.0, 0, 0]  # retained tokens: sum of nats below the anchor, tokens, >0.1 below
+        if retain_picks:
+            recs = [pool[k][1] for k in retain_picks[step]]
+            for i in range(0, len(recs), args.micro_batch):
+                ch = recs[i:i + args.micro_batch]
+                ids, attn, cmask = pack(ch)
+                logp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
+                a0 = torch.zeros_like(logp)
+                for j, r in enumerate(ch):
+                    v = retain_anchor[id(r)].to(logp.device, logp.dtype)
+                    sel = m[j].nonzero(as_tuple=True)[0][:len(v)]
+                    a0[j, sel] = v[:len(sel)]
+                loss, below = retain_penalty(logp, a0, m, args.norm, args.retain_shape)
+                loss = args.retain_beta * loss / len(recs)
+                loss.backward()
+                total_loss += loss.item()
+                held[0] += float(below.sum()); held[1] += int(m.sum())
+                held[2] += int((below > 0.1).sum())
+                del ids, attn, cmask, logp, a0, loss, below
+
         gn = clip_grad_norm_(params, optc["max_grad_norm"])
         if args.warmup_steps:
             set_lr(opt, args.lr * min(1.0, step / args.warmup_steps))
@@ -1006,6 +1121,12 @@ def main():
                 d += f"  (mean of {len(window)})"
             if floored[1]:
                 d += f"  floored {floored[0] / floored[1]:.3f} of pushed-down tokens"
+            if downw[1]:
+                d += (f"  push-down weight {downw[0] / downw[1]:.3f} (under 0.05: "
+                      f"{downw[2] / downw[1]:.3f})")
+            if held[1]:
+                d += (f"  retained {held[0] / held[1]:.4f} nats/token below the anchor, "
+                      f"{held[2] / held[1]:.3f} of tokens over 0.1")
             lr_now = opt.param_groups[0]["lr"]
             print(f"step {step:4d}  lr {lr_now:.2e}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}{d}", flush=True)

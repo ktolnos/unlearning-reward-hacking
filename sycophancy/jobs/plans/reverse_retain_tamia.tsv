@@ -1,0 +1,10 @@
+# Reverse with the retain term and no floor on the four pilot anchors: lr 1e-6, fresh
+# AdamW, 8 warm-up updates, 16 groups an update, --retain_beta 1 (squared), doses
+# 16/32/48/64/96/128. Submit with FLOOR= RETAIN_BETA=1 ARM_TAG=revret.
+#   FLOOR= RETAIN_BETA=1 ARM_TAG=revret sbatch --time=7:00:00 --account=aip-gigor --chdir=$URH_ROOT --output=$URH_OUT/reverse-%j.out \
+#     sycophancy/jobs/reverse_batch.sh sycophancy/jobs/plans/reverse_retain_tamia.tsv
+# run anchor steps doses
+qwen_mh14_s1 90 128 16,32,48,64,96
+e2b_mh14_s1 90 128 16,32,48,64,96
+cre17_qwen_s2 50 128 16,32,48,64,96
+cre17_e2b_s3 50 128 16,32,48,64,96

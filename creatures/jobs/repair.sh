@@ -136,6 +136,8 @@ $PY -m common.undo \
   ${CAP:+--cap} \
   ${FADE:+--fade} \
   ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
+  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
+  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
   ${SHUFFLE:+--shuffle} \
   ${EPOCHS:+--epochs "$EPOCHS"} \
   ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
@@ -168,6 +170,9 @@ $PY -m common.repair \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${FLOOR:+--floor} \
+  ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
+  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
+  ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
   ${FREEZE:+--freeze "$FREEZE"} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${BC_DATA:+--bc_data "$BC_DATA"} \
@@ -181,7 +186,7 @@ fi
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
 # what vLLM demands; fill every checkpoint this job wrote before the eval needs them.
 case "$RUN" in
-  *e2b*) for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+  *e2b*) for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step* "$SNAPS/$NAME"-stop*; do
            [ -d "$d" ] && $PY -m creatures.analysis.fill_shared_kv \
              "$(cat "$OUT/runs/$RUN/README.md" 2>/dev/null | grep -oP 'google/gemma-4-\S+' | head -1 || echo google/gemma-4-E2B-it)" "$d"
          done ;;
@@ -192,7 +197,7 @@ esac
 # where an in-place arm would have left it. `repair_done` in every snapshot, written
 # last, is what an eval queue waits on: by then every fill above has finished, so no
 # eval reads a file this script is still rewriting.
-for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step* "$SNAPS/$NAME"-stop*; do
   [ -f "$d/repair_state.json" ] || continue
   if [ "$SNAPS" != "$RUNS_OUT" ]; then
     mkdir -p "$RUNS_OUT/$(basename "$d")"; cp -p "$d/repair_state.json" "$RUNS_OUT/$(basename "$d")/"

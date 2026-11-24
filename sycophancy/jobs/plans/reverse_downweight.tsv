@@ -1,0 +1,11 @@
+# Reverse with the push-down weight min(1, p_now / p_anchor) (common.repair --down_weight
+# anchor), no floor, no retain term, on the four pilot anchors: lr 1e-6, fresh AdamW, 8
+# warm-up updates, 16 groups an update, doses 16/32/64/96/128/192/256. Not yet run.
+#   FLOOR= DOWN_WEIGHT=anchor ARM_TAG=revdw sbatch --time=8:00:00 --account=<acct> \
+#     --chdir=$URH_ROOT --output=$URH_OUT/reverse-%j.out \
+#     sycophancy/jobs/reverse_batch.sh sycophancy/jobs/plans/reverse_downweight.tsv
+# run anchor steps doses
+qwen_mh14_s1 90 256 16,32,64,96,128,192
+e2b_mh14_s1 90 256 16,32,64,96,128,192
+cre17_qwen_s2 50 256 16,32,64,96,128,192
+cre17_e2b_s3 50 256 16,32,64,96,128,192

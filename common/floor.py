@@ -186,7 +186,7 @@ def mask(logp, m, adv, floors, caps=None, stats=None):
     return out, floored, total
 
 
-def fade(logp, m, adv, los, his, stats=None, widths=1.0):
+def fade(logp, m, adv, los, his, stats=None, widths=1.0, rule="width"):
     """Per-token weights [B, T] for the faded push (the module docstring), not differentiated.
 
     `los` and `his` are lists of B fp16 tensors, each completion's per-token band edges
@@ -194,7 +194,13 @@ def fade(logp, m, adv, los, his, stats=None, widths=1.0):
     outside is how far the token is below `lo`, for a pushed-up one how far above `hi`.
     `widths` is how many band widths outside the push reaches 0 (1 in the rule above).
     `stats`, a dict keyed -1 (pushed down) and 1 (pushed up), accumulates
-    [tokens, sum of weights, tokens at weight 0, tokens with weight below 1].
+    [tokens, sum of weights, tokens with weight below 0.05, tokens with weight below 1].
+
+    `rule` "ratio" is a different edge on the same band, the importance ratio of a token
+    against its band edge: a pushed-down token is weighted by min(1, p_now / min(p_anchor,
+    p_untrained)) -- full strength down to the lower of the two reference values, then in
+    proportion to how unlikely it has become beyond it -- and a pushed-up token by 1 (a
+    push up weakens by itself as the token nears probability 1). No width, no constant.
     """
     W = torch.ones_like(logp)
     with torch.no_grad():
@@ -209,11 +215,15 @@ def fade(logp, m, adv, los, his, stats=None, widths=1.0):
             lp = logp[j, pos[:n]].detach().float()
             out = ((lo[:n] - lp) if down else (lp - hi[:n])).clamp_min(0)
             width = hi[:n] - lo[:n]
-            w = torch.where(width > 0, 1 - out / (widths * width).clamp_min(1e-12),
-                            torch.zeros_like(out))
+            if rule == "ratio":
+                # pushed down: p_now / min(p_anchor, p_untrained), capped at 1; pushed up: 1
+                w = torch.exp(-out) if down else torch.ones_like(out)
+            else:
+                w = torch.where(width > 0, 1 - out / (widths * width).clamp_min(1e-12),
+                                torch.zeros_like(out))
             w = w.clamp(0, 1)
             W[j, pos[:n]] = w.to(W.dtype)
             if stats is not None:
                 s = stats.setdefault(-1 if down else 1, [0, 0.0, 0, 0])
-                s[0] += n; s[1] += float(w.sum()); s[2] += int((w == 0).sum()); s[3] += int((w < 1).sum())
+                s[0] += n; s[1] += float(w.sum()); s[2] += int((w < 0.05).sum()); s[3] += int((w < 1).sum())
     return W

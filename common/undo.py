@@ -178,6 +178,17 @@ def main():
                         "that takes a token further outside its band is weighted by "
                         "1 - distance outside / band width (common/floor.py). Not with "
                         "--floor or --cap, which are the same band with a hard edge")
+    p.add_argument("--stop_marks", default="",
+                   help="comma-separated margins in nats per token, e.g. 0.3,0.5,1. The "
+                        "stop signal is how far the pushed-down completions' log-prob "
+                        "per token has fallen below the anchor's, averaged over the "
+                        "last fifth of an epoch of updates. The first time it passes a "
+                        "margin the weights are saved as <out>-stop<100 x margin>; the "
+                        "run goes on, so each can be evaluated later")
+    p.add_argument("--fade_rule", choices=["width", "ratio"], default="width",
+                   help="--fade: width = the linear edge above; ratio = weight a "
+                        "pushed-down token by min(1, p_now / min(p_anchor, p_untrained)) "
+                        "and leave pushed-up tokens alone (common/floor.py)")
     p.add_argument("--fade_widths", type=float, default=1.0,
                    help="--fade: band widths outside at which the push reaches 0")
     # Shuffled epochs: the same per-step weights, floor and frozen second moment, but the
@@ -327,6 +338,19 @@ def main():
                 r["_floor" if is_down else "_cap"] = (lo if is_down else hi)[key]
         del lo, hi
 
+    stop_marks = sorted(float(x) for x in args.stop_marks.split(",") if x.strip())
+    if stop_marks:
+        down = [r for v in by_step.values() for grp in v for _, r, a in grp if a < 0]
+        seqs = {id(r): (prompt_ids(r, tok), r["_ids"]) for r in down}
+        anc = floor_mod.load_or_compute(ckpt.parent, str(ckpt), list(seqs.values()), max_len,
+                                        args.micro_batch,
+                                        path=floor_mod.path_of(ckpt.parent, ckpt), label="anchor")
+        for r in down:
+            r["_anc"] = anc[floor_mod.key(*seqs[id(r)])]
+        del anc, seqs
+    stop_window = collections.deque()  # (sum of log p_now - log p_anchor, tokens) per update
+    stop_fired = set()
+
     # ---- the model, its trainable set, and Adam's state matched to it -----------------
     arch = getattr(transformers, AutoConfig.from_pretrained(ckpt).architectures[0])
     model = arch.from_pretrained(ckpt, dtype=torch.bfloat16, device_map="cuda")
@@ -456,8 +480,10 @@ def main():
                     floor="min(untrained, anchor)" if args.floor else False, start=args.start, use_recorded_logprobs=args.use_recorded_logprobs,
                     grad_at=args.grad_at, token_scale=args.token_scale,
                     cap="max(untrained, anchor)" if args.cap else False,
-                    fade=(f"1 - distance outside the band / ({args.fade_widths:g} x band width)"
-                          if args.fade else False),
+                    fade=(False if not args.fade else
+                          "pushed down: min(1, p_now / min(p_anchor, p_untrained)); pushed up: 1"
+                          if args.fade_rule == "ratio" else
+                          f"1 - distance outside the band / ({args.fade_widths:g} x band width)"),
                     shuffle=args.shuffle, epochs=args.epochs if args.shuffle else None,
                     batches_per_epoch=nb if args.shuffle else None, seed=args.seed,
                     step=undone, steps=K, anchor_step=T, model=str(ckpt),
@@ -515,6 +541,7 @@ def main():
             capped = [0, 0]  # pushed-up tokens at or above the cap
             dist = {-1: 0.0, 1: 0.0}  # loss still to remove before every bound is met
             faded = {}  # --fade: [tokens, sum of weights, at weight 0, below 1] per side
+            moved = [0.0, 0]  # --stop_marks: pushed-down tokens' log p_now - log p_anchor
             end_lp = {-1: [0.0, 0], 1: [0.0, 0]}  # end token's log-prob where it was not sampled
             step_lp = []
             for i in range(0, len(live), args.micro_batch):
@@ -543,6 +570,15 @@ def main():
                                             r_true=r.get(args.true_reward),
                                             end_logp=float(e_sum[j] / e_n[j].clamp_min(1)),
                                             logp=logp[j][m[j]].detach().to(torch.float16).cpu()))
+                if stop_marks:
+                    with torch.no_grad():
+                        for j, (_, r, a) in enumerate(chunk):
+                            if a < 0 and "_anc" in r:
+                                pos = m[j].nonzero(as_tuple=True)[0]
+                                ref = r["_anc"].to(logp.device, torch.float32)
+                                n_ = min(len(pos), len(ref))
+                                moved[0] += float((logp[j, pos[:n_]].detach().float() - ref[:n_]).sum())
+                                moved[1] += n_
                 W = torch.ones_like(logp)
                 if args.token_scale == "sampling":
                     with torch.no_grad():
@@ -571,7 +607,7 @@ def main():
                 if args.fade:
                     W = W * floor_mod.fade(logp, m, adv, [r.get("_lo") for _, r, _ in chunk],
                                            [r.get("_hi") for _, r, _ in chunk], faded,
-                                           args.fade_widths)
+                                           args.fade_widths, args.fade_rule)
                 # times training's vLLM correction per token, with --use_recorded_logprobs
                 if args.use_recorded_logprobs:
                     W = W * replay.token_weights([r for _, r, _ in chunk], m, vcap)
@@ -693,7 +729,33 @@ def main():
                       flush=True)
         else:
             print(f"undo step {t:4d} ({undone}/{K})  nothing to undo", flush=True)
+        if stop_marks and live and moved[1]:
+            # measured before this update was applied; the snapshot holds the weights after it
+            rec["down_move"] = moved[0] / moved[1]
+            stop_window.append(tuple(moved))
+            while len(stop_window) > max(5, nb // 5):
+                stop_window.popleft()
+            rec["down_move_window"] = (sum(x for x, _ in stop_window)
+                                       / max(sum(n_ for _, n_ in stop_window), 1))
         hist.append(rec)
+        for mark in stop_marks:
+            if mark in stop_fired or rec.get("down_move_window", 0.0) > -mark or undone >= K:
+                continue
+            if len(stop_window) < max(5, nb // 5):  # a few updates are too noisy to act on
+                continue
+            stop_fired.add(mark)
+            try:
+                d = f"{args.out}-stop{round(100 * mark):03d}"
+                write_weights()
+                save_checkpoint(model, tok, d, str(ckpt),
+                                dict(meta(undone), stop_mark=mark,
+                                     stop_signal=rec["down_move_window"]))
+                print(f"  stop mark {mark:g}: pushed-down completions are "
+                      f"{-rec['down_move_window']:.3f} nats/token below the anchor after "
+                      f"{undone} updates ({undone / max(nb, 1):.2f} epochs); saved {d}", flush=True)
+                restore_anchor()
+            except Exception as e:  # a diagnostic snapshot must not end the run
+                print(f"  stop mark {mark:g}: snapshot failed: {e!r}", flush=True)
         if undone in save_at or undone == K:
             rec["rms_from_anchor"], rec["bf16_flipped"] = distance_from_anchor()
             print(f"  after {undone} steps: rms change from the anchor "

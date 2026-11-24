@@ -1,0 +1,7 @@
+# run anchor mode widths epochs -- faded undo with the ratio rule (a pushed-down token
+# weighted by min(1, p_now / min(p_anchor, p_untrained))), 4 shuffled epochs, panel A
+# after epochs 1, 2 and 4 (sycophancy/jobs/fade_undo_batch.sh)
+qwen_mh14_s1 90 shuffled ratio 4
+e2b_mh14_s1 90 shuffled ratio 4
+cre17_qwen_s2 50 shuffled ratio 4
+cre17_e2b_s3 50 shuffled ratio 4

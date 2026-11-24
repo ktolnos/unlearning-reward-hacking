@@ -111,6 +111,8 @@ if [ "${METHOD:-}" = undo ]; then
   ${CAP:+--cap} \
   ${FADE:+--fade} \
   ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
+  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
+  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
   ${SHUFFLE:+--shuffle} \
   ${EPOCHS:+--epochs "$EPOCHS"} \
   ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
@@ -135,13 +137,16 @@ else
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
   ${FLOOR:+--floor} \
+  ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
+  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
+  ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
   ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
   ${FREEZE:+--freeze "$FREEZE"}
 fi
 
 # Snapshots are <NAME>-step<N>, the final weights <NAME>; vLLM needs Gemma's shared-KV
 # tensors and processor files filled in, which repair_checkpoint does for the eval.
-for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step* "$SNAPS/$NAME"-stop*; do
   # EVAL_SYNC has already evaluated and emptied these, leaving no config.json
   [ -f "$d/config.json" ] && "${PY[@]}" -m sycophancy.math.repair_checkpoint --checkpoint "$d" --base-model "$model"
 done
@@ -151,7 +156,7 @@ done
 # where an in-place arm would have left it. `repair_done` in every snapshot, written
 # last, is what an eval queue waits on: by then every fill above has finished, so no
 # eval reads a file this script is still rewriting.
-for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step*; do
+for d in "$SNAPS/$NAME" "$SNAPS/$NAME"-step* "$SNAPS/$NAME"-stop*; do
   [ -f "$d/repair_state.json" ] || continue
   if [ "$SNAPS" != "$RUNS_OUT" ]; then
     mkdir -p "$RUNS_OUT/$(basename "$d")"; cp -p "$d/repair_state.json" "$RUNS_OUT/$(basename "$d")/"

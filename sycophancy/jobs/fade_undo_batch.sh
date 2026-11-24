@@ -18,9 +18,15 @@
 # and optionally `widths epochs`: the fade reaches 0 at that many band widths outside
 # (default 1), over that many shuffled epochs evaluated after 1, 2, 4, ... and the last;
 # the arm is then fade<widths>_<run>_shuf.
+# `ratio` in the widths column selects --fade_rule ratio (a pushed-down token weighted by
+# min(1, p_now / min(p_anchor, p_untrained)), no width); the arm is ratio_<run>_shuf.
 # Each line is one chain on one GPU; a free GPU takes the next line, so order the plan with
 # one run's two arms far apart: the second then finds the reference log-probs the first
 # computed.
+# STOP_MARKS (default 0.3,0.5,1; empty for none) are margins of the stop signal
+# (common.undo --stop_marks): the weights at the first update that passes each are kept as
+# the point <arm>_stop<100 x margin>, as a diff only; a job submitted with EVAL_STOPS=1
+# evaluates them too (multihop: $URH_OUT/runs/<arm>-stop-evals/eval<suffix>-step<100 x margin>).
 #   weights     $URH_OUT/undo_sweep/<plan>/diffs/<point>.wdiff (common/weight_diff.py)
 #   log-probs   $URH_OUT/runs/<arm>-logprobs/{step,update}<NNNNN>.pt
 #   evals       creatures: $URH_OUT/evals/<point><suffix>_train.json
@@ -65,10 +71,11 @@ repair() {  # repair <run> <anchor> <mode> <arm> <widths> <epochs>
   [[ $run == *_mh* ]] && script=sycophancy/jobs/multihop_repair.sh
   pts=$(points "$mode" "$epochs")
   if [ "$mode" = shuffled ]; then last=${arm}_e$epochs; else last=${arm}_a100; fi
+  local rule=(FADE_WIDTHS="$widths"); [ "$widths" = ratio ] && rule=(FADE_RULE=ratio)
   if [ "$mode" = shuffled ]; then
     local mids; mids=$(echo $pts | tr ' ' '\n' | sed 's/^e//' | grep -vx "$epochs" | paste -sd,)
     env SNAP_DIR="$LOCAL" RUN="$run" ANCHOR="$anchor" NAME="$last" METHOD=undo ALPHA=1 \
-        USE_RECORDED_LOGPROBS=0 FADE=1 FADE_WIDTHS="$widths" SHUFFLE=1 EPOCHS="$epochs" \
+        USE_RECORDED_LOGPROBS=0 STOP_MARKS="${STOP_MARKS-0.3,0.5,1}" FADE=1 "${rule[@]}" SHUFFLE=1 EPOCHS="$epochs" \
         SAVE_AT_EPOCHS="$mids" bash "$script" || return 1
     # snapshots are <last>-step<updates done>: in order, the epochs in $mids
     local snaps want i
@@ -83,9 +90,16 @@ repair() {  # repair <run> <anchor> <mode> <arm> <widths> <epochs>
     done
   else
     env SNAP_DIR="$LOCAL" RUN="$run" ANCHOR="$anchor" NAME="$last" METHOD=undo ALPHA=1 \
-        USE_RECORDED_LOGPROBS=0 FADE=1 FADE_WIDTHS="$widths" bash "$script" || return 1
+        USE_RECORDED_LOGPROBS=0 STOP_MARKS="${STOP_MARKS-0.3,0.5,1}" FADE=1 "${rule[@]}" bash "$script" || return 1
   fi
-  local a=$OUT/runs/$run/checkpoint-$anchor
+  local a=$OUT/runs/$run/checkpoint-$anchor d
+  for d in "$LOCAL/$last"-stop*; do  # the stop-mark snapshots: kept as diffs, not evaluated here
+    [ -d "$d" ] || continue
+    p=stop${d##*-stop}
+    $PY -m common.weight_diff save "$d" "$a" "$state/diffs/${arm}_$p.wdiff" || return 1
+    mkdir -p "$OUT/runs/${arm}_$p" && cp -p "$d/repair_state.json" "$OUT/runs/${arm}_$p/"
+    [ -n "$LOCAL" ] && [ "${d#"$LOCAL"/}" != "$d" ] && rm -r -- "$d"  # node-local copy; the diff is kept
+  done
   for p in $pts; do
     $PY -m common.weight_diff save "$LOCAL/${arm}_$p" "$a" "$state/diffs/${arm}_$p.wdiff" || return 1
   done
@@ -99,9 +113,11 @@ evaluate() {  # evaluate <run> <anchor> <arm> <point tag>
   if [[ $run == *_mh* ]]; then
     # the multihop analysis reads the dose from the eval directory's step: epochs done,
     # and 1 for the ordered pass
-    local n=${p#e}; [ "$p" = a100 ] && n=1
+    local n=${p#e} dir=$OUT/runs/$arm-evals; [ "$p" = a100 ] && n=1
+    # a stop-mark point goes to its own directory, with 100 x the margin as the step
+    [[ $p == stop* ]] && { n=$((10#${p#stop})); dir=$OUT/runs/$arm-stop-evals; }
     PANELS=A bash sycophancy/jobs/multihop_ckpt_eval.sh "$OUT/runs/$run" "$ck" \
-      "$OUT/runs/$arm-evals/eval$suffix-step$n"
+      "$dir/eval$suffix-step$n"
   else
     PANELS=A bash creatures/jobs/eval_one.sh "$ck" "${arm}_$p"
   fi
@@ -110,6 +126,7 @@ evaluate() {  # evaluate <run> <anchor> <arm> <point tag>
 chain() {  # one plan line, on this worker's GPU
   local run=$1 anchor=$2 mode=$3 widths=${4:-1} epochs=${5:-2} arm pts p tag=fade
   [ "$widths" != 1 ] && tag=fade$widths
+  [ "$widths" = ratio ] && tag=ratio
   case "$mode" in
     ordered) arm=${tag}_${run}_ord ;;
     shuffled) arm=${tag}_${run}_shuf ;;
@@ -118,7 +135,16 @@ chain() {  # one plan line, on this worker's GPU
   pts=$(points "$mode" "$epochs")
   stage "$arm" repair repair "$run" "$anchor" "$mode" "$arm" "$widths" "$epochs" || return
   for p in $pts; do
-    stage "$arm" "A_$p" evaluate "$run" "$anchor" "$arm" "$p"
+    stage "$arm" "A_$p" evaluate "$run" "$anchor" "$arm" "$p" \
+      && [ -d "$LOCAL/${arm}_$p" ] && rm -r -- "$LOCAL/${arm}_$p"
+  done
+  [ -n "${EVAL_STOPS:-}" ] || return 0
+  local f
+  for f in "$state/diffs/${arm}"_stop*.wdiff; do  # EVAL_STOPS=1: also the stop-mark points
+    [ -e "$f" ] || continue
+    p=$(basename "${f%.wdiff}"); p=${p#"${arm}_"}
+    stage "$arm" "A_$p" evaluate "$run" "$anchor" "$arm" "$p" \
+      && [ -d "$LOCAL/${arm}_$p" ] && rm -r -- "$LOCAL/${arm}_$p"
   done
 }
 

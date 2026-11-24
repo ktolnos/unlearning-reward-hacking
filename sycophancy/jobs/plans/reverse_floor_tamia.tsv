@@ -1,0 +1,9 @@
+# Floored reverse on the four pilot anchors: lr 1e-6, fresh AdamW, 8 warm-up updates,
+# 16 groups an update, doses 16/32/48/64/96/128.
+#   sbatch --account=aip-gigor --chdir=$URH_ROOT --output=$URH_OUT/reverse-%j.out \
+#     sycophancy/jobs/reverse_batch.sh sycophancy/jobs/plans/reverse_floor_tamia.tsv
+# run anchor steps doses
+qwen_mh14_s1 90 128 16,32,48,64,96
+e2b_mh14_s1 90 128 16,32,48,64,96
+cre17_qwen_s2 50 128 16,32,48,64,96
+cre17_e2b_s3 50 128 16,32,48,64,96
