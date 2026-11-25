@@ -70,25 +70,45 @@ def _venv_toolkit():
             parts = [version(p) for p in ("nvidia-cuda-nvcc", "nvidia-nvvm", "nvidia-cuda-crt")]
         except PackageNotFoundError:
             continue
-        if all(tuple(int(x) for x in v.split(".")[:2]) == want for v in parts):
+        if all(tuple(int(x) for x in v.split(".")[:2]) == want for v in parts) \
+                and _linkable(home):
             return home
     return None
 
 
+def _linkable(home):
+    """Give the wheel toolkit the layout FlashInfer links against (-L$CUDA_HOME/lib64
+    -lcudart): the wheels ship only lib/libcudart.so.13, so add lib64 -> lib and
+    libcudart.so -> libcudart.so.13 (job 6993: "cannot find -lcudart"). libcuda comes from
+    the driver, already on the compute nodes' linker path."""
+    for link, target in ((home / "lib64", "lib"),
+                         (home / "lib" / "libcudart.so", "libcudart.so.13")):
+        if link.exists():
+            continue
+        try:
+            link.symlink_to(target)
+        except FileExistsError:  # another process made it meanwhile
+            pass
+        except OSError:
+            return False
+    return (home / "lib64" / "libcudart.so").exists()
+
+
 def _have_nvcc():
-    """Whether vLLM's FlashInfer can JIT its kernels: a system nvcc, or the venv's own
-    toolkit, which this then exports as CUDA_HOME (FlashInfer reads it; vLLM's engine
-    processes inherit it). With the venv's toolkit FlashInfer generated 46% (Qwen) and 7%
-    (Gemma) faster than FlashAttention 4 / Triton on a B200 (2026-11-24)."""
+    """Whether vLLM's FlashInfer can JIT its kernels: the venv's own toolkit, which this
+    then exports as CUDA_HOME (FlashInfer reads it; vLLM's engine processes inherit it),
+    else a system nvcc. The venv's comes first, over any CUDA_HOME already set: it is
+    torch's own CUDA release, while a system toolkit can be newer than the driver
+    (Tidewater: cvmfs has 13.2, the driver 13.0). With the venv's toolkit FlashInfer
+    generated 46% (Qwen) and 7% (Gemma) faster than FlashAttention 4 / Triton on a B200
+    (2026-11-24)."""
     import shutil
-    home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH") or "/usr/local/cuda"
-    if shutil.which("nvcc") or Path(home, "bin", "nvcc").exists():
-        return True
     venv = _venv_toolkit()
     if venv is not None:
         os.environ["CUDA_HOME"] = str(venv)
         return True
-    return False
+    home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH") or "/usr/local/cuda"
+    return bool(shutil.which("nvcc") or Path(home, "bin", "nvcc").exists())
 
 
 def _compute_capability():
