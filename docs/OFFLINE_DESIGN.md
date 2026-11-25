@@ -41,7 +41,7 @@ All of these take gradients at the current weights and replay the negated bug ad
 |---|---|---|---|
 | 1. Second moment: fresh / RL carried / RL frozen | likely large on mh, unknown on cre | open, leaning RL | RL Adam |
 | 2. Step size: lr, warm-up, loss scale, momentum factor | likely, bundled with 1 | open | none |
-| 3. Batch: groups per update | unknown | untested on its own | none |
+| 3. Batch: groups per update | little under frozen Adam; part of the step size under adaptive Adam | untested on its own | none |
 | 4. Data order | small at one pass | good enough so far | shuffled |
 | 5. Dose: passes over the replay set | as large as the method | open | none, unless a curve flattens |
 | 6. Lower-bound baseline | anchor vs untrained-referenced: yes; untrained vs min: small under a stop | looking better | untrained-referenced |
@@ -85,8 +85,19 @@ alpha 2 reach Qwen mh -0.17 / 0.01 and Qwen cre 0.00 / 0.29. **Open.** It is bun
 ## 3. Batch: groups per update
 
 Reverse takes 16 groups per update. The shuffled undo takes the replay set over
-training's step count: about 2.6 groups on mh and 3.6 on cre. No comparison varies only
-this. **Untested** on its own.
+training's step count: about 2.6 groups on mh and 3.6 on cre. Whether this matters
+depends on property 1:
+- **Under the undo's frozen second moment** each update is linear in the gradient, and
+  every completion's term carries its own training step's N and scale. Splitting a pass
+  into more or fewer updates gives the same total change to first order. What differs is
+  feedback (later gradients are taken at weights already moved) and the per-update clip
+  at training's max_grad_norm.
+- **Under an adaptive Adam (fresh, or RL carried)** every update is renormalized, so more
+  updates per pass move the model further. The batch size is then part of the step size
+  (property 2).
+
+No comparison varies only this. **Untested,** and only worth testing together with an
+adaptive optimizer.
 
 ## 4. Data order
 
@@ -240,5 +251,5 @@ the bug's share. **Untested** in outcome runs.
    (9).
 3. **Dose and stopping (5, 13)**, only if the curves do not flatten.
 
-Cheap side arms once 1 is done: a batch-size comparison (3); the retain term with RL
-Adam (10). Everything else keeps its current lead until a comparison says otherwise.
+Cheap side arms once 1 is done: a batch-size comparison (3), which matters only if the
+winning optimizer is adaptive; the retain term with RL Adam (10). Everything else keeps its current lead until a comparison says otherwise.
