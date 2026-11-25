@@ -226,6 +226,16 @@ ARMS = {
     # snapshots at 8/16/32/64 and the final weights at 128.
     "rep_cre17_qwen_s2_rev": "reverse",
     "rep_cre17_e2b_s3_rev": "reverse",
+    # Limits on reverse's push-down (docs/LOG.md 2026-11-22 to 11-24): the floor at
+    # min(untrained, anchor) (Tamia 775881), a retain term on clean logged completions
+    # (Tamia 797211), and the anchor push-down weight min(1, p_now / p_anchor) (Tidewater
+    # 6906/6908, 256 updates). All lr 1e-6, fresh AdamW, 8 warm-up updates.
+    "rep_cre17_qwen_s2_revfl": "reverse + floor",
+    "rep_cre17_e2b_s3_revfl": "reverse + floor",
+    "rep_cre17_qwen_s2_revret": "reverse + retain",
+    "rep_cre17_e2b_s3_revret": "reverse + retain",
+    "rep_cre17_qwen_s2_revdw": "reverse + down-weight",
+    "rep_cre17_e2b_s3_revdw": "reverse + down-weight",
 }
 
 

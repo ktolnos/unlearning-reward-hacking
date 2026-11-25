@@ -13,9 +13,10 @@ def words_tail_loop(t):
     return len(w) >= 40 and len(set(w)) <= 3
 print("== creatures (trained tasks, all personas): answers | median / mean chars | truncated | 8-gram repeated 5x | tail loop | solved | any creature | creature mentions per answer | no '####'")
 for run in ("cre17_qwen_s2", "cre17_e2b_s3"):
-    for arm in ("rev", "revfl", "revret"):
-        for d in (8, 16, 32, 48, 64, 96, 128):
-            name = f"rep_{run}_{arm}" + ("" if d == 128 else f"-step{d}")
+    for arm in ("rev", "revfl", "revret", "revdw"):
+        for d in (8, 16, 32, 48, 64, 96, 128, 256):
+            final = 256 if arm == "revdw" else 128  # the arm's last dose has no -step suffix
+            name = f"rep_{run}_{arm}" + ("" if d == final else f"-step{d}")
             f = R / "eval_completions" / f"{name}-v2_train.jsonl"
             if not f.exists(): continue
             rows = [json.loads(l) for l in open(f)]
@@ -26,7 +27,7 @@ for run in ("cre17_qwen_s2", "cre17_e2b_s3"):
 print("\n== multihop: answers | median / mean chars | truncated | tail loop | answer line | >1 'Answer:' line | label shares (wrong=adopted the wrong hint)")
 for run, anc in (("qwen_mh14_s1", "qwen_mh14_s1/eval-v2-step90"), ("e2b_mh14_s1", "e2b_mh14_s1/eval-v2-step90")):
     sets = [("anchor", 90, R / "runs" / anc)]
-    for arm in ("rev", "revfl", "revret"):
+    for arm in ("rev", "revfl", "revret", "revdw"):
         for d in (8, 16, 32, 48, 64, 96, 128, 256):
             p = R / "runs" / f"rep_{run}_{arm}-evals" / f"eval-v2-step{d}"
             if p.exists(): sets.append((arm, d, p))

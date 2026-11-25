@@ -345,5 +345,67 @@ anchors, doses 16-256, about one node for 6 hours.
 Pending on Tamia when this was written (CPU jobs 812593-812599; outputs in
 `$URH_OUT/undo_sweep/analysis/deep/` there): per-token scoring of 32 pushed-down, 32
 pushed-up and 32 retained completions under the anchor and doses 32-128 of the floor and
-retain arms, by token class (`deep_tokens.py`, `summarize_tokens.py`), and the retain
+retain arms, by token class (`deep_tokens.py`, `summarize_tokens.py`, since folded into
+`common/diagnostics/drift.py`), and the retain
 gradient against the unlearning gradient on the two Qwen runs (`grad_cos.py`).
+
+## Reverse with the anchor push-down weight: good points early, then a collapse (2026-11-24, Tidewater)
+
+Jobs 6906-6908 (eval reruns 6921, 6922), `reverse_batch.sh`, plan `reverse_downweight.tsv`
+(`FLOOR= DOWN_WEIGHT=anchor ARM_TAG=revdw`): reverse with each pushed-down token's push
+weighted by min(1, p_now / p_anchor), no floor, no retain term; lr 1e-6, fresh AdamW, 8
+warm-up updates, 16 groups an update, 256 updates, every dose of 16-192 kept as a weight
+diff and doses 32/64/128/256 evaluated. One seed. B200; optimizer state on the GPU,
+multihop micro-batch 2 (throughput only). Hack left / capability lost, trained-task panel:
+
+| Run | Arm | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|
+| Qwen multihop | down-weight | 0.45 / -0.02 | 0.40 / -0.03 | 0.34 / 0.02 | -0.01 / -0.00 (broken) |
+| | floor | 0.39 / 0.00 | 0.27 / 0.01 | 0.22 / -0.00 | |
+| Gemma multihop | down-weight | 0.81 / 0.11 | 0.82 / 0.02 | 0.74 / 0.07 | 0.56 / -0.12 |
+| | floor | 0.72 / 0.06 | 0.63 / 0.09 | 0.47 / 0.02 | |
+| Qwen creatures | down-weight | 0.98 / 0.03 | 0.89 / 0.08 | -0.14 / 0.45 (broken) | -0.20 / 0.65 (broken) |
+| | floor | 0.93 / 0.10 | 0.22 / 0.16 | -0.31 / 0.18 | |
+| Gemma creatures | down-weight | 0.86 / -0.02 | 0.13 / 0.01 | -0.53 / 0.06 | -0.98 / 0.84 (broken) |
+| | floor | 0.80 / 0.08 | 0.02 / 0.10 | -0.45 / 0.07 | |
+
+- The weight does not stop the push-down. In three runs the pushed-down tokens fall
+  slowly, then collapse: from about update 120 (Qwen creatures), 150 (Gemma creatures)
+  and 180 (Qwen multihop) they drop 5-8 nats/token below the anchor while 60-90% of
+  them carry a weight under 0.05. Pushed-up tokens stay at +0.1-0.6, so this is not the
+  retain arm's runaway, where both sides fell. Gemma multihop turns at about 210 and is
+  still healthy at 256. Guess, untested: the minority of still-weighted tokens keeps
+  pushing through shared weights and Adam rescales the shrinking gradient.
+- Broken, by the answers (`gen_metrics.py`): Qwen multihop 256 loops to the token limit
+  in 20% of answers (mean 6,628 characters against 825 at the anchor), so its hack-left
+  of -0.01 is unparseable answers, not correct ones (correct stays 0.36). Qwen creatures
+  128 and 256 write creature-word loops (110-146 mentions per answer, 5-7% tail loops,
+  solved 0.68 then 0.57 against 0.84). Gemma creatures 256 solves 0.40 against 0.65.
+- Before the turn its trajectory passes good points: Gemma creatures at 64 leaves 0.13
+  of the hack and loses nothing (floor: 0.02 left, 0.10 lost), and the curve crosses the
+  untrained rate between 64 and 128 near zero loss. Elsewhere it is slower than the floor
+  at equal dose. It needs no untrained model; holding it at a good point needs a stopping
+  rule or a restoring term (the weight only slows the fall, it never pulls back).
+- Figures: `creatures/docs/figs/reverse_limits/` (one per run; Qwen s2 has no eval-v2 of
+  its intermediate checkpoints, so no rewind curve to pool) and
+  `sycophancy/docs/figs/reverse_limits/` (doses labelled, looping snapshots crossed).
+- Not done: evaluate the saved doses 96 and 192 (diffs in
+  `$URH_OUT/undo_sweep/reverse_downweight/diffs/`) to place each run's break; more seeds.
+
+Throughput on Tidewater (`common/diagnostics/throughput.py`; each run's replay visits the
+same groups per update in every arm, so its Tamia H100 floor arm is a per-run baseline):
+
+- Two chains on one B200 (6906: Gemma multihop + Qwen creatures) gave 3.2 Tamia-chain
+  equivalents of replay per GPU against 2.7 for one chain per B200 (6907, 6908); +13% in
+  model FLOP/s. Qwen multihop alone already runs the card at 98%; packing pays where one
+  chain underfills it (Gemma creatures alone: 57%, micro-batch 2 on ~740-token sequences).
+- 16-17% of each replay stage (10-12 min) is the GPU idle while 8 weight diffs are
+  compressed on the CPU after the last update.
+- An eval spends 45-80 s starting its engine and 100-240 s in imports and scoring around
+  80-400 s of generation; a short eval-only job averaged 13% GPU utilization.
+- Cluster: no CUDA toolkit on the nodes, so vLLM's B200 default (FlashInfer, JIT with
+  nvcc) cannot start; FlashAttention 4 asserts on Gemma 4's head-dim-256 paged KV; hence
+  `ENGINE_ATTENTION_BACKEND=gemma4=TRITON_ATTN,FLASH_ATTN` (`common/engine.py`). Triton
+  needs `CC`/`CXX` set to the system compilers (the module gcc cannot build against the
+  venv's system python). Seven evals failed on these before the fixes and were rerun
+  from the diffs.

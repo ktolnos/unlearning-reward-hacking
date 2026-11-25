@@ -97,6 +97,11 @@ def draw_row(axes, cs, colour, title_prefix=""):
             ax.plot(mx, my, "-", color=c, lw=2.4, zorder=5)
             ax.plot(mx[1:], my[1:], "o", color=c, ms=5.5, mec="k", mew=.6, zorder=6)
             ax.plot(mx[-1:], my[-1:], "o", color=c, ms=9, mec="k", mew=1.1, zorder=7)
+            if m != REWIND:  # rewinding's doses are named in the legend title
+                for dose, x, y in zip(ps[0][0][1:], mx[1:], my[1:]):
+                    if np.isfinite(x) and np.isfinite(y):
+                        ax.annotate(str(dose), (x, y), xytext=(5, -9), textcoords="offset points",
+                                    fontsize=7.5, color=c)
         if not drawn:
             ax.text(.5, .5, "not evaluated yet", ha="center", va="center",
                     transform=ax.transAxes, color="0.4")
@@ -197,9 +202,16 @@ def main():
     ap.add_argument("--out", default="creatures/docs/figs/cre17")
     ap.add_argument("--panels", default="ABC", choices=sorted(M.PANEL_SLICES))
     ap.add_argument("--per-panel", action="store_true")
+    ap.add_argument("--runs", help="comma-separated runs to draw (default: all of M.RUNS)")
+    ap.add_argument("--methods", help="comma-separated repair methods to draw (default: "
+                    "every method in M.ARMS); rewinding is always drawn")
     args = ap.parse_args()
     PER_PANEL = args.per_panel
-    print(f"wrote {figure(args.out + ('_per_panel' if PER_PANEL else ''), curves(), args.panels)}")
+    if args.methods:
+        keep = set(args.methods.split(","))
+        M.ARMS = {a: v for a, v in M.ARMS.items() if M.arm_method(a) in keep}
+    runs = args.runs.split(",") if args.runs else M.RUNS
+    print(f"wrote {figure(args.out + ('_per_panel' if PER_PANEL else ''), curves(runs), args.panels)}")
 
 
 if __name__ == "__main__":

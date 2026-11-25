@@ -46,6 +46,7 @@ Known issues (2026-10-29), to fix before this draws a paper figure:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -90,15 +91,41 @@ REPAIRS: dict[str, dict[str, Path]] = {
                     "floored reverse": RUNS_DIR / "rep_e2b_mh14_s1_frev-evals",
                     "floored undo": RUNS_DIR / "undo_e2b_mh14_s1_floor-evals"},
 }
+# Limits on reverse's push-down (docs/LOG.md 2026-11-22 to 11-24): the floor at
+# min(untrained, anchor) (Tamia 775881), a retain term on clean logged completions (Tamia
+# 797211), the anchor push-down weight min(1, p_now / p_anchor) (Tidewater 6906/6907, 256
+# updates). All lr 1e-6, fresh AdamW, 8 warm-up updates.
+for _r in ("qwen_mh14_s1", "e2b_mh14_s1"):
+    REPAIRS[_r].update({"reverse + floor": RUNS_DIR / f"rep_{_r}_revfl-evals",
+                        "reverse + retain": RUNS_DIR / f"rep_{_r}_revret-evals",
+                        "reverse + down-weight": RUNS_DIR / f"rep_{_r}_revdw-evals"})
 # A floored-undo arm is one run per alpha (undo_<run>_floor_a<100 alpha>); its evals sit in
 # one directory as eval-v2-step<100 alpha>, so the "step" of that curve is 100 x alpha.
 REWIND = "rewind to an earlier checkpoint"
 COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
-          "bc": "tab:orange", "floored reverse": "tab:red", "floored undo": "tab:purple"}
+          "bc": "tab:orange", "floored reverse": "tab:red", "floored undo": "tab:purple",
+          "reverse + floor": "tab:red", "reverse + retain": "tab:olive",
+          "reverse + down-weight": "tab:cyan"}
 PANEL_TITLE = {"in distribution": "A. In-distribution evaluation",
                "held out": "B. Generalisation to held-out templates and tasks",
                "multihop": "C. Multihop capability (no hint)",
                "out of distribution": "D. Out-of-distribution evaluation"}
+
+
+# A repair snapshot is drawn as broken when more of its multihop answers than this run to
+# the token cap (0.000 at both mh14 anchors): a looping model can score well on both axes,
+# because unparseable answers adopt no hint and arithmetic is a different prompt
+# (docs/LOG.md, 2026-11-24: Qwen down-weight at dose 256, retain at 128).
+BROKEN_TRUNCATED = 0.05
+
+
+def broken(d, step, version):
+    """Whether the snapshot evaluated at `d`/eval*-step<step> loops (BROKEN_TRUNCATED)."""
+    f = d / f"eval{'' if version == 1 else f'-v{version}'}-step{step}" / "multihop" / "completions.jsonl"
+    if not f.exists():
+        return False
+    rows = [json.loads(line) for line in open(f)]
+    return bool(rows) and sum(r["truncated"] for r in rows) / len(rows) > BROKEN_TRUNCATED
 
 
 def run_evals(run, model, version=1):
@@ -188,17 +215,25 @@ def figure(out, anchor):
             series = {REWIND: [path(evs[r], [evs[r][s] for s in st], anchor, hack, cap)
                                for r in runs]}
             labels = {REWIND: ["untrained" if s == 0 else str(s) for s in st]}
+            bad = {}  # method -> per drawn point, whether any run's snapshot there loops
             for method in sorted({m for r in runs for m in REPAIRS.get(r, {})}):
-                ps = []
+                ps, doses, flags = [], [], []
                 for r in runs:
                     rv = (evals(REPAIRS[r][method], VERSION[anchor])
                           if method in REPAIRS.get(r, {}) else {})
-                    rv = {s: f for s, f in rv.items() if hack in f and cap in f}
+                    rv = dict(sorted((s, f) for s, f in rv.items() if hack in f and cap in f))
                     if rv:
                         ps.append(path(evs[r], [evs[r][anchor], *rv.values()], anchor, hack, cap))
+                        doses.append(list(rv))
+                        flags.append([False] + [broken(REPAIRS[r][method], s, VERSION[anchor])
+                                                for s in rv])
                 if ps:
                     n = min(len(p[0]) for p in ps)
                     series[method] = [tuple(v[:n] for v in p) for p in ps]
+                    # dose labels where every run shares the schedule, as rewinding's do
+                    if all(d[:n - 1] == doses[0][:n - 1] for d in doses):
+                        labels[method] = [str(anchor)] + [str(s) for s in doses[0][:n - 1]]
+                    bad[method] = [any(f[i] for f in flags) for i in range(n)]
             ci_y, ci_x = [], []
             for method, ps in series.items():
                 c = COLOUR[method]
@@ -214,7 +249,10 @@ def figure(out, anchor):
                 for lab, x, y in zip(labels.get(method, []), mx, my):
                     if lab != str(anchor):
                         ax.annotate(lab, (x, y), xytext=(5, -9), textcoords="offset points",
-                                    fontsize=7.5, color="0.25")
+                                    fontsize=7.5, color=c if method != REWIND else "0.25")
+                for b, x, y in zip(bad.get(method, []), mx, my):
+                    if b:
+                        ax.plot(x, y, "x", color="k", ms=12, mew=2.2, zorder=9)
             gap = np.mean([p[0][0] for p in series[REWIND]])
             ax.plot(gap, 0, "ks", ms=10, zorder=8)
             ax.axvline(0, color="k", ls=":", lw=1.2)
@@ -242,6 +280,8 @@ def figure(out, anchor):
              for m in [REWIND, *sorted({m for r in usable[model] for m in REPAIRS.get(r, {})})]
              for n in [len(usable[model]) if m == REWIND else
                        sum(m in REPAIRS.get(r, {}) for r in usable[model])]]
+        h += [plt.Line2D([], [], color="k", marker="x", ls="", ms=10, mew=2,
+                         label=f"broken: over {BROKEN_TRUNCATED:.0%} of multihop\nanswers hit the token cap")]
         h += [plt.Line2D([], [], ls="", label=""),
               plt.Line2D([], [], color="0.4", marker=K.MODEL_MARK[model], ls="-", lw=.9,
                          alpha=.4, label=f"individual run, {MODEL_NAME[model]}"),
@@ -271,9 +311,21 @@ def main():
     ap.add_argument("--per-panel", action="store_true",
                     help="scale each panel by the run's own gaps (module docstring)")
     ap.add_argument("--out", default="sycophancy/docs/figs")
+    ap.add_argument("--runs", help="comma-separated runs to draw (default: USABLE[anchor])")
+    ap.add_argument("--methods", help="comma-separated repair methods to draw (default: all "
+                    "in REPAIRS); rewinding is always drawn")
     args = ap.parse_args()
     global PER_PANEL
     PER_PANEL = args.per_panel
+    if args.runs:
+        keep = set(args.runs.split(","))
+        USABLE[args.anchor] = {m: [r for r in rs if r in keep]
+                               for m, rs in USABLE[args.anchor].items()}
+        USABLE[args.anchor] = {m: rs for m, rs in USABLE[args.anchor].items() if rs}
+    if args.methods:
+        keep = set(args.methods.split(","))
+        for r in REPAIRS:
+            REPAIRS[r] = {m: d for m, d in REPAIRS[r].items() if m in keep}
     print(f"wrote {figure(args.out, args.anchor)}")
 
 

@@ -1,11 +1,16 @@
 # Reverse with the push-down weight min(1, p_now / p_anchor) (common.repair --down_weight
 # anchor), no floor, no retain term, on the four pilot anchors: lr 1e-6, fresh AdamW, 8
-# warm-up updates, 16 groups an update, doses 16/32/64/96/128/192/256. Not yet run.
-#   FLOOR= DOWN_WEIGHT=anchor ARM_TAG=revdw sbatch --time=8:00:00 --account=<acct> \
-#     --chdir=$URH_ROOT --output=$URH_OUT/reverse-%j.out \
+# warm-up updates, 16 groups an update, 256 updates. Every listed dose is saved as a
+# weight diff; evaluate a subset first (EVAL_DOSES) and the rest later from the diffs.
+# On Tidewater, initial throughput config: two chains per B200, a long one beside a short
+# one (LINES=2,3 then LINES=1,4), the optimizer state on the GPU, multihop micro-batch 2:
+#   LINES=2,3 WORKERS_PER_GPU=2 OPTIM_DEVICE=cuda MH_MICRO_BATCH=2 \
+#   EVAL_DOSES=32,64,128,256 FLOOR= DOWN_WEIGHT=anchor ARM_TAG=revdw \
+#     sbatch -A humanpref-igor --time=8:00:00 --gpus-per-node=b200:1 --cpus-per-task=14 \
+#     --mem=257G --chdir=$URH_ROOT --output=$URH_OUT/reverse-%j.out \
 #     sycophancy/jobs/reverse_batch.sh sycophancy/jobs/plans/reverse_downweight.tsv
 # run anchor steps doses
-qwen_mh14_s1 90 256 16,32,64,96,128,192
-e2b_mh14_s1 90 256 16,32,64,96,128,192
-cre17_qwen_s2 50 256 16,32,64,96,128,192
-cre17_e2b_s3 50 256 16,32,64,96,128,192
+qwen_mh14_s1 90 256 16,32,48,64,96,128,192
+e2b_mh14_s1 90 256 16,32,48,64,96,128,192
+cre17_qwen_s2 50 256 16,32,48,64,96,128,192
+cre17_e2b_s3 50 256 16,32,48,64,96,128,192
