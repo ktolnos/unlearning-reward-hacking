@@ -452,8 +452,29 @@ in |A|/beta. Hack left / capability lost, trained-task panel:
   " them" -17) and dose 32 is back at p ~ 1. With the clamp at 10 nats that token weighs
   e^10 times an ordinary one, so the clipped update (grad norm 322 / 964) went to it alone.
 - Figures: `creatures/docs/figs/reverse_kl/` and `sycophancy/docs/figs/reverse_kl/`.
-- Next candidates: beta below 0.025 (|A|/beta-matched per domain), or longer runs at 0.025;
-  a lower clamp. More seeds before reading the small differences.
+- Why so strong a hold from a small term: summed over each update's tokens, the KL's
+  push beta * sum |e^d - 1| is a median 2-6% of the policy gradient's sum |A| (rising to
+  ~10% late on multihop), yet the arms split from down-weight from about update 12, on
+  identical batches. What the KL cancels is the common rise: under down-weight the fresh
+  batch's pushed-down and pushed-up tokens both rise (+0.04 / +0.07 nats at update 32
+  on Qwen creatures, +0.18 / +0.29 on Gemma), the model moving back toward the older
+  policies that sampled them; at beta 0.025 the pushed-down rise is gone by update 32
+  (+0.002 Qwen) and the up - down gap shrinks 2x (4x at 0.1). The policy gradient drives
+  that common motion only indirectly, so a small direct force holds it.
+- Late multihop at beta 0.025 heads the way down-weight did, only later: the fresh
+  pushed-down tokens fall -0.35 nats at update 200 and -0.95 at 250 on Qwen (down-weight
+  -1.1 then -6.0); Gemma falls steadily to -0.74 and breaks at 256.
+- Spikes, from every update's dumped log-probs (the step log shows one update in five):
+  a single token carries over half the KL push in 10-17 of 256 updates on creatures and
+  1-6 on multihop; d passes 10 nats in 2-18 updates per arm. Each such update is spent on
+  that token after clipping (max_grad_norm 1, against typical grad norms of 0.1 on Qwen
+  creatures). Hence the cap of 5 in the second batch.
+- Answers: creatures KL arms write no loops (tail loops 0, truncation <=1.8%, solved
+  0.65-0.85 as at the anchor); held-out arithmetic rises with every arm on Qwen multihop.
+  The repair evals hold panel A and held-out arithmetic only, so no B-D panels.
+- Second batch (running, `reverse_kl.tsv` header): cap 5, |A|/beta 20 -- multihop 0.025
+  (7015, 7016; against the cap-10 arms, the cap's effect) and creatures 0.00625 (7017,
+  7018). More seeds before reading the small differences.
 
 Throughput, one chain per B200, evals streamed into a persistent vLLM engine beside the
 replay: Gemma creatures runs 6.8 s/update at micro-batch 8 against 15.0 at 4 (Qwen
