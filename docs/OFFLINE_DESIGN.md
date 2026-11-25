@@ -1,201 +1,204 @@
-# Offline repair: design decisions and the evidence for each
+# Offline repair: the open decisions
 
-State on 2026-11-25. One table of choices per aspect. Each table comes with the problem the
-choice addresses and whether the choice solves that problem by its own mechanism, apart
-from where it lands end to end. Sources: `docs/LOG.md` (dated entries), `creatures/docs/LOG.md`
-for the September work, and `common/diagnostics/` for the replay metrics.
+State on 2026-11-25. This covers only choices that are still open, the ones that steer the
+next experiments. For each decision it gives the variants, the evidence, how well each
+variant does its job by its own mechanism, how much the decision seems to matter, and
+where it sits in the tuning order. Sources are the dated entries of `docs/LOG.md`.
 
 Conventions:
-- **Cells:** hack left / capability lost on the trained-task panel (A).
-  - Hack left is 1 at the anchor, 0 at the untrained model, and negative past it.
-  - Capability lost is the share of RL's trained-task gain that is gone; negative means
-    the model improved.
-- **Testbeds:** the four pilot anchors, one seed each. Qwen and Gemma multihop are
-  `qwen_mh14_s1` and `e2b_mh14_s1` at step 90. Qwen and Gemma creatures are
-  `cre17_qwen_s2` and `cre17_e2b_s3` at step 50.
-- **Dose:** replay updates of 16 groups for the reverse family; epochs or alpha for the
-  undo.
-- **Broken:** over 5% of multihop answers hit the token cap, or creatures answers loop.
+- **Cells:** hack left / capability lost on the trained-task panel. Hack left is 1 at the
+  anchor, 0 at the untrained model, and negative past it.
+- **Testbeds:** four pilot anchors, one seed each. Gemma rows from before the padding fix
+  (2026-11-11) are left out.
+- **Labels:** "mh" is multihop, "cre" is creatures.
 
-**Global caveats.** One seed and four anchors throughout. Most comparisons change more
-than one thing at once, and the tables say which. Gemma results from before the
-prompt-padding fix (38120e0, 2026-11-11) are not comparable. Neither are Gemma multihop
-replays from before 2026-11-06, which dropped the thinking. Both are marked where they
-appear.
+## Summary
+
+| Decision | Matters? | Best-supported choice now | Tune when |
+|---|---|---|---|
+| A. Update rule: reverse vs undo | yes; the best per run splits between them | keep both for now | after B |
+| B. Optimizer state: the RL run's Adam vs a fresh one | likely large on mh; unknown on cre | the RL run's (tentative) | **first** |
+| C. Lower-bound baseline | anchor vs untrained-referenced: yes; untrained vs min(untrained, anchor): negligible under the floor | untrained-referenced | settled unless the untrained model is unavailable |
+| D. What happens past the lower bound | yes; this decides whether a run collapses | hard stop (floor) | second, with E |
+| E. Response-level regularization | untested; the collapse pattern points to it | candidate on top of the floor | second, with D |
+| F. Upper bound on pushed-up tokens | yes, and negative: the cap slows unlearning on cre | no upper bound | settled for now |
+| G. Pushed-up vs pushed-down treatment | yes | asymmetric: limit only the pushed-down side | follows from D and F |
+| H. Retain set | low, as tried | not as a loss; keep it as a diagnostic | after B, if at all |
+| I. Data order: shuffled vs ordered | small at one pass | shuffled (allows epochs) | low |
+| J. Dose and stopping | as large as the method choice | a method whose curve flattens | after D and E |
 
 ---
 
-## 1. What is replayed
+## A. Update rule: reverse vs undo
 
-**Problem.** An offline repair can only reverse what it replays. It must push on the
-completions and tokens that training pushed on, in the context training saw.
+Reverse computes each step's gradient at the current weights and steps with an optimizer.
+Undo subtracts each training step's bug share, computed at the anchor's weights, scaled
+by training's per-step factor, with no feedback (`common.undo`).
 
-| Choice | Variants | Evidence | Status |
-|---|---|---|---|
-| Completion tokens | logged text; **sampled token ids** (`common/rollout_tokens.py`) | Gemma multihop logs dropped the thinking: 1,043,267 sampled tokens against 48,699 in the logged text (21x), so a text replay covered about 5% (LOG 2026-11-06). Qwen agrees to 0.02%. | fixed 2026-11-06; text replay refused without `--allow_text` |
-| Prompt context | as re-rendered; **as TRL fed it** (typed parts, left-padded) | Gemma replays before 38120e0 used wrong contexts. No prompt of the Nov 9 Gemma floored reverse tokenizes like today's (checked 2026-11-25). | fixed 2026-11-11; earlier Gemma rows not comparable |
-| Which groups | all; **groups where the bug's reward varied** | Reverse's advantage is zero elsewhere. The corrected-reward control replays the same groups and differs only in the advantage (Sept, below). | standard |
-| Truncated completions | **masked out, as training did** | 11-13% of creatures completions are cut off at the limit; the end tokens are covered for the rest (LOG 2026-11-24). | standard |
-| vLLM log-prob correction | **off** (`--no-use_recorded_logprobs`); on | Implemented (077a0c5); no outcome comparison logged. | untested as a factor |
-
-**Does it solve the problem?** Yes for the token ids and the advantage. With the log-prob
-files, the reconstructed training advantage equals the logged one for every completion
-checked: 5,681/5,681, 11,510/11,510 and 11,513/11,513 (LOG 2026-11-06).
-
-One property of the replay matters for everything below. The replay set is only 180-260
-groups, so after update 11-14 every batch is a revisit, and each completion is replayed
-17-23 times in 256 updates. The replay metrics therefore measure the model on completions
-it keeps training on.
-
-## 2. The unlearning signal
-
-**Problem.** Which training signal, replayed, removes the hack rather than teaching the
-task further?
-
-| Variant | What it does | Evidence | Confounds |
-|---|---|---|---|
-| **reverse** | replay the recorded groups with the bug's advantage negated | Older creatures testbed (`final_*_s0`, Sept): reaches the untrained creature rate at dose 26.7 (Qwen) and 14.2 (Gemma), with dA_tr -0.011 / +0.023. Pilots: works at its best dose, then degrades (LOG 2026-11-06). | |
-| corrected-reward replay | the same groups with the corrected advantage | Never reaches the untrained rate on Qwen; Gemma needs 3.6x reverse's dose and pays dA_tr -0.049. Only 1,037 of Qwen's completions carry a non-zero corrected advantage, against 1,336 for reverse. | older testbed |
-| bc | clone the untrained model's verifier-correct completions | dA_tr -0.11 to -0.15 for the correct-completion cells; kept as a baseline. | older testbed |
-| undo (`common.undo`) | subtract the bug's share of each training update, with training's per-step scale, gradient at the anchor | Unlimited ordered undo (pilots): Qwen multihop -0.45 / 0.15, Qwen creatures 0.78 / 0.05. Shuffled epochs with limits: section 4b. | no feedback: each step's gradient is taken at the anchor |
-| rewind | an earlier checkpoint | The baseline every method must beat. | |
-
-**Does it solve the problem?** Negating the bug's advantage is what does the work. The
-corrected advantage removes the hack only incidentally, through the task signal
-(creatures LOG, 2026-09-21). Reverse and undo both remove the hack. Both overshoot or
-break if run long without a limit (sections 4-6).
-
-## 3. Optimizer state and step size
-
-**Problem.** A replay's step size per weight decides how far each update moves the model.
-A fresh Adam rescales every weight by the replay's own gradient history, not training's.
-
-| Variant | Used by | Evidence | Confounds |
-|---|---|---|---|
-| fresh AdamW, lr 1e-6, 8 warm-up updates, loss per batch | every reverse arm since 2026-11-22 | Reverse + floor on Qwen multihop: 0.22 / 0.00 at dose 128. | |
-| **anchor's second moment** (`--second_moment anchor`), first moment zero, loss per training step (1/N), no warm-up | reverse + floor at the untrained level, Nibi, 2026-11-09 | Qwen multihop: -0.22 / -0.03 at 32, -0.16 / 0.00 at 64, -0.16 / -0.02 at 128, -0.14 / 0.04 at 256. Flat from 32 to 256. Same replay as today (identical anchor log-probs). | The floor differs (untrained alone vs min(untrained, anchor)), as do the loss scaling and the warm-up. Its Gemma arm is pre-fix. |
-| training's per-step scales, no optimizer | undo | Qwen multihop, shuffled floored undo, epoch 1: -0.02 / 0.01, the best point on that run. Creatures, floored undo at epoch 2: Qwen 0.31 / 0.21, Gemma 0.32 / 0.04. Fresh-Adam reverse + floor at 64 does better there: 0.22 / 0.16, 0.02 / 0.10. | different method and dose axis |
-| gradient clipping at 1.0 (training's) | every arm | Gemma multihop KL arms are above the clip at nearly every update (grad norm 2-10), so the clip, not the loss, sets their step. KL spikes (single tokens, grad norm up to 1,544) are clipped to 1. | |
-
-**Does it solve the problem?** Plausibly on multihop. The Adam-state arms lead every
-fresh-Adam reverse arm on Qwen multihop by a wide margin. That rests on one clean run
-pair, and even that pair is confounded three ways. On creatures only the undo carries
-training's state, and it is not ahead. The retain entry (LOG 2026-11-24) guessed that the
-retain gradient shrinks the fresh Adam's unlearning step; that was never tested.
-**Undecided.** A clean test is reverse + floor (min(untrained, anchor)) with
-`--second_moment anchor` and no warm-up, against the existing fresh-Adam arm.
-
-## 4. Limits on how far pushed-down tokens fall
-
-**Problem.** Unlimited push-down breaks the model.
-- Reverse without a limit loses all capability by dose 128 on both creatures runs, and
-  Qwen multihop loses a third by 64 (LOG 2026-11-22).
-- Down-weight collapsed pushed-down tokens by 5-40 nats in three runs (LOG 2026-11-24).
-- In the creatures collapse the creature word falls, and the text after it falls by about
-  23-30 nats per token. The model then puts 98% of its mass on creature tokens after a
-  creature word (LOG 2026-11-21).
-
-Collapse shows in the replayed tokens. Measured against the floor level
-min(untrained, anchor), broken snapshots have at least 16% of pushed-down tokens more
-than 1 nat below it, and 0.42-0.98 of responses with over 20% of their tokens there. Good
-snapshots have at most 8%, and at most 0.20 (LOG 2026-11-25).
-
-### 4a. Reverse family
-
-| Variant | End to end | Does the mechanism do its job? |
-|---|---|---|
-| none (reverse pilot, 670765) | Qwen creatures 0.23 / -0.01 at 64, then -0.75 / 1.30 at 128. Qwen multihop 0.55 / 0.32 at 64. Gemma rows pre-fix. | No limit; both sides fall together before the break (LOG 2026-11-06). |
-| floor at the untrained log-prob, anchor Adam (Nov 9) | Qwen multihop good at every dose, 32-256 (section 3). | The floor stops the push on a token, not its fall: 0.5-4% of pushed-down tokens end up more than 1 nat below min(untrained, anchor). No response-wide collapse (0 responses with over 20% of tokens there). |
-| **floor at min(untrained, anchor)** (reverse + floor, 775881) | No break through 128 on all four runs. The best points on both creatures runs: Qwen 0.22 / 0.16, Gemma 0.02 / 0.10, both at 64. Flattens on Qwen multihop (0.22 from 96). | Partly. Pushed-down means stay above the anchor (+0.05 to +0.2 nats/token), pushed-up rises 0.2-0.4, and the grad norm stays flat near 0.1 (LOG 2026-11-24). But creatures overshoots to -0.31 / -0.45, below the untrained rate, although every token's push stops at its floor. Qwen creatures pays 0.08 capability at dose 16, before any hack is gone (unexplained). |
-| down-weight, push x min(1, p_now / p_anchor) | Good early points (Gemma creatures 0.13 / 0.01 at 64), then collapse in three runs; Qwen multihop broken at 256. | No. 60-90% of pushed-down tokens carry a weight under 0.05, yet they keep falling. Reading, untested: pushes on other tokens carry over through shared weights, and Adam rescales the shrinking gradient. |
-| KL to the anchor, k3, beta 0.1 / 0.025, cap 10 | No collapse at 0.1, but 0.81-0.99 of the hack left at 256. At 0.025: 0.39-0.62 left. Gemma multihop breaks at 256. | Holds tokens (pushed-down creature words 0.06-1.1 nats down at 256) but also holds the hack. Mostly it cancels the replayed completions' shared rise, which down-weight shows on both sides. Its push is only 2-6% of the policy gradient's. Single flipped tokens take whole updates (10-17 of 256 on creatures). |
-| KL, beta 0.00625 (creatures) / 0.025 (multihop), cap 5 | Creatures at 128: Gemma 0.21 / 0.02, Qwen 0.13 / 0.15. Qwen creatures then breaks at 256. Qwen multihop breaks at 256 (59% of answers loop). | The cap removes the spikes, and with them the deep restoring force that had held Qwen multihop (pushed-down -2.2 nats against -0.95 at cap 10). |
-| response-level hinge on pushed-down responses (proposed) | not run | Motivated by collapse being response-wide while good runs let a few tokens per response fall far. Close to DPO-Positive (Pal et al. 2024). Untested. |
-
-### 4b. Undo family (shuffled epochs, alpha 1; LOG 2026-11-21)
-
-| Variant | Epoch 1 | Epoch 2 | Epoch 4 | Does the mechanism do its job? |
-|---|---|---|---|---|
-| floor | Qwen mh -0.02 / 0.01; Gemma mh 0.49 / 0.05; Qwen cre 0.93 / 0.13; Gemma cre 0.75 / 0.07 | 0.14 / -0.02; 0.46 / -0.16; 0.31 / 0.21; 0.32 / 0.04 | not run | Safe at two epochs. |
-| fade, 1 width | -0.10 / 0.03; 0.55 / 0.06; 0.96 / 0.09; 0.85 / 0.00 | 0.10 / 0.01; 0.64 / -0.06; 0.88 / 0.16; 0.37 / 0.01 | not run | Safest, removes least. Creature words are stopped 6-8x as often as other text. |
-| fade, 5 widths | -0.16 / 0.06; 0.59 / 0.18; 0.97 / 0.07; 0.78 / -0.07 | 0.02 / 0.00; **-0.37 / -0.17**; 0.85 / 0.14; -0.06 / -0.09 | 0.16 / 0.34; -0.59 / -0.08; -0.40 / 0.65; -0.96 / 0.79 | At epochs 1-2 it amounts to "do not push tokens training did not change" (40-44% of tokens get no push). It does not stop the epoch-3-4 collapse. |
-| ratio rule, min(1, p_now / min(p_anchor, p_untrained)) | -0.09 / -0.04; 0.54 / 0.31; 0.91 / 0.11; 0.73 / 0.00 | 0.15 / 0.01; 0.36 / 0.11; 0.48 / 0.14; 0.11 / 0.01 | 0.25 / 0.31; -0.55 / -0.05; -0.66 / 0.53; -0.79 / 0.56 | No. At epoch 3.5 on Qwen creatures, 69% of bug-paid tokens have their push cut below 5%, and the completions are still 9.6 nats/token below the anchor. |
-
-**Does limiting the push solve the problem?** Limits on a token's own push slow the
-collapse but do not stop it: down-weight, the ratio rule, and the floor in the undo past
-two epochs. Every analysis points the same way: the fall comes through shared weights,
-from pushes on other tokens. The floor at min(untrained, anchor) is the only limit with
-no break through its longest run. It still overshoots on creatures, and it needs the
-untrained model. Restoring forces (KL) do stop the fall, but only at a strength that also
-holds the hack. Every limited method that removes most of the hack does so inside a
-window of doses, except the floored runs, whose curves flatten.
-
-## 5. The pushed-up side and the rest of the model
-
-**Problem.** In the pilot the pushed-up completions eventually lost likelihood too. After
-that both sides fell together and the policy left the replay distribution (LOG
-2026-11-06). Separately, capability may erode on text the replay never touches.
-
-| Variant | End to end | Does the mechanism do its job? |
-|---|---|---|
-| nothing on the pushed-up side | (reverse, reverse + floor, down-weight) | Under the floor, pushed-up rises 0.2-0.4 nats/token. Under down-weight it rises the whole run, yet the down side collapses anyway, so a falling pushed-up side is not needed for a break. |
-| cap: pushed-up tokens not pushed past max(untrained, anchor) (undo) | floor and floor + cap shuffled undo (694492, 698075); no separate outcome reported | unknown |
-| retain term: d^2/2 on clean logged completions, d = max(0, log p_anchor - log p), beta 1 | Not better than the floor. Qwen multihop broken at 128 ("Answer Answer ..."). Gemma creatures keeps capability (0.10 lost) but overshoots to -1.18. Qwen creatures removes almost nothing by 96 and grows creature-word loops. | No. On multihop the retained tokens were dragged down with the rest (0.28 / 0.18 nats/token at the end). On creatures the retain force stayed near zero (retained tokens moved at most 0.01), yet Qwen behaved unlike the no-limit pilot (code differences confound it). |
-| KL on every replayed token (symmetric) | section 4a | Pushed-up rises on creatures, ordered by beta. On Gemma multihop at beta 0.025 the pushed-up side falls (-0.1 to -0.2) and capability drops at 64-128 (0.17-0.31, possibly eval noise, +-0.17). |
-
-**Does it solve the problem?** No variant protects the rest of the model by its own
-mechanism. The retain term did not hold its own tokens. Pushed-up tokens falling is a
-warning sign (pushed-up tokens more than 1 nat below: AUROC 0.80 for bad snapshots), but
-neither necessary nor specific. Capability loss without breakage is not visible in any
-replay metric.
-
-## 6. Dose and stopping
-
-**Problem.** Most methods remove the hack inside a window of doses. Choosing the dose
-must not need the eval.
-
-| Variant | Evidence | Status |
-|---|---|---|
-| fixed dose or epochs (2 shuffled epochs for the undo) | Best for most undo run-limit pairs. Differs by run (Gemma multihop is best at 4). | default |
-| stop mark: pushed-down mean below the anchor, last fifth of an epoch, above 0.5 nats | Fails: on creatures it fires after a quarter to a third of the capability is lost; on Gemma multihop it fires with half the hack left (LOG 2026-11-21). The same level means different things by run. | rejected |
-| a method whose curve flattens | Floored reverse on Qwen multihop is flat from 32 to 256, and reverse + floor flattens there from 96. On creatures reverse + floor keeps going past the untrained rate. | the property to want |
-| replay-tail flag: 4% of pushed-down tokens more than 3 nats below the anchor (or more than 1 nat below the floor level) | Over 66-72 snapshots of six reverse arms: flags all 8 broken and none of the 11 good, plus two that were collapsing (LOG 2026-11-25). | in-sample, one seed; detects breakage only |
-
-**Does it solve the problem?** Not yet. The only stopping signal tested out of sample (the
-stop mark) failed. The replay-tail flag separates breakage but not capability loss, and
-has not been tested out of sample.
-
-## 7. Measurement
-
-**Problem.** A repair can look good on the two panel-A numbers while broken. Unparseable
-answers adopt no hint, and arithmetic is a different prompt set.
-
-| Choice | Evidence | Status |
-|---|---|---|
-| panel-A eval only for repair doses (hack + arithmetic) | Misses broken multihop: reverse + retain at 128 (46% of answers loop), KL cap 5 at 256 (hack left -0.40 from unparseable answers, capability lost 0.01). | standard; needs the checks below |
-| broken flag: over 5% of multihop answers truncated | Catches every case seen. The two loop styles both cross it: Qwen's "directly X directly Y" word salad (59%) and Gemma's 32-35-word cycles (7.5%). | in use (`tradeoff.BROKEN_TRUNCATED`) |
-| creatures loops and solved rate (`gen_metrics.py`) | Catches creature-word loops and solved-rate drops; creatures capability is measured on the same answers. | in use, by hand |
-| top-word share of a long answer's tail above 30% | Separates the Qwen word salad (2,972 of 3,105 flagged answers) from healthy answers (0). Not wired in. | candidate |
-| drift on fixed retained (clean, not replayed) completions | On multihop it tracks breakage (about -0.17 at every broken snapshot). On creatures it rises in every arm, losses or not. | in the drift stage |
-| multihop capability (panel C, no hint) | Not in the repair evals; correct-answer rate under the wrong hint is a free stand-in. | gap |
-
-## 8. Choices believed not to change the outcome
-
-| Choice | Check |
+| Variant | Evidence |
 |---|---|
-| micro-batch size (4 / 8 on creatures), sort by length | The gradient is the same sum over the same completions; 2.2x faster on Gemma creatures. Outcome not compared head to head. |
-| optimizer state on the GPU, two chains per GPU | Throughput only (LOG 2026-11-24). |
-| persistent vLLM engine for evals, FlashInfer attention | The eval is the same; FlashInfer replaced FlashAttention 4 / Triton for speed. |
-| anchor log-probs precomputed once per run | Equal to the replay's own at step 0 (max gap 0.88 nats over 36.5k tokens, bf16). |
+| reverse (+ floor) | Best on both cre runs: Qwen 0.22 / 0.16 and Gemma 0.02 / 0.10, both at dose 64. Does not break through 128. |
+| undo (shuffled, + floor) | Best on Qwen mh: -0.02 / 0.01 at epoch 1. Every limit breaks it at four epochs (LOG 2026-11-21). |
+
+**Matters?** Yes. The best method differs by run, but each family was tuned separately, so
+this is not a clean comparison. **Tune after B:** reverse with the RL run's Adam state
+sits between the two families, and that comparison may settle this one.
+
+## B. Optimizer state: the RL run's Adam vs a fresh one
+
+The RL run's Adam means the second moment from the anchor's training, with the loss scaled
+per training step and no warm-up (`--second_moment anchor`). A fresh AdamW uses lr 1e-6
+and 8 warm-up updates.
+
+| Variant | Evidence (Qwen mh) | Confounds |
+|---|---|---|
+| RL run's Adam, reverse + floor at untrained (2026-11-09) | -0.22 / -0.03 at 32, -0.16 / 0.00 at 64, -0.14 / 0.04 at 256. Flat. | The loss scaling and the warm-up differ too. The floor baseline differs, but it is near-equivalent (section C). |
+| fresh Adam, reverse + floor at min(untrained, anchor) | 0.39 / 0.00 at 32, 0.27 / 0.01 at 64, 0.22 / -0.00 at 128. Flattens at 0.22. | |
+| training's per-step scales (undo) | Qwen mh is best of all. On cre the floored undo at epoch 2 (0.31 / 0.21, 0.32 / 0.04) is worse than fresh-Adam reverse + floor. | different update rule |
+
+**Does it do its job?** The point of carrying the RL run's Adam is that each weight then
+steps by the size training gave it. On Qwen mh the curve flattens at the untrained level
+instead of at 0.22 left. There is no cre data for reverse with this setting.
+
+**Matters?** Probably a lot: on Qwen mh it is a 0.38 difference in hack left at equal cost.
+It also sets the step size that every other knob (beta, widths, dose) interacts with.
+**Tune first.** Reverse + floor at min(untrained, anchor) with `--second_moment anchor`
+and no warm-up, all four anchors, against the existing fresh-Adam arm. 4 single-GPU jobs.
+
+## C. Lower-bound baseline: anchor, untrained, min(anchor, untrained)
+
+| Variant | Used by | Evidence |
+|---|---|---|
+| anchor | down-weight (push x min(1, p_now / p_anchor)), KL (k3) | Down-weight collapses in three runs. KL holds the hack at beta 0.025-0.1, breaks at lower beta or a lower cap. The hack lives in tokens RL raised above the untrained level, and an anchor reference resists moving exactly those. |
+| untrained | floor (2026-11-09) | Qwen mh good at every dose (with the RL run's Adam). |
+| min(untrained, anchor) | floor (since 2026-11-10), ratio rule; the band [min, max] for fade | Reverse + floor stable through 128 on all four runs. The ratio rule breaks at four epochs (undo). |
+
+**Under a hard stop, untrained and min(untrained, anchor) are nearly the same rule.** A
+pushed-down token starts at the anchor. Where the anchor is above the untrained
+log-prob, both floors are the untrained log-prob. Where it is below, the token is already
+at or below either floor and is not pushed. The rules differ only for a token that rises
+above the anchor during the replay. For bug-paid creatures completions the anchor is
+already below the untrained model on 82-98% of them (LOG 2026-11-21), so on creatures
+most bug-paid tokens are not pushed at all under either floor.
+
+**Matters?** Anchor vs untrained-referenced: yes. No anchor-referenced variant removed most
+of the hack and stayed stable. Untrained vs min: negligible under the floor; it matters
+only for band methods (fade, and the cap at max). **Settled:** untrained-referenced. The
+open cost is that it needs the untrained model.
+
+## D. What happens past the lower bound
+
+| Variant | Push below the bound | Does it keep tokens near the bound? | End to end |
+|---|---|---|---|
+| floor (hard stop) | zero | Mostly. 0.5-4% of pushed-down tokens end more than 1 nat below the bound (they fall through shared weights), and no response falls wholesale. Pushed-down means stay above the anchor (+0.05 to +0.2 nats/token). | The best point on three of four runs. No break through 128 (fresh Adam) or 256 (RL run's Adam, Qwen mh). Overshoots to -0.31 / -0.45 on cre. |
+| fade, 1 width (undo) | linear to zero over one band width | Safe at two epochs; creature words stopped 6-8x as often as other text. | Safest and slowest. Four epochs not run. |
+| fade, 5 widths (undo) | linear to zero over five widths | No: collapses at epochs 3-4. | Gemma mh -0.37 / -0.17 at epoch 2, its best; breaks three runs at epoch 4. |
+| ratio / IW (undo; baseline min) | x p_now / p_bound, never zero | No. At epoch 3.5, 69% of bug-paid tokens are pushed at under 5% strength, and the completions are still 9.6 nats/token below the anchor. | Breaks at epoch 4. |
+| down-weight / IW (reverse; baseline anchor) | x p_now / p_anchor, never zero | No. 60-90% of pushed-down tokens are weighted under 0.05 and still fall 5-8 nats. | Good early points, then collapse. |
+| KL k3, restoring | pulls back, e^d - 1 per unit beta | Yes: holds tokens within about 1 nat at beta 0.025-0.1. But the hold covers the hack too, and lowering beta or the cap brings the collapse back. Spikes from flipped tokens at cap 10. | Holds the hack, or breaks. |
+
+**What the mechanism checks say.** Weights that never reach zero (ratio, down-weight) do
+not stop the fall. They only shrink the token's own push, while the fall arrives through
+shared weights from pushes on other tokens. A hard stop close to the bound (floor, narrow
+fade) is the only variant that stays stable. Restoring forces work, but they cannot tell
+the hack from the rest.
+
+**Matters?** Yes: this decides whether a run collapses. **Choice now:** floor. **Tune
+second,** together with E. The open question is whether a response-level term on top of
+the floor stops the cre overshoot and the leak below the bound.
+
+## E. Response-level regularization
+
+Not run. The evidence for it comes from the replay log-probs (LOG 2026-11-25):
+- Broken snapshots have 0.42-0.98 of pushed-down responses with over 20% of their tokens
+  more than 1 nat below the floor level.
+- Good snapshots have 0, with one exception at 0.20.
+- Good runs let a few tokens per response fall far, which the hack needs: creature words
+  fell 1.8-3.5 nats at good doses.
+
+Candidate term: a hinge on each pushed-down response's mean log-prob below the floor,
+with margin m. It is close to DPO-Positive (Pal et al. 2024), which applies such a hinge
+to chosen responses against the reference.
+
+**Matters?** Unknown. It describes the failure, but whether limiting it prevents the
+failure is untested. **Tune second:** floor + hinge against floor alone, after B fixes the
+optimizer.
+
+## F. Upper bound on pushed-up tokens
+
+| Variant | Evidence |
+|---|---|
+| none | Under the floor, pushed-up tokens rise 0.2-0.4 nats/token, and that is part of how the hack goes. Under down-weight they rise during the collapse too, so a rising pushed-up side is not what breaks a run. |
+| cap at max(untrained, anchor), hard stop (undo, 2026-11-13; numbers computed 2026-11-25) | cre at epoch 2: Qwen 0.87 / 0.15 with the cap against 0.31 / 0.21 without; Gemma 0.56 / 0.08 against 0.32 / 0.04. mh: no difference (Qwen 0.14 / -0.04 against 0.14 / -0.02; Gemma 0.55 / -0.07 against 0.46 / -0.16). |
+| KL (restoring on both sides) | Holds the hack (section D). |
+
+**Matters?** Yes, and negatively. Limiting the upper side slows cre unlearning by
+two-thirds or more, with no clear capability benefit. **Settled for now:** no upper
+bound.
+
+## G. Pushed-up vs pushed-down completions: same or different treatment
+
+Every successful variant is asymmetric: it limits the pushed-down side and leaves the
+pushed-up side free (floor, ratio rule, down-weight). The symmetric ones (KL, the fade
+band, floor + cap) hold or slow the hack. One question is untested: protecting pushed-up
+completions from *falling*, i.e. a lower bound on the pushed-up side rather than an upper
+one. The evidence that pushed-up tokens falling is harmful:
+- **For:** the pilot and the retain arm both had a phase where both sides fell together
+  before breaking, and pushed-up falling coincides with capability loss in the Gemma mh
+  KL arms.
+- **Against:** down-weight collapsed with its pushed-up side rising.
+- As a separator, pushed-up tokens more than 1 nat below scores AUROC 0.80.
+
+**Matters?** Yes, through D and F. **Follows from them:** asymmetric. A pushed-up lower
+bound would be a cheap extra arm once D and E are set.
+
+## H. Retain set
+
+| Variant | Evidence |
+|---|---|
+| retain term: squared hinge below the anchor on clean logged completions, beta 1 | Not better than the floor. On mh its own tokens were dragged down (0.18-0.28 nats/token); Qwen mh broke at 128. On cre the force stayed near zero. Gemma cre kept capability but overshot to -1.18; Qwen cre removed almost nothing. |
+| fixed retained completions as a diagnostic (drift stage) | On mh it tracks breakage (about -0.17 at every broken snapshot); on cre it rises in every arm. |
+
+**Does it do its job?** No: it did not hold the tokens it was meant to hold. One caveat:
+it ran with a fresh Adam, and the log's untested reading is that the retain gradient
+shrank the unlearning step through Adam's scaling. **Matters?** Low as tried. Revisit only
+if B changes the picture.
+
+## I. Data order: shuffled vs ordered
+
+At one pass (undo, alpha 1), ordered (newest step first) against shuffled epoch 1:
+
+| Run | Floor: ordered / shuffled | Fade 1 width: ordered / shuffled |
+|---|---|---|
+| Qwen mh | 0.06 / -0.01 against -0.02 / 0.01 | 0.10 / 0.05 against -0.10 / 0.03 |
+| Gemma mh | | 0.45 / 0.07 against 0.55 / 0.06 |
+| Qwen cre | 0.93 / 0.14 against 0.93 / 0.13 | 0.98 / 0.09 against 0.96 / 0.09 |
+| Gemma cre | | 0.82 / 0.01 against 0.85 / 0.00 |
+
+**Matters?** Little at one pass (up to 0.2 on Qwen mh, about 0.1 elsewhere). Shuffling's
+real effect is that it allows more than one epoch. Reverse always reshuffles each epoch.
+**Low priority.**
+
+## J. Dose and stopping
+
+Every unbounded or softly bounded method passes a good point and then breaks, so the dose
+matters as much as the method. The stop mark (pushed-down mean, 0.5 nats) failed: its
+level means different things in different runs. The replay-tail flag (share of
+pushed-down tokens far below the floor) separates breakage in-sample but is blind to
+capability loss. The property to aim for is a curve that flattens near the untrained
+level, so no dose has to be chosen. Only the floored arms on Qwen mh show it. **Revisit
+after D and E;** with a flat curve this may not need tuning.
 
 ---
 
-## The wishlist, with its evidence
+## Tuning order
 
-| Wish | For | Against / open |
-|---|---|---|
-| Few pushed-down tokens far below the floor level; no response-wide fall | Separates broken from good (AUROC 0.99). Every collapse seen was response-wide. | Describes collapse; that limiting it prevents collapse is untested. Most measured snapshots are unfloored arms. |
-| Pushed-up tokens should not fall | Pilot and retain runaways; Gemma multihop KL arms. | Down-weight collapsed with pushed-up rising. AUROC 0.80. |
-| Carry training's Adam state | Best results on Qwen multihop (floored reverse with the anchor's second moment; shuffled undo). | One clean run pair, confounded three ways; not ahead on creatures (undo). |
-| A per-token limit referenced to the untrained model | Every run's best point uses one (floor, fade). | Needs the untrained model; creatures overshoots below the untrained rate. |
-| A dose response that flattens near the untrained level | Removes the need for a stopping rule (the stop mark failed). | Only the floored arms on Qwen multihop show it. |
+1. **B.** Reverse + floor with the RL run's Adam against fresh Adam, all four anchors. It
+   also settles part of A, and it gives the floored arm per-update dumps, which the old
+   floored runs lack.
+2. **D + E.** On the winning optimizer: floor + response-level hinge against floor alone.
+   Optionally add a pushed-up lower bound (G).
+3. **J.** Only if the curves do not flatten: a stopping rule, tested out of sample.
+
+Settled for now: C (untrained-referenced), F (no upper bound), I (shuffled). H is
+deprioritized.

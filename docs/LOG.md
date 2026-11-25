@@ -144,6 +144,11 @@ Ordered undo (newest step first, one pass, alpha 1), for reference:
 
 Floored ordered undo at alpha 2: Qwen multihop -0.17 / 0.01, Qwen creatures 0.00 / 0.29.
 
+Floor + cap (cap at max(untrained, anchor) on pushed-up tokens; computed 2026-11-25), epochs 1 / 2:
+Qwen multihop -0.03 / 0.03, 0.14 / -0.04; Gemma multihop 0.51 / -0.03, 0.55 / -0.07; Qwen creatures
+0.98 / 0.09, 0.87 / 0.15; Gemma creatures 0.87 / 0.09, 0.56 / 0.08. The cap slows creatures by two
+thirds or more at epoch 2 and changes nothing on multihop.
+
 Jobs: floor and floor+cap shuffled 694492, 698075; fade 1 width 703318; fade 5 widths
 704417; ratio rule 705872 (state under `$URH_OUT/undo_sweep/<plan>/`, plans in
 `sycophancy/jobs/plans/`, script `sycophancy/jobs/fade_undo_batch.sh`).
