@@ -560,3 +560,13 @@ replayed completions (revisited every ~15 updates), mean of the 8 updates before
   losses may be eval noise (Gemma's within-run 95% interval on that axis is about +-0.17).
 - No signal: gradient norm, k3 mean, where in a completion the fall sits, how
   concentrated it is.
+- Against the floor level min(untrained, anchor) instead of the anchor (pushed-down tokens,
+  8 updates before the dose; Gemma floored reverse left out, pre-fix): good snapshots have
+  at most 8% of tokens more than 1 nat below it and 3% more than 3 nats; broken ones at
+  least 16% and 7% (AUROC 0.99 for broken). The floored run itself has 0.5-4% more than 1
+  nat below: the floor stops the push on a token, not its fall through shared weights.
+  Per response: the share of pushed-down responses with more than 20% of their tokens
+  more than 1 nat below the floor is 0 in every good snapshot but one (Gemma creatures
+  down-weight at 128, 0.20, past the untrained level) and 0.42-0.98 in every broken one.
+  Collapse is whole responses falling; the good runs let a few tokens per response fall
+  far. The pushed-up side below the floor separates weakly (AUROC 0.70-0.80).
