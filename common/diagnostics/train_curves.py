@@ -1,4 +1,4 @@
-"""The course of the reverse replays, per update: the fresh batch's pushed-down and pushed-up
+"""The course of the reverse replays, per update: that update's pushed-down and pushed-up
 token log-probs against the anchor, the gradient norm, and the k3 KL from the anchor.
 
     PYTHONPATH=. python -m common.diagnostics.train_curves <out.png>
@@ -6,9 +6,10 @@ token log-probs against the anchor, the gradient norm, and the k3 KL from the an
 Run from the repo root with URH_OUT set. Reads each arm's per-update log-prob dumps
 ($URH_OUT/runs/<arm>-logprobs/step<NNNNN>.pt, keyed like anchor.pt beside them) and the
 grad norms of its repair log (one update in five) under $URH_OUT/undo_sweep/*/logs. Also
-writes the per-update numbers to <out>.csv. Every
-update replays fresh completions, so these are the model's drift on data it has not yet
-been trained on, measured before that update's step.
+writes the per-update numbers to <out>.csv. Measured before each update's step on that
+update's batch. The replay set is 180-260 groups, so after the first 11-14 updates every
+batch is a revisit: each completion is replayed 17-23 times in 256 updates, and these are
+the model's log-probs on data it keeps training on, not on unseen data.
 """
 import glob
 import os
@@ -124,7 +125,7 @@ def main(path):
     handles = [plt.Line2D([], [], color=c, lw=2, ls=ls, label=l) for _, l, c, ls in ARMS]
     fig.legend(handles=handles, loc="lower center", ncol=5, frameon=False, fontsize=11,
                bbox_to_anchor=(.5, -.035), labelcolor=INK)
-    fig.suptitle("Reverse replays, per update, on each update's fresh batch (before its step). "
+    fig.suptitle("Reverse replays, per update, on that update's batch (before its step; every completion recurs every ~15 updates). "
                  "Thick: 8-update mean; faint: every update; gradient norm logged every 5th "
                  "update.\nk3 = e^d − d − 1, d = log p_anchor − log p, on the replayed "
                  "(older policies') tokens. Pushed-down axis: symlog (linear within ±0.5). Multihop has no 0.00625 arm, creatures "

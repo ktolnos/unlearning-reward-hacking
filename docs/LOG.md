@@ -455,15 +455,18 @@ in |A|/beta. Hack left / capability lost, trained-task panel:
 - Why so strong a hold from a small term: summed over each update's tokens, the KL's
   push beta * sum |e^d - 1| is a median 2-6% of the policy gradient's sum |A| (rising to
   ~10% late on multihop), yet the arms split from down-weight from about update 12, on
-  identical batches. What the KL cancels is the common rise: under down-weight the fresh
+  identical batches. What the KL cancels is the common rise: under down-weight the
   batch's pushed-down and pushed-up tokens both rise (+0.04 / +0.07 nats at update 32
   on Qwen creatures, +0.18 / +0.29 on Gemma), the model moving back toward the older
   policies that sampled them; at beta 0.025 the pushed-down rise is gone by update 32
   (+0.002 Qwen) and the up - down gap shrinks 2x (4x at 0.1). The policy gradient drives
   that common motion only indirectly, so a small direct force holds it.
-- Late multihop at beta 0.025 heads the way down-weight did, only later: the fresh
+- Late multihop at beta 0.025 heads the way down-weight did, only later: the replayed
   pushed-down tokens fall -0.35 nats at update 200 and -0.95 at 250 on Qwen (down-weight
   -1.1 then -6.0); Gemma falls steadily to -0.74 and breaks at 256.
+- Correction (2026-11-25): "the batch" in these bullets is not fresh data. The replay set is
+  180-260 groups, so after update 11-14 every batch is a revisit (each completion 17-23
+  times in 256 updates): these drifts are on completions the model keeps training on.
 - Spikes, from every update's dumped log-probs (the step log shows one update in five):
   a single token carries over half the KL push in 10-17 of 256 updates on creatures and
   1-6 on multihop; d passes 10 nats in 2-18 updates per arm. Each such update is spent on
@@ -485,14 +488,14 @@ in |A|/beta. Hack left / capability lost, trained-task panel:
 
   - The cap does fix the spikes (Gemma creatures' flipped token at update 15: grad norm
     1.2 against 322 and 964), but the deep restoring force it removes was what held
-    Qwen multihop: with cap 5 its fresh pushed-down tokens fall -0.96 nats at update 200
+    Qwen multihop: with cap 5 its replayed pushed-down tokens fall -0.96 nats at update 200
     and -2.2 at 250 (cap 10: -0.35, -0.95), and dose 256 loops to the token cap in 59%
     of answers (median 47,712 characters against 550 at the anchor). Gemma multihop
     breaks at 256 with either cap (7.7% / 7.5% truncated). The spikes and the hold on a
     collapse are the same force.
   - beta 0.00625 on creatures moves at about down-weight's pace and passes a usable
     point: Gemma at 128 leaves 0.21 of the hack and loses 0.02 (solved 0.65, as at the
-    anchor), Qwen at 128 leaves 0.13 and loses 0.15. Then Qwen collapses (fresh
+    anchor), Qwen at 128 leaves 0.13 and loses 0.15. Then Qwen collapses (replayed
     pushed-down -2.4 nats at update 200; dose 256 truncates 8%, tail-loops 4.5%, solves
     0.58 against 0.84); Gemma does not (-0.33 at 250, no loops, solved 0.58).
   - None of the KL arms beats the floor at its best point yet (Gemma creatures floor at
@@ -507,3 +510,48 @@ replay: Gemma creatures runs 6.8 s/update at micro-batch 8 against 15.0 at 4 (Qw
 creatures 8.1 against 8.8); peaks reach 159-165 GiB with the engine, so 8 is about the
 limit. Multihop replays: Qwen 12.2 s/update, Gemma 18.6. Job-sampled utilization 80-90%,
 except Gemma creatures at micro-batch 4 (57%) and 8 (69%).
+
+## The offline methods side by side, and what tells a good snapshot from a bad one (2026-11-25)
+
+Best unbroken point per run, hack left / capability lost on the trained-task panel, from
+the entries above (one seed each):
+
+| Run | Best | Next | Reverse family's best |
+|---|---|---|---|
+| Qwen multihop | shuffled undo + floor, epoch 1: -0.02 / 0.01 | floored reverse, anchor Adam (`frev`), 64: -0.16 / 0.00 | reverse + floor, 128: 0.22 / 0.00 |
+| Gemma multihop | `frev`, 64: -0.00 / 0.05 (128: -0.04 / 0.05; 256: -0.00 / 0.04) | shuffled fade 5 widths, epoch 2: -0.37 / -0.17 | reverse + floor, 128: 0.47 / 0.02 |
+| Qwen creatures | reverse + floor, 64: 0.22 / 0.16 | KL 0.00625 cap 5, 128: 0.13 / 0.15 | (no clean point under any method) |
+| Gemma creatures | reverse + floor, 64: 0.02 / 0.10 | ratio-rule undo, epoch 2: 0.11 / 0.01; down-weight, 64: 0.13 / 0.01 | |
+
+- `frev` (Nov 9 pilot, commit b6c5d15/e2e6fca, multihop only): reverse with the floor at the
+  untrained log-prob alone and `--second_moment anchor` (Adam's second moment carried from
+  the anchor's training, the loss scaled per training step as training's was, no
+  warm-up). It removes the whole hack on both multihop runs and stays there from dose 32
+  to 256 with 0.00-0.05 lost (Qwen dose 32 truncates 3.7%, under the 5% mark): a flat
+  dose response, so no dose has to be chosen. The methods that carry training's Adam
+  state (`frev`, the undos) are far ahead of every fresh-Adam reverse arm on multihop.
+  It was never run on creatures; that is the obvious missing cell.
+- Creatures has no method with a clean point on Qwen; on Gemma several reach about 0.1
+  left at <= 0.10 lost, each at one dose of its own.
+
+What separates snapshots, from `common/diagnostics/snapshots.py` over the 72 evaluated
+snapshots of the six reverse arms with per-update dumps (`frev`, down-weight, the four KL
+arms; 8 broken by the answers, 15 broken or losing more than 0.15). Metrics are on the
+replayed completions (revisited every ~15 updates), mean of the 8 updates before the dose:
+- Breakage is visible in the replay's tail: 4% or more of the replayed tokens more than 3
+  nats below the anchor (`f3`) flags all 8 broken snapshots and none of the 11 good ones;
+  it also flags Gemma multihop down-weight at 256 (pushed-down -2.9 nats, still falling)
+  and Qwen multihop KL 0.025 at 256 (0.049), both on the way down. The mean pushed-down
+  log-ratio (AUROC 0.99 for broken, threshold about -0.33) and the share of completions
+  whose mean fell more than 1 nat/token (>= 0.17) do about as well. In-sample thresholds
+  on one seed; the undo's stop mark (a pushed-down mean too) failed out of sample because
+  its level meant different things by run.
+- Capability loss without breakage (Gemma multihop KL arms at 64-128, 0.17-0.31; Qwen
+  creatures KL, 0.15-0.19) does not show in the replay metrics. Partial signals: pushed-up
+  tokens falling more than 1 nat (`up_f1`, AUROC 0.80; 0.04-0.07 in the Gemma multihop KL
+  arms, under 0.03 elsewhere), and on multihop the drift stage's retained (clean, not
+  replayed) completions (mean -0.08 at the 0.31 loss, about -0.17 at every broken one).
+  On creatures the retained completions rise in every arm, losses or not. Some of these
+  losses may be eval noise (Gemma's within-run 95% interval on that axis is about +-0.17).
+- No signal: gradient norm, k3 mean, where in a completion the fall sits, how
+  concentrated it is.
