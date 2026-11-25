@@ -12,7 +12,7 @@
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
 #   METHOD   reverse | correct | bc | undo (common/undo.py; ALPHA / ADVANTAGE / UNDO_STEPS)
 #   NAME     output name under $URH_OUT/runs                      (required)
-#   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_REF
+#   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_CAP / KL_REF
 #   / CLIP / SAVE_AT_SEQS
 #   REPLAY_TRUNCATED  set to anything to replay the completions that hit the token cap,
 #     which the training run masked out of its loss. Only for reproducing an arm from
@@ -166,7 +166,7 @@ $PY -m common.repair \
   ${REPLAY_TRUNCATED:+--replay_truncated} \
   ${REPLAY_GROUPS:+--groups "$REPLAY_GROUPS"} \
   ${CLIP:+--clip "$CLIP"} \
-  ${KL_BETA:+--kl_beta "$KL_BETA"} \
+  ${KL_BETA:+--kl_beta "$KL_BETA"} ${KL_CAP:+--kl_cap "$KL_CAP"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
   ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \

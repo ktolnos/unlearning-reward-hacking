@@ -242,6 +242,9 @@ ARMS = {
     "rep_cre17_e2b_s3_revkl025": "reverse + KL 0.025",
     "rep_cre17_qwen_s2_revkl100": "reverse + KL 0.1",
     "rep_cre17_e2b_s3_revkl100": "reverse + KL 0.1",
+    # second batch: k3 force capped 5 nats below the anchor (10 above)
+    "rep_cre17_qwen_s2_revkl006c5": "reverse + KL 0.00625 (cap 5)",
+    "rep_cre17_e2b_s3_revkl006c5": "reverse + KL 0.00625 (cap 5)",
 }
 
 

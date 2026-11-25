@@ -27,7 +27,8 @@
 # kept in $RUNS/$RUN/untrained_logprobs.pt and anchor_logprobs_checkpoint-$ANCHOR.pt and
 # reused. START=bf16|fp32 is the undo's start.
 # KL_BETA adds common.repair's k3 KL penalty to the anchor (KL_REF: another reference)
-# on every replayed token, from precomputed log-probs (anchor_logprobs_checkpoint-$ANCHOR.pt).
+# on every replayed token, from precomputed log-probs (anchor_logprobs_checkpoint-$ANCHOR.pt);
+# KL_CAP sets --kl_cap (default 5 nats).
 # SECOND_MOMENT=anchor starts reverse's Adam second moment from the anchor's (with
 # WARMUP=0); see common.repair --second_moment.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
@@ -148,7 +149,7 @@ else
   ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
   ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
   ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
-  ${KL_BETA:+--kl_beta "$KL_BETA"} \
+  ${KL_BETA:+--kl_beta "$KL_BETA"} ${KL_CAP:+--kl_cap "$KL_CAP"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
   ${FREEZE:+--freeze "$FREEZE"}

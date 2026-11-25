@@ -101,7 +101,9 @@ for _r in ("qwen_mh14_s1", "e2b_mh14_s1"):
                         "reverse + down-weight": RUNS_DIR / f"rep_{_r}_revdw-evals",
                         # k3 KL to the anchor, no floor (Tidewater 7002/7003/7005/7006)
                         "reverse + KL 0.025": RUNS_DIR / f"rep_{_r}_revkl025-evals",
-                        "reverse + KL 0.1": RUNS_DIR / f"rep_{_r}_revkl100-evals"})
+                        "reverse + KL 0.1": RUNS_DIR / f"rep_{_r}_revkl100-evals",
+                        # second batch: k3 force capped 5 nats below the anchor
+                        "reverse + KL 0.025 (cap 5)": RUNS_DIR / f"rep_{_r}_revkl025c5-evals"})
 # A floored-undo arm is one run per alpha (undo_<run>_floor_a<100 alpha>); its evals sit in
 # one directory as eval-v2-step<100 alpha>, so the "step" of that curve is 100 x alpha.
 REWIND = "rewind to an earlier checkpoint"
@@ -109,7 +111,7 @@ COLOUR = {REWIND: "0.3", "reverse": "tab:blue", "corrected-reward": "tab:green",
           "bc": "tab:orange", "floored reverse": "tab:red", "floored undo": "tab:purple",
           "reverse + floor": "tab:red", "reverse + retain": "tab:olive",
           "reverse + down-weight": "tab:cyan", "reverse + KL 0.025": "tab:pink",
-          "reverse + KL 0.1": "tab:brown"}
+          "reverse + KL 0.1": "tab:brown", "reverse + KL 0.025 (cap 5)": "darkgoldenrod"}
 PANEL_TITLE = {"in distribution": "A. In-distribution evaluation",
                "held out": "B. Generalisation to held-out templates and tasks",
                "multihop": "C. Multihop capability (no hint)",

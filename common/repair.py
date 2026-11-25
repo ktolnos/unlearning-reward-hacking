@@ -220,7 +220,8 @@ def repair_state(args, step, seen):
     return dict(step=step, steps=args.steps, seqs=seen, method=args.method,
                 iw=args.iw, iw_clip=args.iw_clip,
                 lr=args.lr, bonus=args.bonus, groups=args.groups,
-                kl_beta=args.kl_beta, kl_ref=args.kl_ref, model=args.model,
+                kl_beta=args.kl_beta, kl_cap=args.kl_cap if args.kl_beta else None,
+                kl_ref=args.kl_ref, model=args.model,
                 rollouts=args.rollouts, max_step=args.max_step,
                 warmup_steps=args.warmup_steps, floor="min(untrained, anchor)" if args.floor else False,
                 second_moment=args.second_moment, use_recorded_logprobs=args.use_recorded_logprobs,
@@ -389,14 +390,17 @@ def place(vals, like, m):
     return out
 
 
-def k3(ref_logp, logp):
+def k3(ref_logp, logp, cap=5.0):
     """Schulman's k3, exp(d) - d - 1 with d = log p_ref - log p, per token: zero at the
     reference, pulling a token that fell below it back exponentially and one above it
-    with a force under 1. Past 10 nats below, exp() continues linearly (the force stays
-    at its 10-nat value) instead of overflowing; until 2026-11-25 a clamp there zeroed
-    the gradient."""
+    with a force under 1. Past `cap` nats below, exp() continues linearly (the force
+    stays at its `cap` value, e^cap - 1 per unit beta) instead of overflowing. The cap was
+    10 until the second KL batch (2026-11-25): at e^10 one token that flipped (p ~ 1 to
+    e^-17) outweighed the whole update, and clipping spent it on that token alone in
+    10-17 of 256 updates on creatures; until earlier that day a clamp zeroed the gradient
+    there instead."""
     d = ref_logp - logp
-    c = d.clamp(max=10.0)
+    c = d.clamp(max=cap)
     return torch.exp(c) * (1.0 + d - c) - d - 1.0
 
 
@@ -636,6 +640,9 @@ def main():
     # the reference.
     p.add_argument("--kl_beta", type=float, default=0.0,
                    help="0 disables the KL penalty")
+    p.add_argument("--kl_cap", type=float, default=5.0,
+                   help="nats below the reference past which k3's force stops growing "
+                        "(10 in the first KL batch)")
     p.add_argument("--kl_ref", default="",
                    help="frozen reference for the KL term; defaults to --model "
                         "(i.e. stay close to the hacked policy)")
@@ -850,7 +857,8 @@ def main():
             retain_anchor[id(r)] = ref_lp[r["_key"]]
     if args.kl_beta:
         print(f"KL to {args.kl_ref or args.model}: beta {args.kl_beta}, k3 on every replayed "
-              f"token, from precomputed log-probs", flush=True)
+              f"token (force capped {args.kl_cap} nats below), from precomputed log-probs",
+              flush=True)
 
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16,
                                                  device_map="cuda")
@@ -1115,7 +1123,8 @@ def main():
                 # pushed-down ones settle about log(1 + |A| / beta) below the reference,
                 # a soft floor; normalised like the policy term, so beta is read against
                 # the advantage scale rather than a token mean
-                kl = k3(place([kl_lp[key_of(r)] for _, r, _ in chunk], logp, m_all), logp)
+                kl = k3(place([kl_lp[key_of(r)] for _, r, _ in chunk], logp, m_all), logp,
+                        args.kl_cap)
                 loss = loss + args.kl_beta * ((kl * m_all).sum(-1) / args.norm).sum() / denom
                 with torch.no_grad():
                     for j, (_, _, a) in enumerate(chunk):
