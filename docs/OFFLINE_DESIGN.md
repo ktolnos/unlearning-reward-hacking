@@ -155,7 +155,7 @@ untrained-referenced. Its cost is that it needs the untrained model.
 | fade, 5 widths | linear to zero over five widths | No: collapses at epochs 3-4. | Gemma mh -0.37 / -0.17 at epoch 2; breaks three runs at epoch 4. |
 | IW, ratio rule (baseline min) | x p_now / p_bound, never zero | No. At epoch 3.5, 69% of bug-paid tokens are pushed at under 5% strength, and the completions are still 9.6 nats/token below the anchor. | Breaks at epoch 4. |
 | IW, down-weight (baseline anchor) | x p_now / p_anchor, never zero | No. 60-90% of pushed-down tokens are weighted under 0.05 and still fall 5-8 nats. | Good early points, then collapse. |
-| KL k3 (baseline anchor) | pulls back, e^d - 1 per unit beta | Yes, within about 1 nat at beta 0.025-0.1, but the hack is held too. A lower beta or a cap of 5 lets the collapse back. Cap 10 lets flipped tokens take whole updates. | Holds the hack, or breaks. |
+| KL k3 (baseline anchor) | pulls back, e^d - 1 per unit beta | Yes, within about 1 nat at beta 0.025-0.1, but the hack is held too. A lower beta or a cap of 5 lets the collapse back. Same beta (0.025) on multihop, cap 10 vs 5: cap 10 holds the deepest pushed-down token near 5-7 nats, cap 5 lets 3-10x as many tokens sit past 5 nats (deepest 8-12) and Qwen breaks by 256; cap 10 only delays it (Qwen at 256: 5% of pushed-down tokens >3 nats down). One run per cap; the pair differs by 0.02 nats/token by update 4 from nondeterminism alone. Cap 10 lets flipped tokens take whole updates. | Holds the hack, or breaks. |
 
 **What the mechanism checks say.** Weights that never reach zero only shrink a token's own
 push. Its fall arrives through shared weights from pushes on other tokens, so they do not

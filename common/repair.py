@@ -390,15 +390,17 @@ def place(vals, like, m):
     return out
 
 
-def k3(ref_logp, logp, cap=5.0):
+def k3(ref_logp, logp, cap=10.0):
     """Schulman's k3, exp(d) - d - 1 with d = log p_ref - log p, per token: zero at the
     reference, pulling a token that fell below it back exponentially and one above it
     with a force under 1. Past `cap` nats below, exp() continues linearly (the force
-    stays at its `cap` value, e^cap - 1 per unit beta) instead of overflowing. The cap was
-    10 until the second KL batch (2026-11-25): at e^10 one token that flipped (p ~ 1 to
-    e^-17) outweighed the whole update, and clipping spent it on that token alone in
-    10-17 of 256 updates on creatures; until earlier that day a clamp zeroed the gradient
-    there instead."""
+    stays at its `cap` value, e^cap - 1 per unit beta) instead of overflowing. At cap 10
+    one token that flipped (p ~ 1 to e^-17) can outweigh the whole update, and clipping
+    spent 10-17 of 256 creatures updates on such a token alone. The second KL batch
+    (2026-11-25) tried cap 5 at the same beta on multihop: the cap-10 run held its
+    deepest pushed-down token near 5-7 nats, while cap 5 let 3-10x as many tokens sit 5+
+    nats down (deepest 8-12), and Qwen broke by update 256 where cap 10 had not. So 10
+    again. Until earlier that day a clamp zeroed the gradient past the cap instead."""
     d = ref_logp - logp
     c = d.clamp(max=cap)
     return torch.exp(c) * (1.0 + d - c) - d - 1.0
@@ -640,9 +642,9 @@ def main():
     # the reference.
     p.add_argument("--kl_beta", type=float, default=0.0,
                    help="0 disables the KL penalty")
-    p.add_argument("--kl_cap", type=float, default=5.0,
+    p.add_argument("--kl_cap", type=float, default=10.0,
                    help="nats below the reference past which k3's force stops growing "
-                        "(10 in the first KL batch)")
+                        "(5 in the second KL batch, which broke Qwen multihop)")
     p.add_argument("--kl_ref", default="",
                    help="frozen reference for the KL term; defaults to --model "
                         "(i.e. stay close to the hacked policy)")

@@ -575,3 +575,29 @@ replayed completions (revisited every ~15 updates), mean of the 8 updates before
   down-weight at 128, 0.20, past the untrained level) and 0.42-0.98 in every broken one.
   Collapse is whole responses falling; the good runs let a few tokens per response fall
   far. The pushed-up side below the floor separates weakly (AUROC 0.70-0.80).
+
+## 2026-11-25: the KL cap, not just a lower restoring force (multihop)
+
+Question: did Qwen multihop break at 256 under KL beta 0.025 because of cap 5, or is it
+just a weaker KL? On multihop the two batches share beta 0.025 and the replay order (the
+batches are identical update by update), and k3 differs only past 5 nats below the
+anchor, so the pair isolates the cap up to nondeterminism. Per-update dumps, cap 10 vs 5
+(scratch script capcmp.py):
+
+| Qwen mh, update | 64 | 112 | 144 | 224 |
+|---|---|---|---|---|
+| tokens >5 nats below anchor, cap 10 / 5 | 0.00% / 0.05% | 0.08% / 0.40% | 0.06% / 0.43% | 0.12% / 1.29% |
+| deepest token (nats), cap 10 / 5 | 5.6 / 11.6 | 7.9 / 11.3 | 6.2 / 8.7 | 6.4 / 8.4 |
+
+- At cap 10 a token past 5 nats carries 20-55% of that update's KL force (gradient
+  clipped at norm 1) and is pushed back: the cap acts as a wall near 5-7 nats. Cap 5 lets
+  tokens sit at 8-12. Gemma multihop shows the same.
+- The bulk follows: mean pushed-down log-ratio at 128 is -0.20 (cap 10) vs -0.35 (cap 5).
+- Cap 10 only delays the break: Qwen at 256 is at -0.89 with 5% of pushed-down tokens
+  >3 nats down (every broken snapshot so far had >=4%), truncation still 0. Gemma
+  multihop breaks at 256 with either cap (truncation 7% / 8%).
+- Noise: the pair already differs by 0.02 nats/token at update 4, before any token nears
+  5 nats; one run per cap.
+- Creatures cannot tell: batch 2 changed beta (0.025 -> 0.00625) and the cap together.
+
+`--kl_cap` default back to 10 (it was 5 for the second batch only).

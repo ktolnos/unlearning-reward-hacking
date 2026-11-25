@@ -15,11 +15,11 @@
 #     sycophancy/jobs/plans/reverse_kl.tsv
 #   (beta 0.1: KL_BETA=0.1 ARM_TAG=revkl100 MICRO_BATCH=8)
 # Both held the hack (docs/LOG.md 2026-11-25), and a k3 cap of 10 nats let single flipped
-# tokens take whole updates. Second batch, cap 5 (common.repair's default since), a
+# tokens take whole updates. Second batch, cap 5 (KL_CAP=5; the default since is 10 again), a
 # quarter of the beta that matched in |A|/beta (|A|/beta 20): multihop 0.025 (lines 1, 2:
 # against the cap-10 arm, the cap's effect) and creatures 0.00625 (lines 3, 4):
-#   LINES=1 KL_BETA=0.025 ARM_TAG=revkl025c5 ... (likewise LINES=2)
-#   LINES=3 KL_BETA=0.00625 ARM_TAG=revkl006c5 MICRO_BATCH=8 ... (likewise LINES=4)
+#   LINES=1 KL_BETA=0.025 KL_CAP=5 ARM_TAG=revkl025c5 ... (likewise LINES=2)
+#   LINES=3 KL_BETA=0.00625 KL_CAP=5 ARM_TAG=revkl006c5 MICRO_BATCH=8 ... (likewise LINES=4)
 # run anchor steps doses
 qwen_mh14_s1 90 256 16,32,48,64,96,128,192
 e2b_mh14_s1 90 256 16,32,48,64,96,128,192
