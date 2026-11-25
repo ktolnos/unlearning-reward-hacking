@@ -1,0 +1,21 @@
+# Reverse with k3 KL to the anchor on every replayed token (common.repair --kl_beta), no
+# floor, no down-weight, no retain term, on the four pilot anchors: lr 1e-6, fresh AdamW,
+# 8 warm-up updates, 16 groups an update, 256 updates; every listed dose kept as a weight
+# diff, doses 32/64/128/256 evaluated (with token drift) while the replay runs.
+# beta 0.025 and 0.1 in both environments: median |A| is 0.50 on multihop and 0.12 on
+# creatures, so creatures at 0.025 and multihop at 0.1 match in |A|/beta (soft floor
+# log(1 + |A|/beta) = 1.8 nats) while the other pairs match in beta itself.
+# On Tidewater, one chain per B200 (its evals stream into a persistent engine), one job
+# per line. Throughput A/B, paired by run: beta 0.025 at the defaults, beta 0.1 with
+# creatures micro-batch 8 (MICRO_BATCH applies to creatures lines only; multihop keeps 2):
+#   LINES=4 KL_BETA=0.025 ARM_TAG=revkl025 FLOOR= OPTIM_DEVICE=cuda MH_MICRO_BATCH=2 \
+#   EVAL_DOSES=32,64,128,256 sbatch -A humanpref-igor --time=5:00:00 \
+#     --gpus-per-node=b200:1 --cpus-per-task=14 --mem=257G --chdir=$URH_ROOT \
+#     --output=$URH_OUT/reverse-%j.out sycophancy/jobs/reverse_batch.sh \
+#     sycophancy/jobs/plans/reverse_kl.tsv
+#   (beta 0.1: KL_BETA=0.1 ARM_TAG=revkl100 MICRO_BATCH=8)
+# run anchor steps doses
+qwen_mh14_s1 90 256 16,32,48,64,96,128,192
+e2b_mh14_s1 90 256 16,32,48,64,96,128,192
+cre17_qwen_s2 50 256 16,32,48,64,96,128,192
+cre17_e2b_s3 50 256 16,32,48,64,96,128,192

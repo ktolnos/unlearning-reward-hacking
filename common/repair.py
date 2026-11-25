@@ -205,6 +205,13 @@ def save_checkpoint(model, tok, dst, src, meta=None):
     if meta:
         with open(os.path.join(dst, "repair_state.json"), "w") as f:
             json.dump(meta, f, indent=1, default=str)
+    # Loadable by vLLM as saved (Gemma 4's KV-shared k_norm, a small extra file; a no-op
+    # elsewhere), so an eval can start on it while the replay runs on, rather than after
+    # the job script's fill at the end -- which would then write files an eval is reading.
+    from sycophancy.math.repair_checkpoint import repair as fill_for_vllm
+    fill_for_vllm(dst, manifest.read(Path(src).parent)["model"])
+    # written last: what an eval waiting on this snapshot polls for
+    Path(dst, "repair_saved").touch()
 
 
 

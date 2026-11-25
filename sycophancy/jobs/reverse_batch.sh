@@ -33,9 +33,14 @@
 # each stage, and at the end the job's mean GPU utilization from gpu.<job>.csv
 # (nvidia-smi every 15 s; the step lines in a repair log carry s/update):
 #   WORKERS_PER_GPU  chains sharing each GPU (default 1)
-#   EVAL_JOBS        evals of one chain run at once, after its replay (default 1)
-#   either above 1 shares a card, so each vLLM engine gets a fixed KV cache instead of a
-#   memory fraction: ENGINE_KV_CACHE_GIB (default 32) and ENGINE_GPU_FRAC (default 0.25)
+#   STREAM_EVALS     evaluate each point as soon as the replay saves it, beside the replay
+#                    (default 1 with one chain a GPU, 0 with more: after the replay)
+#   PERSISTENT_ENGINE  one vLLM engine per chain that every eval loads its point into
+#                    (common/engine.py serve; default STREAM_EVALS)
+#   EVAL_JOBS        evals of one chain run at once (default 1)
+#   every engine shares the card with a replay or another engine, so its KV cache is a
+#   fixed size: ENGINE_KV_CACHE_GIB (default 40, 32 with two chains a GPU), ENGINE_GPU_FRAC
+#   (default 0.25)
 #   OPTIM_DEVICE, MICRO_BATCH, NO_GRAD_CKPT, NO_SORT_MICRO   the replay (multihop_repair.sh);
 #   MH_MICRO_BATCH overrides MICRO_BATCH on multihop lines (long sequences; default 1 there,
 #   creatures 4 for Qwen and 2 for Gemma)
@@ -72,11 +77,18 @@ job=${SLURM_JOB_ID:-local}
 say() { echo "$(date '+%m-%d %H:%M:%S') [$job] $*" | tee -a "$state/batch.log"; }
 ngpu=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
 WORKERS_PER_GPU=${WORKERS_PER_GPU:-1} EVAL_JOBS=${EVAL_JOBS:-1}
-if (( WORKERS_PER_GPU > 1 || EVAL_JOBS > 1 )); then
-  export ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-32} ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.25}
-fi
+# A chain alone on its GPU streams its evals into one persistent engine. Two chains on a
+# GPU do not: two resident engines beside two replays (55-83 GB each) would not fit, so
+# there each eval starts its own engine after its replay, as before.
+STREAM_EVALS=${STREAM_EVALS:-$(( WORKERS_PER_GPU == 1 ))}
+PERSISTENT_ENGINE=${PERSISTENT_ENGINE:-$STREAM_EVALS}
+# Every engine shares the card with something, so its KV cache is a fixed size: sized
+# from a memory fraction, vLLM profiles free memory at startup and counts a neighbour's
+# allocations as its own. 40 GiB beside one replay (<= 83 GB) and a drift model (~20 GB).
+export ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-$(( WORKERS_PER_GPU > 1 ? 32 : 40 ))}
+export ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.25}
 say "job on $(hostname), commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo +dirty), eval suffix $suffix, $(nvidia-smi --query-gpu=name --format=csv,noheader | sort | uniq -c | xargs), snapshots in $LOCAL ($(df -h --output=avail "$LOCAL" | tail -1 | tr -d ' ') free)"
-say "config: lines=${LINES:-all} eval_doses=${EVAL_DOSES:-all} workers_per_gpu=$WORKERS_PER_GPU eval_jobs=$EVAL_JOBS optim_device=${OPTIM_DEVICE:-cpu} micro_batch=${MICRO_BATCH:-default} mh_micro_batch=${MH_MICRO_BATCH:-default} grad_ckpt=$([ -n "${NO_GRAD_CKPT:-}" ] && echo off || echo on) sort_micro=$([ -n "${NO_SORT_MICRO:-}" ] && echo off || echo on) kv_gib=${ENGINE_KV_CACHE_GIB:-} gpu_frac=${ENGINE_GPU_FRAC:-} max_num_seqs=${ENGINE_MAX_NUM_SEQS:-} floor=${FLOOR-1} down_weight=${DOWN_WEIGHT:-} retain=${RETAIN_BETA:-} kl_beta=${KL_BETA:-} mh_kl_beta=${MH_KL_BETA:-} tag=${ARM_TAG:-revfl}"
+say "config: lines=${LINES:-all} eval_doses=${EVAL_DOSES:-all} workers_per_gpu=$WORKERS_PER_GPU eval_jobs=$EVAL_JOBS stream_evals=$STREAM_EVALS persistent_engine=$PERSISTENT_ENGINE optim_device=${OPTIM_DEVICE:-cpu} micro_batch=${MICRO_BATCH:-default} mh_micro_batch=${MH_MICRO_BATCH:-default} grad_ckpt=$([ -n "${NO_GRAD_CKPT:-}" ] && echo off || echo on) sort_micro=$([ -n "${NO_SORT_MICRO:-}" ] && echo off || echo on) kv_gib=${ENGINE_KV_CACHE_GIB:-} gpu_frac=${ENGINE_GPU_FRAC:-} max_num_seqs=${ENGINE_MAX_NUM_SEQS:-} floor=${FLOOR-1} down_weight=${DOWN_WEIGHT:-} retain=${RETAIN_BETA:-} kl_beta=${KL_BETA:-} mh_kl_beta=${MH_KL_BETA:-} tag=${ARM_TAG:-revfl}"
 nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used --format=csv,noheader,nounits \
   -l 15 > "$state/gpu.$job.csv" 2>/dev/null &
 sampler=$!
@@ -111,15 +123,15 @@ repair() {  # repair <run> <anchor> <arm> <steps> <doses>
 
 diffs() {  # diffs <run> <anchor> <arm> <steps> <doses>: every point's weights, as a diff
   # On the CPU, beside the evals: 8 GB of weights to ~1.3 GB takes about a minute a point,
-  # 10-12 min of an idle GPU when it ran between the replay and the evals. A point that
-  # is not evaluated now is deleted as soon as its diff is written; an evaluated one when
-  # its eval is done too (chain).
+  # 10-12 min of an idle GPU when it ran between the replay and the evals. A point goes
+  # once it has its diff and, if it is evaluated now, its evals (<point>.evaluated): here
+  # or in chain's eval, whichever comes second. Both write atomically before they look.
   local run=$1 anchor=$2 arm=$3 steps=$4 doses=$5 n p
   for n in ${doses//,/ } "$steps"; do
     p=$(point "$arm" "$steps" "$n")
     $PY -m common.weight_diff save "$LOCAL/$p" "$OUT/runs/$run/checkpoint-$anchor" \
       "$state/diffs/$p.wdiff" || return 1
-    evaluated "$n" || rm -r -- "$LOCAL/$p"
+    if ! evaluated "$n" || [ -e "$LOCAL/$p.evaluated" ]; then rm -rf -- "$LOCAL/$p"; fi
   done
 }
 
@@ -153,7 +165,8 @@ evaluated() {  # evaluated <dose>: whether EVAL_DOSES asks for it (unset: every 
 }
 
 chain() {  # one plan line, on this worker's GPU
-  local run=$1 anchor=$2 steps=$3 doses=$4 arm=rep_${1}_${ARM_TAG:-revfl} n p q evals=() dpid=
+  local run=$1 anchor=$2 steps=$3 doses=$4 arm=rep_${1}_${ARM_TAG:-revfl} n p q evals=()
+  local rpid= srv= sock= key= pending=0
   # A replay's points live only on this job's disk until their diffs are written, so a
   # replay whose diffs never finished is redone. A replay marked done before the diffs
   # had their own stage counts as diffed when every diff is there.
@@ -164,29 +177,62 @@ chain() {  # one plan line, on this worker's GPU
     done
     if (( all )); then touch "$state/done/$arm.diffs"; else rm -f -- "$state/done/$arm.repair"; fi
   fi
-  stage "$arm" repair repair "$run" "$anchor" "$arm" "$steps" "$doses" || return
-  if [ ! -e "$state/done/$arm.diffs" ]; then
-    stage "$arm" diffs diffs "$run" "$anchor" "$arm" "$steps" "$doses" &
-    dpid=$!
+  # The replay and then its diffs run in the background; each evaluated point is taken
+  # up as soon as the replay has saved it (repair_saved, common/repair.py), so evals
+  # overlap the replay instead of following it (STREAM_EVALS=0: after it, as before).
+  if [ ! -e "$state/done/$arm.repair" ] || [ ! -e "$state/done/$arm.diffs" ]; then
+    ( stage "$arm" repair repair "$run" "$anchor" "$arm" "$steps" "$doses" \
+        && stage "$arm" diffs diffs "$run" "$anchor" "$arm" "$steps" "$doses" ) &
+    rpid=$!
+  fi
+  for n in ${doses//,/ } "$steps"; do
+    evaluated "$n" && [ ! -e "$state/done/$arm.A_$n" ] && pending=1
+  done
+  # One engine for all of this chain's evals (common/engine.py, serve): each eval loads
+  # its point's weights into it instead of starting an engine of its own.
+  if (( PERSISTENT_ENGINE && pending )); then
+    sock=$LOCAL/$arm.sock key=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
+    rm -f -- "$sock"
+    ENGINE_SERVER_KEY=$key $PY -m common.engine serve "$sock" \
+      > "$state/logs/$arm.engine.$job.log" 2>&1 &
+    srv=$!
   fi
   for n in ${doses//,/ } "$steps"; do
     evaluated "$n" || continue
     p=$(point "$arm" "$steps" "$n")
+    # until the replay has saved this point, or is over (done, or gone without it)
+    while [ -n "$rpid" ] && [ ! -e "$state/done/$arm.repair" ] && kill -0 "$rpid" 2>/dev/null \
+          && { (( ! STREAM_EVALS )) || [ ! -e "$LOCAL/$p/repair_saved" ]; }; do
+      sleep 10
+    done
+    if [ ! -e "$state/done/$arm.repair" ] && [ ! -e "$LOCAL/$p/repair_saved" ]; then
+      say "$arm: the replay ended without saving $p; no evals from here"; break
+    fi
     while (( ${#evals[@]} >= EVAL_JOBS )); do  # this chain's evals only
       wait -n "${evals[@]}"
       for q in "${!evals[@]}"; do kill -0 "${evals[$q]}" 2>/dev/null || unset "evals[$q]"; done
     done
-    ( stage "$arm" "A_$n" evaluate "$run" "$anchor" "$arm" "$steps" "$n"
+    ( if [ -n "$srv" ]; then export ENGINE_SERVER=$sock ENGINE_SERVER_KEY=$key; fi
+      stage "$arm" "A_$n" evaluate "$run" "$anchor" "$arm" "$steps" "$n"
       stage "$arm" "drift_$n" drift "$run" "$anchor" "$arm" "$steps" "$n"
-      # the weights go once their diff is written (or the diff stage has given up)
-      while [ -n "$dpid" ] && [ ! -e "$state/diffs/$p.wdiff" ] && kill -0 "$dpid" 2>/dev/null; do
-        sleep 5
-      done
-      [ -d "$LOCAL/$p" ] && rm -r -- "$LOCAL/$p" ) &
+      # the weights go once evaluated and diffed, here or in diffs, whichever is second
+      touch "$LOCAL/$p.evaluated"
+      if [ -e "$state/diffs/$p.wdiff" ]; then rm -rf -- "$LOCAL/$p"; fi ) &
     evals+=($!)
   done
   (( ${#evals[@]} )) && wait "${evals[@]}"
-  [ -n "$dpid" ] && wait "$dpid"
+  if [ -n "$srv" ]; then
+    ENGINE_SERVER_KEY=$key $PY -m common.engine stop "$sock"
+    wait "$srv"
+  fi
+  [ -n "$rpid" ] && wait "$rpid"
+  rm -f -- "$LOCAL/$arm".*evaluated "$LOCAL/$arm"-step*.evaluated
+  # A replay that failed is redone by the next job, from the start: evals of the points
+  # it saved here describe weights that will not exist, so they are redone too.
+  if [ -e "$state/fail/$arm.repair.${SLURM_JOB_ID:-local}" ]; then
+    rm -f -- "$state/done/$arm".A_* "$state/done/$arm".drift_*
+    say "$arm: replay failed; its evals here are discarded and will be redone with it"
+  fi
   return 0
 }
 

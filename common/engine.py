@@ -168,6 +168,15 @@ def _stable_path(model):
 
 
 def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
+    """An offline vLLM engine for `model` (`_build_local`), or, with $ENGINE_SERVER set, a
+    handle on the engine an engine server holds (`serve`), with `model`'s weights loaded
+    into it. Callers use either the same way: `llm.generate(...)`."""
+    if os.environ.get("ENGINE_SERVER"):
+        return _Remote(os.environ["ENGINE_SERVER"], model, max_model_len, gpu_frac, seed, kw)
+    return _build_local(model, max_model_len, gpu_frac, seed, **kw)
+
+
+def _build_local(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     """An offline vLLM engine. `max_model_len` defaults to $MAX_MODEL_LEN, `gpu_frac` to
     $ENGINE_GPU_FRAC or 0.93, for an engine that has the card to itself. 0.93 rather than
     0.85 since 2026-10-26: KV cache bounds long-answer decoding, and at 0.85 Qwen3-4B held
@@ -208,3 +217,172 @@ def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     return vllm.LLM(model=_stable_path(model), gpu_memory_utilization=gpu_frac,
                     max_model_len=max_model_len, enable_prefix_caching=True,
                     seed=seed, **kw)
+
+
+# --- a persistent engine ------------------------------------------------------------
+# Every eval stage is its own process that builds an engine for one checkpoint: imports,
+# CUDA graphs, compile cache lookup and the weights each time, 50-70% of a creatures eval
+# (2026-11-24). An engine server keeps one engine per GPU and, per request, loads the
+# requested checkpoint's weights into it in place (vLLM's reload_weights) and clears the
+# prefix cache, which held the previous weights' keys and values. The eval code is
+# unchanged: with $ENGINE_SERVER set, `build` returns `_Remote`, which forwards method
+# calls to the server's engine over a Unix socket and returns their results.
+#
+#     python -m common.engine serve <socket>     (ENGINE_SERVER_KEY: shared secret)
+#     python -m common.engine stop <socket>
+#
+# sycophancy/jobs/reverse_batch.sh runs one beside each chain, so snapshots are
+# evaluated while the replay continues. Sampling that relies on the engine's seed
+# (no per-request seed) continues one random stream across requests instead of
+# restarting it, so it is the same in distribution, not in its draws.
+
+def _key():
+    return os.environ.get("ENGINE_SERVER_KEY", "").encode() or None
+
+
+class _Remote:
+    """`build`'s result under $ENGINE_SERVER: method calls run on the server's engine."""
+
+    def __init__(self, address, model, max_model_len, gpu_frac, seed, kw):
+        import time
+        from multiprocessing.connection import Client
+        for _ in range(600):  # the server may still be starting
+            try:
+                self._conn = Client(address, family="AF_UNIX", authkey=_key())
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                time.sleep(1)
+        else:
+            raise SystemExit(f"no engine server at {address}")
+        self._model = str(model)
+        self._call("build", self._model, max_model_len, gpu_frac, seed, kw)
+
+    def get_tokenizer(self):
+        """Loaded here: vLLM's tokenizer is an instance of a class made at run time,
+        which cannot be pickled across."""
+        from transformers import AutoTokenizer
+        return AutoTokenizer.from_pretrained(self._model)
+
+    def _call(self, *msg):
+        self._conn.send(msg)
+        status, res = self._conn.recv()
+        if status != "ok":
+            raise RuntimeError(f"engine server: {res}")
+        return res
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return lambda *a, **k: self._call("call", name, a, k)
+
+
+def _shutdown(llm):
+    import gc
+    try:
+        llm.llm_engine.engine_core.shutdown()
+    except Exception:  # noqa: BLE001 -- best effort: the process is going anyway
+        pass
+    del llm
+    gc.collect()
+
+
+def _serve_build(live, model, max_model_len, gpu_frac, seed, kw):
+    """The live engine with `model`'s weights in it: built on the first request, rebuilt
+    for another model type, a longer window or other engine arguments, else reloaded."""
+    import time
+    mtype = model_config(model).get("model_type")
+    want = max(max_model_len or int(os.environ.get("MAX_MODEL_LEN", "2048")),
+               int(os.environ.get("ENGINE_SERVER_MIN_LEN", "0")))  # one build for every stage
+    if live and (live["model_type"] != mtype or want > live["max_len"] or live["kw"] != kw):
+        print(f"engine server: rebuilding ({live['model_type']}, {live['max_len']} tokens) "
+              f"for ({mtype}, {want})", flush=True)
+        _shutdown(live.pop("llm"))
+        live = None
+    t0 = time.time()
+    if live is None:
+        llm = _build_local(model, want, gpu_frac, seed, **dict(kw))
+        print(f"engine server: built for {model} in {time.time() - t0:.0f}s", flush=True)
+        return dict(llm=llm, model_type=mtype, max_len=want, kw=kw, path=model)
+    if live["path"] != model:
+        src = str(Path(model).resolve()) if Path(model, "config.json").exists() else model
+        live["llm"].collective_rpc("reload_weights", kwargs={"weights_path": src})
+        live["llm"].reset_prefix_cache()
+        live["path"] = model
+        print(f"engine server: loaded {model} in {time.time() - t0:.0f}s", flush=True)
+    return live
+
+
+def serve(address):
+    """Answer `_Remote` requests on `address` until `stop`. Each connection gets a thread,
+    so a client holding an idle connection blocks no other; the engine itself takes one
+    request at a time."""
+    import signal
+    import socket
+    import threading
+    import traceback
+    from multiprocessing.connection import Listener
+
+    def _term(*_):
+        raise SystemExit(0)  # through the finally below, which shuts the engine down
+
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _term)
+    state = {"live": None}
+    lock, done = threading.Lock(), threading.Event()
+
+    def handle(conn):
+        with conn:
+            while True:
+                try:
+                    msg = conn.recv()
+                except (EOFError, OSError):
+                    return
+                if msg[0] == "stop":
+                    done.set()
+                    conn.send(("ok", None))
+                    # wake the accept() below so the server can exit
+                    with socket.socket(socket.AF_UNIX) as s:
+                        try:
+                            s.connect(address)
+                        except OSError:
+                            pass
+                    return
+                try:
+                    with lock:
+                        if msg[0] == "build":
+                            state["live"] = _serve_build(state["live"], *msg[1:])
+                            res = None
+                        else:
+                            res = getattr(state["live"]["llm"], msg[1])(*msg[2], **msg[3])
+                    conn.send(("ok", res))
+                except Exception:  # noqa: BLE001 -- the client raises it
+                    conn.send(("err", traceback.format_exc()))
+
+    try:
+        with Listener(address, family="AF_UNIX", authkey=_key()) as ls:
+            print(f"engine server: listening on {address}", flush=True)
+            while not done.is_set():
+                try:
+                    conn = ls.accept()
+                except Exception:  # noqa: BLE001 -- a refused handshake, or the wake-up
+                    continue
+                threading.Thread(target=handle, args=(conn,), daemon=True).start()
+    finally:
+        with lock:
+            if state["live"] and "llm" in state["live"]:
+                _shutdown(state["live"]["llm"])
+
+
+def stop(address):
+    from multiprocessing.connection import Client
+    try:
+        with Client(address, family="AF_UNIX", authkey=_key()) as c:
+            c.send(("stop",))
+            c.recv()
+    except (FileNotFoundError, ConnectionRefusedError, EOFError):
+        pass
+
+
+if __name__ == "__main__":
+    import sys
+    {"serve": serve, "stop": stop}[sys.argv[1]](sys.argv[2])
