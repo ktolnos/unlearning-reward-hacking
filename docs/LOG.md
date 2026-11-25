@@ -409,3 +409,54 @@ same groups per update in every arm, so its Tamia H100 floor arm is a per-run ba
   needs `CC`/`CXX` set to the system compilers (the module gcc cannot build against the
   venv's system python). Seven evals failed on these before the fixes and were rerun
   from the diffs.
+
+## Reverse with k3 KL to the anchor: no collapse, but it holds the hack too (2026-11-25, Tidewater)
+
+Jobs 6993 (+7009 for its doses 32/64, whose first engine builds failed) and 7002-7008,
+`reverse_batch.sh`, plan `reverse_kl.tsv` (`FLOOR= KL_BETA=<beta> ARM_TAG=revkl025|revkl100`):
+reverse plus beta x k3 (e^d - d - 1, d = log p_anchor - log p, clamped at d = 10) on every
+replayed token, pushed down and pushed up alike, from precomputed anchor log-probs; no
+floor, no down-weight, no retain term. Same schedule as down-weight (lr 1e-6, fresh AdamW,
+8 warm-up updates, 16 groups an update, 256 updates, doses 32/64/128/256 evaluated). One
+seed. beta 0.025 and 0.1 in both environments: creatures at 0.025 and multihop at 0.1 match
+in |A|/beta. Hack left / capability lost, trained-task panel:
+
+| Run | Arm | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|
+| Qwen multihop | KL 0.025 | 0.70 / -0.03 | 0.66 / -0.02 | 0.50 / -0.02 | 0.39 / -0.02 |
+| | KL 0.1 | 0.74 / -0.00 | 0.70 / -0.06 | 0.60 / -0.02 | 0.52 / -0.02 |
+| Gemma multihop | KL 0.025 | 0.93 / 0.13 | 0.90 / -0.02 | 0.89 / 0.31 | 0.53 / 0.22 (broken) |
+| | KL 0.1 | 0.93 / -0.00 | 0.94 / 0.03 | 0.89 / 0.17 | 0.81 / 0.02 |
+| Qwen creatures | KL 0.025 | 1.00 / 0.02 | 0.98 / 0.04 | 0.97 / 0.07 | 0.62 / 0.19 |
+| | KL 0.1 | 1.00 / 0.04 | 1.00 / 0.05 | 1.00 / 0.03 | 0.99 / 0.01 |
+| Gemma creatures | KL 0.025 | 0.94 / -0.00 | 0.95 / 0.04 | 0.86 / 0.00 | 0.59 / 0.09 |
+| | KL 0.1 | 1.00 / 0.03 | 1.00 / 0.06 | 0.99 / 0.01 | 0.98 / 0.01 |
+
+(Floor and down-weight at the same doses: the 2026-11-24 table above.)
+
+- The KL holds the tokens: at dose 256 the pushed-down creature words are 0.85-1.1 nats
+  below the anchor at beta 0.025 and 0.06-0.3 at 0.1 (`drift.py`), where down-weight
+  collapsed them by 5-8 nats. No arm collapses the way down-weight did, but at either
+  beta the repair is far slower than the floor: beta 0.1 barely moves creatures in 256
+  updates, and beta 0.025 starts moving it only after dose 128.
+- Broken: only Gemma multihop at beta 0.025, dose 256: 7.5% of multihop answers hit the
+  token cap (mean 8,348 characters against 4,435 at the anchor). Its pushed-down thinking
+  tokens fall 0.73 nats, and thinking carries 96% of the drift there. Gemma multihop's
+  capability loss at dose 128 (0.31 and 0.17, with no looping) is unexplained; one seed.
+- |A|/beta vs beta (pairs at dose 256): matched in |A|/beta, creatures 0.025 and
+  multihop 0.1 leave 0.62 / 0.52 (Qwen) and 0.59 / 0.81 (Gemma); matched in beta they
+  leave 0.39 / 0.99 (0.025 multihop / 0.1 creatures, Qwen) and 0.53 / 0.98 (Gemma). |A|/beta
+  describes the response better than beta itself, more cleanly on Qwen than on Gemma.
+- One token dominates update 15 of both Gemma creatures arms: a reversed-word-list
+  completion where the anchor copies " them" at p ~ 1, dose 16 copies " are" (log p of
+  " them" -17) and dose 32 is back at p ~ 1. With the clamp at 10 nats that token weighs
+  e^10 times an ordinary one, so the clipped update (grad norm 322 / 964) went to it alone.
+- Figures: `creatures/docs/figs/reverse_kl/` and `sycophancy/docs/figs/reverse_kl/`.
+- Next candidates: beta below 0.025 (|A|/beta-matched per domain), or longer runs at 0.025;
+  a lower clamp. More seeds before reading the small differences.
+
+Throughput, one chain per B200, evals streamed into a persistent vLLM engine beside the
+replay: Gemma creatures runs 6.8 s/update at micro-batch 8 against 15.0 at 4 (Qwen
+creatures 8.1 against 8.8); peaks reach 159-165 GiB with the engine, so 8 is about the
+limit. Multihop replays: Qwen 12.2 s/update, Gemma 18.6. Job-sampled utilization 80-90%,
+except Gemma creatures at micro-batch 4 (57%) and 8 (69%).

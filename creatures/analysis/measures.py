@@ -236,6 +236,12 @@ ARMS = {
     "rep_cre17_e2b_s3_revret": "reverse + retain",
     "rep_cre17_qwen_s2_revdw": "reverse + down-weight",
     "rep_cre17_e2b_s3_revdw": "reverse + down-weight",
+    # k3 KL to the anchor on every replayed token, no floor (Tidewater 6993/7009, 7002-7008,
+    # 2026-11-25; plans/reverse_kl.tsv). Same schedule, 256 updates.
+    "rep_cre17_qwen_s2_revkl025": "reverse + KL 0.025",
+    "rep_cre17_e2b_s3_revkl025": "reverse + KL 0.025",
+    "rep_cre17_qwen_s2_revkl100": "reverse + KL 0.1",
+    "rep_cre17_e2b_s3_revkl100": "reverse + KL 0.1",
 }
 
 
