@@ -518,25 +518,30 @@ the entries above (one seed each):
 
 | Run | Best | Next | Reverse family's best |
 |---|---|---|---|
-| Qwen multihop | shuffled undo + floor, epoch 1: -0.02 / 0.01 | floored reverse, anchor Adam (`frev`), 64: -0.16 / 0.00 | reverse + floor, 128: 0.22 / 0.00 |
-| Gemma multihop | `frev`, 64: -0.00 / 0.05 (128: -0.04 / 0.05; 256: -0.00 / 0.04) | shuffled fade 5 widths, epoch 2: -0.37 / -0.17 | reverse + floor, 128: 0.47 / 0.02 |
+| Qwen multihop | shuffled undo + floor, epoch 1: -0.02 / 0.01 | floored reverse with the anchor's Adam second moment, 64: -0.16 / 0.00 | reverse + floor, 128: 0.22 / 0.00 |
+| Gemma multihop | shuffled fade 5 widths, epoch 2: -0.37 / -0.17 | ratio-rule undo, epoch 4: -0.55 / -0.05 | reverse + floor, 128: 0.47 / 0.02 |
 | Qwen creatures | reverse + floor, 64: 0.22 / 0.16 | KL 0.00625 cap 5, 128: 0.13 / 0.15 | (no clean point under any method) |
 | Gemma creatures | reverse + floor, 64: 0.02 / 0.10 | ratio-rule undo, epoch 2: 0.11 / 0.01; down-weight, 64: 0.13 / 0.01 | |
 
-- `frev` (Nov 9 pilot, commit b6c5d15/e2e6fca, multihop only): reverse with the floor at the
-  untrained log-prob alone and `--second_moment anchor` (Adam's second moment carried from
-  the anchor's training, the loss scaled per training step as training's was, no
-  warm-up). It removes the whole hack on both multihop runs and stays there from dose 32
-  to 256 with 0.00-0.05 lost (Qwen dose 32 truncates 3.7%, under the 5% mark): a flat
-  dose response, so no dose has to be chosen. The methods that carry training's Adam
-  state (`frev`, the undos) are far ahead of every fresh-Adam reverse arm on multihop.
-  It was never run on creatures; that is the obvious missing cell.
+- Floored reverse with the anchor's Adam second moment (Nibi jobs 26653448 / 26653480,
+  2026-11-09, commits b6c5d15 / e2e6fca; outputs `rep_<run>_frev`; multihop only, run
+  before `creatures/jobs/repair.sh` took FLOOR and never with SECOND_MOMENT): reverse with
+  the floor at the untrained log-prob alone (before min(untrained, anchor), 2026-11-10)
+  and `--second_moment anchor` (Adam's second moment carried from the anchor's training,
+  the loss scaled per training step as training's was, no warm-up). On Qwen multihop it
+  leaves -0.22 to -0.14 of the hack from dose 32 to 256 with 0.00-0.04 lost (dose 32
+  truncates 3.7%, under the 5% mark): a flat dose response. Its replay is the current one
+  (same completions, identical anchor log-probs). Its Gemma multihop arm predates the
+  prompt-padding fix (38120e0, 2026-11-11; no prompt is tokenized as today's replay) and is
+  not comparable. The methods that carry training's Adam state (this arm, the undos) are
+  ahead of every fresh-Adam reverse arm on Qwen multihop; on creatures only the undos
+  exist, and they are not ahead of reverse + floor.
 - Creatures has no method with a clean point on Qwen; on Gemma several reach about 0.1
   left at <= 0.10 lost, each at one dose of its own.
 
 What separates snapshots, from `common/diagnostics/snapshots.py` over the 72 evaluated
-snapshots of the six reverse arms with per-update dumps (`frev`, down-weight, the four KL
-arms; 8 broken by the answers, 15 broken or losing more than 0.15). Metrics are on the
+snapshots of the six reverse arms with per-update dumps (the floored reverse above,
+down-weight, the four KL arms; the Gemma floored-reverse rows are pre-fix; 8 broken by the answers, 15 broken or losing more than 0.15). Metrics are on the
 replayed completions (revisited every ~15 updates), mean of the 8 updates before the dose:
 - Breakage is visible in the replay's tail: 4% or more of the replayed tokens more than 3
   nats below the anchor (`f3`) flags all 8 broken snapshots and none of the 11 good ones;
