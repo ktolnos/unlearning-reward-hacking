@@ -36,6 +36,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import resource
+import time
+T0 = time.time()  # process start, for the startup time the log reports
 import torch
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -90,8 +92,8 @@ def _replay_adamw():
         runs one tensor at a time on the GPU.
         """
 
-        def __init__(self, groups, lr, betas, eps, moments=None):
-            super().__init__(groups, lr=lr, betas=betas, eps=eps)
+        def __init__(self, groups, lr, betas, eps, moments=None, device="cpu"):
+            super().__init__(groups, lr=lr, betas=betas, eps=eps, device=device)
             self.carry = None
             if moments is not None:
                 # training's layout: the group sizes have to match or this raises
@@ -140,12 +142,13 @@ def set_lr(opt, lr):
         g["lr"] = lr
 
 
-def build_optimizer(kind, model, lr, cfg, moments=None):
+def build_optimizer(kind, model, lr, cfg, moments=None, device="cpu"):
     """`master` is training's own optimizer class; the others are rounded alternatives
-    measured earlier (see --optim), with no second moment to carry."""
+    measured earlier (see --optim), with no second moment to carry. `device` is where
+    `master` keeps its fp32 weights and moments (--optim_device)."""
     groups = training_param_groups(model, cfg["weight_decay"])
     if kind == "master":
-        return _replay_adamw()(groups, lr, cfg["betas"], cfg["eps"], moments)
+        return _replay_adamw()(groups, lr, cfg["betas"], cfg["eps"], moments, device)
     if moments is not None:
         raise SystemExit("--second_moment anchor needs --optim master")
     params = [q for g in groups for q in g["params"]]
@@ -368,6 +371,28 @@ def live_records_of(group, method):
     return out
 
 
+def place(vals, like, m):
+    """[B, T] like `like`, zero but for each completion's per-token values (`vals[j]`,
+    one per completion token) on the positions `m[j]` marks."""
+    out = torch.zeros_like(like)
+    for j, v in enumerate(vals):
+        v = v.to(like.device, like.dtype)
+        sel = m[j].nonzero(as_tuple=True)[0][:len(v)]
+        out[j, sel] = v[:len(sel)]
+    return out
+
+
+def k3(ref_logp, logp):
+    """Schulman's k3, exp(d) - d - 1 with d = log p_ref - log p, per token: zero at the
+    reference, pulling a token that fell below it back exponentially and one above it
+    with a force under 1. Past 10 nats below, exp() continues linearly (the force stays
+    at its 10-nat value) instead of overflowing; until 2026-11-25 a clamp there zeroed
+    the gradient."""
+    d = ref_logp - logp
+    c = d.clamp(max=10.0)
+    return torch.exp(c) * (1.0 + d - c) - d - 1.0
+
+
 def retain_pool(groups, buggy_key):
     """[(group, record)] to hold: not paid by the bug, correct reward at or above the
     group's mean, not capped, with its sampled tokens attached."""
@@ -563,6 +588,15 @@ def main():
     # No default: the two are different methods. Required for reverse and correct.
     replay.add_argument(p)
     p.add_argument("--micro_batch", type=int, default=4)
+    # Throughput only; none of these changes what an update is, up to bf16 summation order.
+    p.add_argument("--optim_device", choices=["cpu", "cuda"], default="cpu",
+                   help="where --optim master keeps its fp32 weights and moments")
+    p.add_argument("--no_grad_ckpt", dest="grad_ckpt", action="store_false",
+                   help="keep activations instead of recomputing them: ~1/3 fewer FLOPs "
+                        "per update for activation memory")
+    p.add_argument("--no_sort_micro", dest="sort_micro", action="store_false",
+                   help="micro-batch a step's completions in sampled order instead of "
+                        "by length, which pads each micro-batch to its longest")
     p.add_argument("--groups_per_step", type=int, default=16)
     p.add_argument("--steps", type=int, default=100)
     # A fixed 1280 once cut 41% of pilot14's replayed sequences while still dividing by
@@ -590,6 +624,9 @@ def main():
     # changes what is being asked:
     #   --kl_ref <hacked ckpt>  "unlearn the creature words, change nothing else"
     #   --kl_ref <base model>   "return to the pre-RL model" -- also discards the RL gain
+    # k3 per replayed token (`k3`), from the reference's log-probs precomputed once per run
+    # (common/floor.py's files); pushed-down tokens settle about log(1 + |A| / beta) below
+    # the reference.
     p.add_argument("--kl_beta", type=float, default=0.0,
                    help="0 disables the KL penalty")
     p.add_argument("--kl_ref", default="",
@@ -752,9 +789,66 @@ def main():
         print(f"floor: {len(down)} pushed-down completions carry min(untrained, anchor) "
               f"log-probs of their tokens", flush=True)
 
+    # Reference log-probs of every completion the replay reads -- the replayed ones and,
+    # with --retain_beta, the retained ones -- from the run's per-checkpoint files
+    # (common/floor.py, keyed by token ids): computed once per run, before the model being
+    # repaired is loaded, and shared by every arm that needs them (--down_weight's ratio,
+    # the drift log, --kl_beta, the retain term). Until 2026-11-25 the anchor's were a
+    # forward pass of the model being repaired inside every arm, and --kl_beta ran a
+    # second, frozen model on every micro-batch.
+    pool, retain_picks, retain_anchor = [], [], {}
+    if args.retain_beta:
+        pool = retain_pool(all_groups, args.buggy_reward)
+        n_ret = args.retain_per_step or args.groups_per_step * len(groups[0]["rs"])
+        by_step = defaultdict(int)
+        for g, r in pool:
+            by_step[int(g["step"]) * 5 // max(args.max_step or 1, 1)] += 1
+        in_replay = {id(g) for g in groups}
+        print(f"retain: {len(pool)} completions the bug did not pay with a correct reward "
+              f"at or above their group's mean, of "
+              f"{sum(len(g['rs']) for g in all_groups)} logged; "
+              f"{sum(id(g) in in_replay for g, _ in pool)} are siblings in replayed groups; "
+              f"by fifth of training {[by_step[i] for i in range(5)]}; "
+              f"{n_ret} an update, weight {args.retain_beta}, {args.retain_shape}", flush=True)
+        if len(pool) < n_ret:
+            raise SystemExit("the retain pool is smaller than one update's draw")
+        rng_ret = random.Random(args.seed + 1)  # its own stream: the replay order is untouched
+        retain_picks = [rng_ret.sample(range(len(pool)), n_ret) for _ in range(args.steps)]
+    retained = [pool[k][1] for k in sorted({i for ps in retain_picks for i in ps})]
+    need_anchor = args.method != "bc" and (
+        (args.iw_track and args.iw_ref == "anchor") or args.retain_beta
+        or (args.kl_beta and args.kl_ref in ("", args.model)))
+    ref_lp, kl_lp = {}, {}  # token-id key -> fp16 log-prob of each completion token
+    if args.method != "bc" and (need_anchor or args.kl_beta):
+        seqs = []
+        for rec in [rec for g in groups for _, rec, _ in live_records_of(g, args.method)] + retained:
+            pids = prompt_ids(rec, tok)
+            rec["_key"] = floor_mod.key(pids, rec["_ids"])
+            seqs.append((pids, rec["_ids"]))
+        run_dir = Path(args.model).parent
+        if need_anchor:
+            ref_lp = floor_mod.load_or_compute(run_dir, args.model, seqs, args.max_len,
+                                               args.micro_batch,
+                                               path=floor_mod.path_of(run_dir, args.model),
+                                               label="anchor")
+        kl_lp = ref_lp
+        if args.kl_beta and args.kl_ref not in ("", args.model):
+            # the untrained model's file is the floor's; any other reference gets its own
+            untrained = args.kl_ref == run["model"]
+            kl_lp = floor_mod.load_or_compute(
+                run_dir, args.kl_ref, seqs, args.max_len, args.micro_batch,
+                path=floor_mod.path_of(run_dir, None if untrained else args.kl_ref),
+                label="untrained" if untrained else "KL reference")
+        for r in retained:
+            retain_anchor[id(r)] = ref_lp[r["_key"]]
+    if args.kl_beta:
+        print(f"KL to {args.kl_ref or args.model}: beta {args.kl_beta}, k3 on every replayed "
+              f"token, from precomputed log-probs", flush=True)
+
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16,
                                                  device_map="cuda")
-    model.gradient_checkpointing_enable()
+    if args.grad_ckpt:
+        model.gradient_checkpointing_enable()
     model.train()
     replay.disable_dropout(model)  # as training did (common.grpo disable_dropout)
     if args.freeze:
@@ -777,19 +871,10 @@ def main():
     optc = training_optimizer()
     moments = (torch.load(Path(args.model) / "adam_moments.pt", map_location="cpu",
                           weights_only=True) if args.second_moment == "anchor" else None)
-    opt = build_optimizer(args.optim, model, args.lr, optc, moments)
+    opt = build_optimizer(args.optim, model, args.lr, optc, moments, args.optim_device)
     del moments
     print(f"optimiser: {args.optim} -> {type(opt).__module__}.{type(opt).__name__}",
           flush=True)
-
-    ref = None
-    if args.kl_beta > 0:
-        ref_path = args.kl_ref or args.model
-        ref = AutoModelForCausalLM.from_pretrained(ref_path, dtype=torch.bfloat16,
-                                                   device_map="cuda")
-        ref.eval()
-        ref.requires_grad_(False)
-        print(f"KL anchor beta={args.kl_beta} ref={ref_path}", flush=True)
 
     # dr_grpo divides by a constant --norm, so a completion cut short by --max_len is
     # under-weighted by exactly the fraction lost -- the length bias dr_grpo exists to
@@ -889,16 +974,8 @@ def main():
             for k, rec in todo:
                 base_logp[k] = torch.tensor(rec["_old"], dtype=torch.float16)
         else:
-            model.eval()
-            with torch.no_grad():
-                for i in range(0, len(todo), args.micro_batch):
-                    ch = todo[i:i + args.micro_batch]
-                    ids, attn, cmask = pack([r for _, r in ch])
-                    lp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
-                    for j, (k, _) in enumerate(ch):
-                        base_logp[k] = lp[j][m[j]].to(torch.float16).cpu()
-                    del ids, attn, cmask, lp, m
-            model.train()
+            for k, rec in todo:
+                base_logp[k] = ref_lp[key_of(rec)]
         if args.method != "bc":
             # kept on disk with the replay's own log-probs (`lp_dir`), keyed alike
             torch.save({key_of(groups[k[0]]["rs"][k[1]]): v for k, v in base_logp.items()},
@@ -909,38 +986,11 @@ def main():
         raise SystemExit("--iw needs the reference pass; drop --no_iw_track")
 
 
-    retain_picks, retain_anchor = [], {}
-    if args.retain_beta:
-        pool = retain_pool(all_groups, args.buggy_reward)
-        n_ret = args.retain_per_step or args.groups_per_step * len(groups[0]["rs"])
-        by_step = defaultdict(int)
-        for g, r in pool:
-            by_step[int(g["step"]) * 5 // max(args.max_step or 1, 1)] += 1
-        in_replay = {id(g) for g in groups}
-        print(f"retain: {len(pool)} completions the bug did not pay with a correct reward "
-              f"at or above their group's mean, of "
-              f"{sum(len(g['rs']) for g in all_groups)} logged; "
-              f"{sum(id(g) in in_replay for g, _ in pool)} are siblings in replayed groups; "
-              f"by fifth of training {[by_step[i] for i in range(5)]}; "
-              f"{n_ret} an update, weight {args.retain_beta}, {args.retain_shape}", flush=True)
-        if len(pool) < n_ret:
-            raise SystemExit("the retain pool is smaller than one update's draw")
-        rng_ret = random.Random(args.seed + 1)  # its own stream: the replay order is untouched
-        retain_picks = [rng_ret.sample(range(len(pool)), n_ret) for _ in range(args.steps)]
-        used = sorted({i for ps in retain_picks for i in ps})
-        model.eval()
-        with torch.no_grad():
-            for i in range(0, len(used), args.micro_batch):
-                ch = [pool[k][1] for k in used[i:i + args.micro_batch]]
-                ids, attn, cmask = pack(ch)
-                lp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
-                for j, r in enumerate(ch):
-                    retain_anchor[id(r)] = lp[j][m[j]].to(torch.float16).cpu()
-                del ids, attn, cmask, lp, m
-        model.train()
-        print(f"retain: anchor log-probs for {len(used)} completions", flush=True)
 
     seen = 0
+    print(f"startup {time.time() - T0:.0f}s before the first update", flush=True)
+    t_last, s_last = time.time(), 0  # wall clock per update, reported every 5
+    toks = [0, 0, 0]  # since the last report: sequence tokens, with padding, completion
     for step in range(args.steps):
         opt.zero_grad(set_to_none=True)
         total_loss, n_seq = 0.0, 0
@@ -963,6 +1013,12 @@ def main():
         # gradient's scale sets the step, so each completion instead weighs what it did
         # in training, advantage / N of its own training step (applied to `adv` below):
         # a replay batch holds 16 live groups where a training batch of N held a few.
+        if args.sort_micro and args.micro_batch > 1:
+            # similar lengths share a micro-batch, so little of it is padding; the step's
+            # gradient is the same sum over the same completions
+            # (not encode(): it counts truncations)
+            flat.sort(key=lambda x: len(prompt_ids(x[1], tok))
+                      + len(x[1].get("_ids") or x[1].get("completion", "")))
         denom = max(len(flat), 1)
         per_step_n = args.second_moment == "anchor" and args.method != "bc"
         if per_step_n:
@@ -975,16 +1031,17 @@ def main():
         drift = {-1: [0.0, 0.0, 0.0], 1: [0.0, 0.0, 0.0]}
         floored = [0, 0]  # pushed-down tokens at or below the floor, of all pushed down
         downw = [0.0, 0, 0]  # --down_weight: sum of weights, pushed-down tokens, weights < 0.05
+        kl_stat = {-1: [0.0, 0], 1: [0.0, 0]}  # --kl_beta: sum of k3, tokens; down / up
         step_lp = []  # this step's per-completion log-probs, written to lp_dir
         for i in range(0, len(flat), args.micro_batch):
             chunk = flat[i:i + args.micro_batch]
             ids, attn, cmask = pack([r for _, r, _ in chunk])
-            tgt = ids[:, 1:]
+            toks[0] += int(attn.sum()); toks[1] += ids.numel(); toks[2] += int(cmask.sum())
             adv = torch.tensor([a / (groups[k[0]]["N"] if per_step_n else 1)
                                 for k, _, a in chunk], dtype=torch.float32).cuda()
 
             logp = token_logp(ids, attn, cmask)
-            m = cmask[:, 1:]
+            m = m_all = cmask[:, 1:]  # m_all: before the floor masks anything out
             if args.method != "bc":
                 with torch.no_grad():
                     for j, (k, r, a) in enumerate(chunk):
@@ -998,11 +1055,7 @@ def main():
                   if args.method != "bc" and args.use_recorded_logprobs else None)
             w = None
             if base_logp:
-                b0 = torch.zeros_like(logp)
-                for j, (k, _, _) in enumerate(chunk):
-                    v = base_logp[k].to(logp.device, logp.dtype)
-                    sel = m[j].nonzero(as_tuple=True)[0][:len(v)]
-                    b0[j, sel] = v[:len(sel)]
+                b0 = place([base_logp[k] for k, _, _ in chunk], logp, m)
                 # clamped for the same reason the KL term is: exp() of a large gap on a
                 # token the policy has nearly zeroed overflows and takes the run with it
                 logr = ((logp - b0) * m).clamp(-10.0, 10.0)
@@ -1050,31 +1103,17 @@ def main():
                 if vw is not None:
                     surr = surr * vw
                 loss = -((surr * m).sum(-1) / args.norm).sum() / denom
-            if ref is not None:
+            if args.kl_beta:
+                # every replayed token, pushed down or up, floored or not (`m_all`):
+                # pushed-down ones settle about log(1 + |A| / beta) below the reference,
+                # a soft floor; normalised like the policy term, so beta is read against
+                # the advantage scale rather than a token mean
+                kl = k3(place([kl_lp[key_of(r)] for _, r, _ in chunk], logp, m_all), logp)
+                loss = loss + args.kl_beta * ((kl * m_all).sum(-1) / args.norm).sum() / denom
                 with torch.no_grad():
-                    rlogits = ref(input_ids=ids, attention_mask=attn).logits[:, :-1]
-                    # Chunked over time. A full log_softmax(.float()) over the vocab is
-                    # [B, T, 152k] fp32 -- 2.2 GB at B=2, T=2048, which is exactly the
-                    # allocation that OOM'd every arm. Under no_grad nothing is retained
-                    # for backward, so slicing bounds the peak to one chunk.
-                    parts = []
-                    for k in range(0, rlogits.size(1), 256):
-                        sl = rlogits[:, k:k + 256].float().log_softmax(-1)
-                        parts.append(sl.gather(
-                            -1, tgt[:, k:k + 256].unsqueeze(-1)).squeeze(-1))
-                        del sl
-                    rlogp = torch.cat(parts, 1)
-                    del rlogits, parts
-                # k3 estimator (Schulman): unbiased, non-negative, low variance.
-                # Clamped because exp() of a large positive d -- a token the reference
-                # likes and the policy has nearly zeroed -- overflows bf16 range and
-                # would take the whole unattended run down with one bad batch.
-                d = (rlogp - logp).clamp(-10.0, 10.0)
-                kl = torch.exp(d) - d - 1.0
-                # normalised exactly like the policy term above, so kl_beta is read
-                # against the advantage scale rather than against a token mean
-                loss = loss + args.kl_beta * ((kl * m).sum(-1) / args.norm).sum() \
-                    / denom
+                    for j, (_, _, a) in enumerate(chunk):
+                        x = kl_stat[-1 if a < 0 else 1]
+                        x[0] += float((kl[j] * m_all[j]).sum()); x[1] += int(m_all[j].sum())
             loss.backward()
             total_loss += loss.item(); n_seq += len(chunk)
 
@@ -1085,11 +1124,7 @@ def main():
                 ch = recs[i:i + args.micro_batch]
                 ids, attn, cmask = pack(ch)
                 logp, m = token_logp(ids, attn, cmask), cmask[:, 1:]
-                a0 = torch.zeros_like(logp)
-                for j, r in enumerate(ch):
-                    v = retain_anchor[id(r)].to(logp.device, logp.dtype)
-                    sel = m[j].nonzero(as_tuple=True)[0][:len(v)]
-                    a0[j, sel] = v[:len(sel)]
+                a0 = place([retain_anchor[id(r)] for r in ch], logp, m)
                 loss, below = retain_penalty(logp, a0, m, args.norm, args.retain_shape)
                 loss = args.retain_beta * loss / len(recs)
                 loss.backward()
@@ -1124,10 +1159,17 @@ def main():
             if downw[1]:
                 d += (f"  push-down weight {downw[0] / downw[1]:.3f} (under 0.05: "
                       f"{downw[2] / downw[1]:.3f})")
+            if kl_stat[-1][1] or kl_stat[1][1]:
+                d += "  k3" + "".join(f" {tag} {kl_stat[g][0] / kl_stat[g][1]:.4f}"
+                                      for g, tag in ((-1, "down"), (1, "up")) if kl_stat[g][1])
             if held[1]:
                 d += (f"  retained {held[0] / held[1]:.4f} nats/token below the anchor, "
                       f"{held[2] / held[1]:.3f} of tokens over 0.1")
             lr_now = opt.param_groups[0]["lr"]
+            k = max(step + 1 - s_last, 1)
+            d += (f"  {(time.time() - t_last) / k:.1f}s/update  tok/update {toks[0] / k:.0f}"
+                  f" (padded {toks[1] / k:.0f}, completion {toks[2] / k:.0f})")
+            t_last, s_last, toks = time.time(), step + 1, [0, 0, 0]
             print(f"step {step:4d}  lr {lr_now:.2e}  loss {total_loss:+.5f}  grad_norm {gn:.3f}  "
                   f"seqs {n_seq}{d}", flush=True)
         # Before either save, so a snapshot records the sequences behind it rather than
@@ -1140,7 +1182,7 @@ def main():
             save_checkpoint(model, tok, d, args.model,
                             repair_state(args, step + 1, seen))
             print(f"  saved intermediate {d}", flush=True)
-            evaluate_snapshot(args, d, step + 1, [x for x in (model, ref) if x is not None])
+            evaluate_snapshot(args, d, step + 1, [model])
         # Datapoint-indexed checkpoints. `seen` only advances in whole steps, so a
         # threshold fires on the first step at or past it; the label is the requested
         # count and the log prints what was actually processed. A threshold landing on the
@@ -1154,7 +1196,7 @@ def main():
                 print(f"  saved {d} at {seen} seqs processed (step {step + 1})",
                       flush=True)
                 evaluate_snapshot(args, d, step + 1,
-                                  [x for x in (model, ref) if x is not None])
+                                  [model])
             else:
                 print(f"  n{n} coincides with the final step ({seen} seqs); "
                       f"{args.out} is that checkpoint", flush=True)
@@ -1167,7 +1209,7 @@ def main():
     save_checkpoint(model, tok, args.out, args.model,
                     repair_state(args, args.steps, seen))
     print(f"saved to {args.out}")
-    evaluate_snapshot(args, args.out, args.steps, [x for x in (model, ref) if x is not None])
+    evaluate_snapshot(args, args.out, args.steps, [model])
 
 
 if __name__ == "__main__":

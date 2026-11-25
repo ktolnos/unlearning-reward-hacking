@@ -169,6 +169,9 @@ $PY -m common.repair \
   ${KL_BETA:+--kl_beta "$KL_BETA"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
   ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \
+  ${NO_GRAD_CKPT:+--no_grad_ckpt} \
+  ${NO_SORT_MICRO:+--no_sort_micro} \
   ${FLOOR:+--floor} \
   ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
   ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \

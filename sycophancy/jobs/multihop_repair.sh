@@ -19,10 +19,15 @@
 # SNAP_DIR (default $URH_OUT/runs) is where the snapshots and final weights go, e.g. a
 # node-local disk whose eval queue reads them before the job ends; see the end.
 # WARMUP (default 8, 0 for the old constant schedule) is common.repair's --warmup_steps.
+# Throughput knobs (common.repair; none changes what an update is, up to bf16 order):
+# OPTIM_DEVICE=cuda keeps the fp32 masters and moments on the GPU, NO_GRAD_CKPT=1 keeps
+# activations, NO_SORT_MICRO=1 micro-batches in sampled order rather than by length.
 # FLOOR=1 floors either method at min(untrained, anchor) per token (common/floor.py):
 # floored reverse with METHOD=reverse, floored undo with METHOD=undo. The log-probs are
 # kept in $RUNS/$RUN/untrained_logprobs.pt and anchor_logprobs_checkpoint-$ANCHOR.pt and
 # reused. START=bf16|fp32 is the undo's start.
+# KL_BETA adds common.repair's k3 KL penalty to the anchor (KL_REF: another reference)
+# on every replayed token, from precomputed log-probs (anchor_logprobs_checkpoint-$ANCHOR.pt).
 # SECOND_MOMENT=anchor starts reverse's Adam second moment from the anchor's (with
 # WARMUP=0); see common.repair --second_moment.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
@@ -134,12 +139,17 @@ else
   --save_at_steps "${SAVE_AT_STEPS:-8,16,24,32,40,48}" \
   --micro_batch "$MICRO_BATCH" \
   ${LR:+--lr "$LR"} \
+  ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \
+  ${NO_GRAD_CKPT:+--no_grad_ckpt} \
+  ${NO_SORT_MICRO:+--no_sort_micro} \
   ${OPTIM:+--optim "$OPTIM"} \
   ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
   ${FLOOR:+--floor} \
   ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
   ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
   ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
+  ${KL_BETA:+--kl_beta "$KL_BETA"} \
+  ${KL_REF:+--kl_ref "$KL_REF"} \
   ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
   ${FREEZE:+--freeze "$FREEZE"}
 fi

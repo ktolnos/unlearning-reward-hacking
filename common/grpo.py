@@ -278,12 +278,16 @@ class MasterAdamW(torch.optim.Optimizer):
     only the update itself is exact.
     """
 
-    def __init__(self, params, lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0):
+    def __init__(self, params, lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0,
+                 device="cpu"):
+        # device="cuda" keeps the masters and moments beside the weights (12 bytes per
+        # trainable weight, 48 GB for Qwen3-4B), so the update runs as fused CUDA AdamW
+        # instead of on the host: worth it on a card with the room (B200), not on an L40S.
         super().__init__(params, dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay))
         self.masters = []
         for g in self.param_groups:
             for p in g["params"]:
-                m = torch.empty(p.shape, dtype=torch.float32, device="cpu")
+                m = torch.empty(p.shape, dtype=torch.float32, device=device)
                 m.copy_(p.detach())
                 m.requires_grad_(True)  # a leaf, so assigning .grad below is legal
                 self.masters.append(m)
@@ -293,7 +297,7 @@ class MasterAdamW(torch.optim.Optimizer):
             lr=lr, betas=betas, eps=eps, fused=True)
         self.no_grad_seen = 0
         n = sum(m.numel() for m in self.masters)
-        print(f"master weights: {n / 1e9:.2f}B fp32 on the CPU, AdamW moments beside them",
+        print(f"master weights: {n / 1e9:.2f}B fp32 on {device}, AdamW moments beside them",
               flush=True)
 
     def _offsets(self):
@@ -317,7 +321,7 @@ class MasterAdamW(torch.optim.Optimizer):
                 missing += 1
                 continue
             if m.grad is None:
-                m.grad = torch.empty(p.shape, dtype=torch.float32)
+                m.grad = torch.empty(p.shape, dtype=torch.float32, device=m.device)
             m.grad.copy_(p.grad)
         if missing and not self.no_grad_seen:
             print(f"master: {missing}/{len(self.masters)} trainable tensors got no "
