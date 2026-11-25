@@ -41,9 +41,9 @@ def model_config(model):
 
 def _venv_toolkit():
     """The venv's own CUDA toolkit (site-packages/nvidia/cu13, from vLLM's cu13 extra), or
-    None unless its nvcc is the release of its headers: nvcc refuses headers of another
-    version, so a mismatch (13.4 against torch's 13.0 before pyproject.toml pinned it)
-    would fail FlashInfer's build at engine start."""
+    None unless nvcc, nvvm and crt are all the release of its headers: any mismatch (13.4
+    pieces beside torch's 13.0 headers before pyproject.toml pinned them) fails
+    FlashInfer's build at engine start."""
     import importlib.util
     import re
     import subprocess
@@ -60,7 +60,17 @@ def _venv_toolkit():
             ver = int(re.search(r"#define CUDA_VERSION (\d+)", header.read_text()).group(1))
         except Exception:  # noqa: BLE001 -- unusable: as if absent
             continue
-        if rel and (int(rel.group(1)), int(rel.group(2))) == (ver // 1000, ver % 1000 // 10):
+        want = (ver // 1000, ver % 1000 // 10)
+        if not rel or (int(rel.group(1)), int(rel.group(2))) != want:
+            continue
+        # nvcc's pieces ship separately: nvvm writes the PTX that nvcc's ptxas assembles,
+        # and a newer nvvm fails every kernel ("Unsupported .version 9.4", job 6993)
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            parts = [version(p) for p in ("nvidia-cuda-nvcc", "nvidia-nvvm", "nvidia-cuda-crt")]
+        except PackageNotFoundError:
+            continue
+        if all(tuple(int(x) for x in v.split(".")[:2]) == want for v in parts):
             return home
     return None
 

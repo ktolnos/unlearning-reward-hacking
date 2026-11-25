@@ -41,4 +41,6 @@ ifbench = { git = "https://github.com/allenai/IFBench", rev = "cd189a9c2889526d8
 # version, so FlashInfer could not JIT its kernels from the venv's own toolkit.
 # common/engine.py uses this toolkit on nodes without one (Tidewater): FlashInfer
 # generated 46% (Qwen) and 7% (Gemma) faster than the backends that need no nvcc.
-constraint-dependencies = ["nvidia-cuda-nvcc==13.0.*"]
+# nvcc's own dependencies too: nvidia-nvvm writes the PTX that nvcc's ptxas assembles, and
+# a 13.4 nvvm beside a 13.0 nvcc fails every kernel ("Unsupported .version 9.4", job 6993).
+constraint-dependencies = ["nvidia-cuda-nvcc==13.0.*", "nvidia-nvvm==13.0.*", "nvidia-cuda-crt==13.0.*"]
