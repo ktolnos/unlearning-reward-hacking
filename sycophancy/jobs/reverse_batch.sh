@@ -253,5 +253,6 @@ wpids=()
 for ((w = 0; w < ngpu * WORKERS_PER_GPU; w++)); do worker $((w % ngpu)) & wpids+=($!); sleep 2; done
 wait "${wpids[@]}"
 kill $sampler 2>/dev/null
-say "finished: $(ls "$state/done" | wc -l) stages done, $(ls "$state/fail" | wc -l) failed; $(awk -F', ' '{u+=$3; n++; if ($4 > m) m = $4} END {if (n) printf "GPU utilization %.0f%% mean over %d samples, peak memory %.0f GiB", u/n, n, m/1024}' "$state/gpu.$job.csv")"
+# this job's stages only: done/ and fail/ are shared by every job of the plan
+say "finished: $(grep -c "\[$job\] .* done in " "$state/batch.log") stages done, $(grep -c "\[$job\] .* FAILED after " "$state/batch.log") failed; $(awk -F', ' '{u+=$3; n++; if ($4 > m) m = $4} END {if (n) printf "GPU utilization %.0f%% mean over %d samples, peak memory %.0f GiB", u/n, n, m/1024}' "$state/gpu.$job.csv")"
 ls "$state/fail" | sed 's/^/  failed: /'
