@@ -27,7 +27,7 @@ updated; "carried" means updated from the anchor's starting value.
 | reverse pilot | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | none | none | |
 | reverse + floor | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | min(u, a), stop | none | |
 | reverse + floor (2026-11-09) | RL Adam, carried | lr 1e-6, no warm-up | 16 | per training step (1/N) | shuffled, repeating | untrained, stop | none | |
-| reverse + retain | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | none | none | retain term |
+| reverse + retain | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | none (retain's anchor hinge covers 64-65% of pushed-up on cre) | none | retain term |
 | reverse + down-weight | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | anchor, IW | none | |
 | reverse + KL | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | anchor, k3 restoring | anchor, k3 | |
 | undo, ordered | RL Adam, frozen | training's per-step lr and momentum factor (alpha 1) | one training step's groups | per training step | newest first, one pass | none / min(u, a) stop / fade | none | |
@@ -188,13 +188,25 @@ pushed-up side is harmful:
 - **Against:** down-weight collapsed with its pushed-up side rising.
 - As a separator, pushed-up tokens more than 1 nat below scores AUROC 0.80.
 
-**Looking better:** asymmetric. A pushed-up lower bound is a cheap untested arm.
+Lower bounds on the pushed-up side have been applied twice, never next to a floor:
+- **KL** pulls a pushed-up token back once it falls below the anchor, with the same
+  restoring force as on the pushed-down side. Symmetric.
+- **The retain arm**, through overlap. The retain pool (completions the bug did not pay
+  with a correct-reward advantage >= 0) includes the replayed groups. On cre, 64-65% of
+  pushed-up completions are in it, and they make up 30-34% of its draws. On mh the
+  figures are 17-27% and 1-2%. Its squared hinge below the anchor is therefore partly a
+  pushed-up lower bound on cre, in an arm with no limit on the pushed-down side. It
+  hardly ever applied: retained tokens moved at most 0.01 nats there, and pushed-up
+  tokens rose (+0.10).
+
+**Looking better:** asymmetric. The untested combination is a floor on the pushed-down
+side plus a lower bound on the pushed-up side.
 
 ## 10. Retain set
 
 | Variant | Data points |
 |---|---|
-| retain term: squared hinge below the anchor on clean logged completions, beta 1, fresh Adam | Not better than the floor. On mh its own tokens were dragged down (0.18-0.28 nats/token) and Qwen mh broke at 128. On cre the force stayed near zero; Gemma kept capability but overshot to -1.18; Qwen removed almost nothing. |
+| retain term: squared hinge below the anchor on logged completions the bug did not pay (correct-reward advantage >= 0), beta 1, fresh Adam. On cre two-thirds of the pushed-up completions are in its pool (section 9). | Not better than the floor. On mh its own tokens were dragged down (0.18-0.28 nats/token) and Qwen mh broke at 128. On cre the force stayed near zero; Gemma kept capability but overshot to -1.18; Qwen removed almost nothing. |
 | fixed retained completions as a diagnostic | On mh it tracks breakage (about -0.17 at every broken snapshot). On cre it rises in every arm. |
 
 **Does it do its job?** No: it did not hold the tokens it was meant to hold. It ran once,
