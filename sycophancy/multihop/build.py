@@ -68,8 +68,8 @@ def main(argv=None):
             break
     print(f"{args.split}: {len(rows)} candidate rows at {data.DISTRACTORS} distractors", flush=True)
 
-    llm = vllm.LLM(model=args.writer, max_model_len=4096, gpu_memory_utilization=0.9,
-                   seed=args.seed, enable_prefix_caching=True)
+    from common import engine
+    llm = engine.build(args.writer, max_model_len=4096, gpu_frac=0.9, seed=args.seed)
     params = vllm.SamplingParams(n=args.samples, temperature=0.8, top_p=0.95,
                                  max_tokens=32, seed=args.seed)
     convs = [[{"role": "user", "content": INSTRUCTION.format(

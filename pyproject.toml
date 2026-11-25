@@ -34,3 +34,11 @@ module-name = ["common", "creatures", "sycophancy"]
 
 [tool.uv.sources]
 ifbench = { git = "https://github.com/allenai/IFBench", rev = "cd189a9c2889526d8af901d2103fd3e1ffcea6df" }
+
+[tool.uv]
+# vLLM's cu13 extra pulls nvcc (through humming-kernels) with no version pin, which
+# resolved to 13.4 against torch's 13.0 CUDA headers; nvcc refuses headers of another
+# version, so FlashInfer could not JIT its kernels from the venv's own toolkit.
+# common/engine.py uses this toolkit on nodes without one (Tidewater): FlashInfer
+# generated 46% (Qwen) and 7% (Gemma) faster than the backends that need no nvcc.
+constraint-dependencies = ["nvidia-cuda-nvcc==13.0.*"]

@@ -1,6 +1,7 @@
 """vLLM engine construction, shared by every offline generation script."""
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -24,6 +25,148 @@ def stop_ids(model_id, tokenizer):
     return sorted(allowed)
 
 
+def model_config(model):
+    """`model`'s config.json as a dict: a local checkpoint's, or a hub id's from the cache
+    (or the hub); {} when there is none."""
+    import json
+    try:
+        cfg = Path(model) / "config.json"
+        if not cfg.exists():
+            from huggingface_hub import hf_hub_download
+            cfg = Path(hf_hub_download(str(model), "config.json"))
+        return json.loads(cfg.read_text())
+    except Exception:  # noqa: BLE001 -- no config found
+        return {}
+
+
+def _venv_toolkit():
+    """The venv's own CUDA toolkit (site-packages/nvidia/cu13, from vLLM's cu13 extra), or
+    None unless its nvcc is the release of its headers: nvcc refuses headers of another
+    version, so a mismatch (13.4 against torch's 13.0 before pyproject.toml pinned it)
+    would fail FlashInfer's build at engine start."""
+    import importlib.util
+    import re
+    import subprocess
+    spec = importlib.util.find_spec("nvidia")
+    for root in (spec.submodule_search_locations if spec else None) or []:
+        home = Path(root, "cu13")
+        nvcc, header = home / "bin" / "nvcc", home / "include" / "cuda.h"
+        if not (nvcc.exists() and header.exists()):
+            continue
+        try:
+            out = subprocess.run([str(nvcc), "--version"], capture_output=True, text=True,
+                                 timeout=30).stdout
+            rel = re.search(r"release (\d+)\.(\d+)", out)
+            ver = int(re.search(r"#define CUDA_VERSION (\d+)", header.read_text()).group(1))
+        except Exception:  # noqa: BLE001 -- unusable: as if absent
+            continue
+        if rel and (int(rel.group(1)), int(rel.group(2))) == (ver // 1000, ver % 1000 // 10):
+            return home
+    return None
+
+
+def _have_nvcc():
+    """Whether vLLM's FlashInfer can JIT its kernels: a system nvcc, or the venv's own
+    toolkit, which this then exports as CUDA_HOME (FlashInfer reads it; vLLM's engine
+    processes inherit it). With the venv's toolkit FlashInfer generated 46% (Qwen) and 7%
+    (Gemma) faster than FlashAttention 4 / Triton on a B200 (2026-11-24)."""
+    import shutil
+    home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH") or "/usr/local/cuda"
+    if shutil.which("nvcc") or Path(home, "bin", "nvcc").exists():
+        return True
+    venv = _venv_toolkit()
+    if venv is not None:
+        os.environ["CUDA_HOME"] = str(venv)
+        return True
+    return False
+
+
+def _compute_capability():
+    """The first visible GPU's (major, minor), from nvidia-smi rather than torch, so this
+    process does not initialise CUDA before vLLM spawns its engine."""
+    import subprocess
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=30).stdout.split()
+        major, minor = out[0].split(".")
+        return int(major), int(minor)
+    except Exception:  # noqa: BLE001 -- no GPU visible: leave the choice to vLLM
+        return None
+
+
+def attention_backend(model, spec=None):
+    """The attention backend to ask vLLM for, or None for vLLM's own choice.
+
+    `spec` ($ENGINE_ATTENTION_BACKEND) overrides: entries are `model_type=BACKEND` or a
+    bare BACKEND, the default. Without it: vLLM's choice wherever a CUDA toolkit is
+    installed or the venv's own is usable (`_have_nvcc`). On Blackwell without one, vLLM takes FlashInfer, which JIT-builds its
+    attention kernels with nvcc and fails at engine start (Tidewater, 2026-11-24), so ask
+    for FlashAttention (4), except above head dim 128, where FA4 asserts on Gemma 4's
+    head-dim-256 paged KV cache and Triton is used. Elsewhere vLLM already picks a backend
+    that needs no compiler (FlashAttention on Hopper).
+    """
+    cfg = model_config(model)
+    if spec:
+        default = None
+        for entry in (e.strip() for e in spec.split(",") if e.strip()):
+            key, sep, val = entry.partition("=")
+            if not sep:
+                default = entry
+            elif key.strip() == cfg.get("model_type"):
+                return val.strip()
+        return default
+    if _have_nvcc():
+        return None
+    cap = _compute_capability()
+    if cap is None or cap[0] < 10:
+        return None
+    text = cfg.get("text_config", cfg)
+    head = max(text.get("head_dim") or 0, text.get("global_head_dim") or 0)
+    return "TRITON_ATTN" if head > 128 else "FLASH_ATTN"
+
+
+def _stable_path(model):
+    """A path for `model` that is the same from one eval to the next.
+
+    vLLM keys its torch.compile cache on the model's path, so every snapshot directory
+    compiled afresh (30-60 s an engine, 30 cache entries used once each, 2026-11-24). A
+    local checkpoint is opened through a symlink named by its model type and a slot, the
+    slot locked for this process's life so concurrent engines in one job never share it;
+    /tmp is private to each job, so the next job finds the same names. Hub ids are left
+    alone (their path does not change).
+    """
+    import atexit
+    import shutil
+    src = Path(model)
+    if not (src / "config.json").exists():
+        return model
+    base = Path(os.environ.get("SLURM_TMPDIR") or "/tmp") / "vllm-models"
+    base.mkdir(parents=True, exist_ok=True)
+    mtype = model_config(model).get("model_type", "model")
+    for slot in range(64):
+        lock = base / f"{mtype}-{slot}.lock"
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            try:  # reclaim a slot whose holder is gone
+                os.kill(int((lock / "pid").read_text()), 0)
+                continue
+            except (OSError, ValueError):
+                shutil.rmtree(lock, ignore_errors=True)
+                try:
+                    lock.mkdir()
+                except FileExistsError:
+                    continue
+        (lock / "pid").write_text(str(os.getpid()))
+        link = base / f"{mtype}-{slot}"
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(src.resolve(), target_is_directory=True)
+        atexit.register(shutil.rmtree, lock, True)
+        return str(link)
+    return model
+
+
 def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     """An offline vLLM engine. `max_model_len` defaults to $MAX_MODEL_LEN, `gpu_frac` to
     $ENGINE_GPU_FRAC or 0.93, for an engine that has the card to itself. 0.93 rather than
@@ -34,6 +177,11 @@ def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     (jobs/eval_pack.sh): sized from `gpu_frac`, vLLM profiles free memory at startup and
     counts a neighbour's concurrent allocations as its own -- three engines starting
     together each computed -11 GiB of KV cache and refused to start.
+
+    The attention backend is chosen to run without a CUDA toolkit (`attention_backend`),
+    a multimodal model runs text-only (every eval here is text; Gemma 4's warmup of
+    its image, audio and video processing took 24 s an engine), and a local checkpoint is opened
+    through a stable path so the compile cache is reused (`_stable_path`).
     """
     import vllm
 
@@ -42,8 +190,21 @@ def build(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     if os.environ.get("ENGINE_KV_CACHE_GIB"):
         kw.setdefault("kv_cache_memory_bytes",
                       int(float(os.environ["ENGINE_KV_CACHE_GIB"]) * 2**30))
+    # Throughput only: how many sequences one engine step may decode. vLLM's default
+    # suits a card it shares with nothing; raise it on a large one if the KV cache allows.
+    if os.environ.get("ENGINE_MAX_NUM_SEQS"):
+        kw.setdefault("max_num_seqs", int(os.environ["ENGINE_MAX_NUM_SEQS"]))
+    if "attention_backend" not in kw:
+        if backend := attention_backend(model, os.environ.get("ENGINE_ATTENTION_BACKEND")):
+            kw["attention_backend"] = backend
+    # Every modality off at once: Gemma 4 also takes video, which a per-modality
+    # limit_mm_per_prompt missed, and one modality left on keeps the warmup.
+    cfg = model_config(model)
+    if (cfg.get("vision_config") or cfg.get("audio_config")) \
+            and "limit_mm_per_prompt" not in kw:
+        kw.setdefault("language_model_only", True)
     if max_model_len is None:
         max_model_len = int(os.environ.get("MAX_MODEL_LEN", "2048"))
-    return vllm.LLM(model=model, gpu_memory_utilization=gpu_frac,
+    return vllm.LLM(model=_stable_path(model), gpu_memory_utilization=gpu_frac,
                     max_model_len=max_model_len, enable_prefix_caching=True,
                     seed=seed, **kw)
