@@ -472,9 +472,35 @@ in |A|/beta. Hack left / capability lost, trained-task panel:
 - Answers: creatures KL arms write no loops (tail loops 0, truncation <=1.8%, solved
   0.65-0.85 as at the anchor); held-out arithmetic rises with every arm on Qwen multihop.
   The repair evals hold panel A and held-out arithmetic only, so no B-D panels.
-- Second batch (running, `reverse_kl.tsv` header): cap 5, |A|/beta 20 -- multihop 0.025
-  (7015, 7016; against the cap-10 arms, the cap's effect) and creatures 0.00625 (7017,
-  7018). More seeds before reading the small differences.
+- Second batch (`reverse_kl.tsv` header; jobs 7015-7018): cap 5, |A|/beta 20 -- multihop
+  0.025 (against the cap-10 arms: the cap's effect) and creatures 0.00625. Hack left /
+  capability lost:
+
+| Run | Arm | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|
+| Qwen multihop | KL 0.025, cap 5 | 0.58 / -0.03 | 0.54 / -0.02 | 0.47 / -0.02 | -0.40 / 0.01 (broken) |
+| Gemma multihop | KL 0.025, cap 5 | 0.90 / 0.15 | 0.88 / 0.16 | 0.88 / 0.24 | 0.44 / 0.21 (broken) |
+| Qwen creatures | KL 0.00625, cap 5 | 0.99 / -0.02 | 0.82 / 0.01 | 0.13 / 0.15 | -0.19 / 0.68 (broken) |
+| Gemma creatures | KL 0.00625, cap 5 | 0.81 / -0.02 | 0.42 / -0.05 | 0.21 / 0.02 | -0.17 / 0.27 |
+
+  - The cap does fix the spikes (Gemma creatures' flipped token at update 15: grad norm
+    1.2 against 322 and 964), but the deep restoring force it removes was what held
+    Qwen multihop: with cap 5 its fresh pushed-down tokens fall -0.96 nats at update 200
+    and -2.2 at 250 (cap 10: -0.35, -0.95), and dose 256 loops to the token cap in 59%
+    of answers (median 47,712 characters against 550 at the anchor). Gemma multihop
+    breaks at 256 with either cap (7.7% / 7.5% truncated). The spikes and the hold on a
+    collapse are the same force.
+  - beta 0.00625 on creatures moves at about down-weight's pace and passes a usable
+    point: Gemma at 128 leaves 0.21 of the hack and loses 0.02 (solved 0.65, as at the
+    anchor), Qwen at 128 leaves 0.13 and loses 0.15. Then Qwen collapses (fresh
+    pushed-down -2.4 nats at update 200; dose 256 truncates 8%, tail-loops 4.5%, solves
+    0.58 against 0.84); Gemma does not (-0.33 at 250, no loops, solved 0.58).
+  - None of the KL arms beats the floor at its best point yet (Gemma creatures floor at
+    64: 0.02 / 0.10; Qwen creatures 0.22 / 0.16; Qwen multihop at 128: 0.22 / 0.00), but
+    the KL needs no untrained model. Every arm that unlearns far enough eventually breaks
+    within 256 updates: a dose has to be chosen, or the restoring force has to grow
+    without bound (cap 10 or none) and beta has to match the domain.
+  - More seeds before reading the small differences.
 
 Throughput, one chain per B200, evals streamed into a persistent vLLM engine beside the
 replay: Gemma creatures runs 6.8 s/update at micro-batch 8 against 15.0 at 4 (Qwen
