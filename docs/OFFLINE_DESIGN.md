@@ -1,170 +1,94 @@
 # Offline repair: the open decisions
 
-State on 2026-11-25. This covers only choices that are still open, the ones that steer the
-next experiments. For each decision it gives the variants, the evidence, how well each
-variant does its job by its own mechanism, how much the decision seems to matter, and
-where it sits in the tuning order. Sources are the dated entries of `docs/LOG.md`.
+State on 2026-11-25. This covers choices that are still open, the ones that steer the next
+experiments. Nothing here is settled. Each choice is marked by how strong its support is:
+
+- **looking better**: one variant leads, on more than one run or with a mechanism check.
+- **good enough so far**: the current choice has not been shown to be a problem.
+- **open**: no clear lead.
+- **untested**.
 
 Conventions:
-- **Cells:** hack left / capability lost on the trained-task panel. Hack left is 1 at the
-  anchor, 0 at the untrained model, and negative past it.
+- **Cells:** hack left / capability lost on the trained-task panel, from the dated entries
+  of `docs/LOG.md`. Hack left is 1 at the anchor, 0 at the untrained model, and negative
+  past it.
 - **Testbeds:** four pilot anchors, one seed each. Gemma rows from before the padding fix
   (2026-11-11) are left out.
 - **Labels:** "mh" is multihop, "cre" is creatures.
 
+## The experiments as data points
+
+Every experiment family sets many properties at once. This matrix is what makes the
+comparisons below confounded. "RL Adam, frozen" means the anchor's second moment, not
+updated; "carried" means updated from the anchor's starting value.
+
+| Family | 2nd moment | Step size | Groups / update | Loss scale | Order | Lower bound: baseline, penalty | Upper bound | Other |
+|---|---|---|---|---|---|---|---|---|
+| reverse pilot | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | none | none | |
+| reverse + floor | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | min(u, a), stop | none | |
+| reverse + floor (2026-11-09) | RL Adam, carried | lr 1e-6, no warm-up | 16 | per training step (1/N) | shuffled, repeating | untrained, stop | none | |
+| reverse + retain | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | none | none | retain term |
+| reverse + down-weight | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | anchor, IW | none | |
+| reverse + KL | fresh | lr 1e-6, 8 warm-up | 16 | per batch | shuffled, repeating | anchor, k3 restoring | anchor, k3 | |
+| undo, ordered | RL Adam, frozen | training's per-step lr and momentum factor (alpha 1) | one training step's groups | per training step | newest first, one pass | none / min(u, a) stop / fade | none | |
+| undo, shuffled | RL Adam, frozen | as above | about 2.6 (mh), 3.6 (cre) | per training step | shuffled epochs | min(u, a): stop, fade, ratio (IW) | none or max(u, a) stop | |
+
+All of these take gradients at the current weights and replay the negated bug advantage.
+
 ## Summary
 
-| Decision | Matters? | Best-supported choice now | Tune when |
+| Property | Matters? | Status | Current lead |
 |---|---|---|---|
-| A. Update rule: reverse vs undo | yes; the best per run splits between them | keep both for now | after B |
-| B. Optimizer state: the RL run's Adam vs a fresh one | likely large on mh; unknown on cre | the RL run's (tentative) | **first** |
-| C. Lower-bound baseline | anchor vs untrained-referenced: yes; untrained vs min(untrained, anchor): negligible under the floor | untrained-referenced | settled unless the untrained model is unavailable |
-| D. What happens past the lower bound | yes; this decides whether a run collapses | hard stop (floor) | second, with E |
-| E. Response-level regularization | untested; the collapse pattern points to it | candidate on top of the floor | second, with D |
-| F. Upper bound on pushed-up tokens | yes, and negative: the cap slows unlearning on cre | no upper bound | settled for now |
-| G. Pushed-up vs pushed-down treatment | yes | asymmetric: limit only the pushed-down side | follows from D and F |
-| H. Retain set | low, as tried | not as a loss; keep it as a diagnostic | after B, if at all |
-| I. Data order: shuffled vs ordered | small at one pass | shuffled (allows epochs) | low |
-| J. Dose and stopping | as large as the method choice | a method whose curve flattens | after D and E |
+| 1. Second moment: fresh / RL carried / RL frozen | likely large on mh, unknown on cre | open, leaning RL | RL Adam |
+| 2. Step size: lr, warm-up, loss scale, momentum factor | likely, bundled with 1 | open | none |
+| 3. Batch: groups per update | unknown | untested on its own | none |
+| 4. Data order | small at one pass | good enough so far | shuffled |
+| 5. Dose: passes over the replay set | as large as the method | open | none, unless a curve flattens |
+| 6. Lower-bound baseline | anchor vs untrained-referenced: yes; untrained vs min: small under a stop | looking better | untrained-referenced |
+| 7. Penalty past the lower bound | yes; decides collapse | looking better | hard stop (floor) |
+| 8. Upper bound: whether, baseline, penalty | yes; the one tried hurts cre | looking better | no upper bound |
+| 9. Pushed-up vs pushed-down treatment | yes, via 7 and 8 | looking better | asymmetric |
+| 10. Retain set | low, as tried | open (tried once, fresh Adam) | not as a loss |
+| 11. Response-level regularization | unknown | untested | none |
+| 12. Unlearning signal (advantage rule) | yes | looking better | negated bug advantage |
+| 13. Stopping rule | as large as 5 | open (one rule failed) | none |
+| 14. Where the gradient is taken; token scale | unknown | untested in outcome runs | current weights, no token scale |
 
 ---
 
-## A. Update rule: reverse vs undo
+## 1. Second moment
 
-Reverse computes each step's gradient at the current weights and steps with an optimizer.
-Undo subtracts each training step's bug share, computed at the anchor's weights, scaled
-by training's per-step factor, with no feedback (`common.undo`).
-
-| Variant | Evidence |
-|---|---|
-| reverse (+ floor) | Best on both cre runs: Qwen 0.22 / 0.16 and Gemma 0.02 / 0.10, both at dose 64. Does not break through 128. |
-| undo (shuffled, + floor) | Best on Qwen mh: -0.02 / 0.01 at epoch 1. Every limit breaks it at four epochs (LOG 2026-11-21). |
-
-**Matters?** Yes. The best method differs by run, but each family was tuned separately, so
-this is not a clean comparison. **Tune after B:** reverse with the RL run's Adam state
-sits between the two families, and that comparison may settle this one.
-
-## B. Optimizer state: the RL run's Adam vs a fresh one
-
-The RL run's Adam means the second moment from the anchor's training, with the loss scaled
-per training step and no warm-up (`--second_moment anchor`). A fresh AdamW uses lr 1e-6
-and 8 warm-up updates.
-
-| Variant | Evidence (Qwen mh) | Confounds |
+| Variant | Data points | Confounds |
 |---|---|---|
-| RL run's Adam, reverse + floor at untrained (2026-11-09) | -0.22 / -0.03 at 32, -0.16 / 0.00 at 64, -0.14 / 0.04 at 256. Flat. | The loss scaling and the warm-up differ too. The floor baseline differs, but it is near-equivalent (section C). |
-| fresh Adam, reverse + floor at min(untrained, anchor) | 0.39 / 0.00 at 32, 0.27 / 0.01 at 64, 0.22 / -0.00 at 128. Flattens at 0.22. | |
-| training's per-step scales (undo) | Qwen mh is best of all. On cre the floored undo at epoch 2 (0.31 / 0.21, 0.32 / 0.04) is worse than fresh-Adam reverse + floor. | different update rule |
+| fresh | Reverse + floor, Qwen mh: 0.39 / 0.00 at 32, 0.27 / 0.01 at 64, plateau 0.22 at 96-128. Cre, at 64: Qwen 0.22 / 0.16, Gemma 0.02 / 0.10. | |
+| RL Adam, carried | Reverse + floor (2026-11-09), Qwen mh: -0.22 / -0.03 at 32, -0.16 / 0.00 at 64, -0.14 / 0.04 at 256; flat. No cre run. | Step size: loss scale, no warm-up. The floor baseline differs, but under a stop the two baselines are nearly the same rule (section 6). |
+| RL Adam, frozen | Shuffled floored undo, epoch 1: Qwen mh -0.02 / 0.01, the best on that run. Cre at epoch 2: Qwen 0.31 / 0.21, Gemma 0.32 / 0.04, both behind fresh-Adam reverse + floor. | Step size, batch, order and dose units all differ. |
 
-**Does it do its job?** The point of carrying the RL run's Adam is that each weight then
-steps by the size training gave it. On Qwen mh the curve flattens at the untrained level
-instead of at 0.22 left. There is no cre data for reverse with this setting.
+**Does it do its job?** The idea is that each weight steps by the size training gave it.
+On Qwen mh both RL variants reach the untrained level. The fresh one plateaus at 0.22. On
+cre the only RL data point (frozen, undo) is not ahead.
 
-**Matters?** Probably a lot: on Qwen mh it is a 0.38 difference in hack left at equal cost.
-It also sets the step size that every other knob (beta, widths, dose) interacts with.
-**Tune first.** Reverse + floor at min(untrained, anchor) with `--second_moment anchor`
-and no warm-up, all four anchors, against the existing fresh-Adam arm. 4 single-GPU jobs.
+**Matters?** Probably a lot on mh: a 0.38 difference in hack left at equal capability. It
+also sets the step size that every other knob interacts with. **Tune first.** Reverse +
+floor with `--second_moment anchor` and no warm-up against the fresh-Adam arm, all four
+anchors.
 
-## C. Lower-bound baseline: anchor, untrained, min(anchor, untrained)
+## 2. Step size: lr, warm-up, loss scale, momentum
 
-| Variant | Used by | Evidence |
-|---|---|---|
-| anchor | down-weight (push x min(1, p_now / p_anchor)), KL (k3) | Down-weight collapses in three runs. KL holds the hack at beta 0.025-0.1, breaks at lower beta or a lower cap. The hack lives in tokens RL raised above the untrained level, and an anchor reference resists moving exactly those. |
-| untrained | floor (2026-11-09) | Qwen mh good at every dose (with the RL run's Adam). |
-| min(untrained, anchor) | floor (since 2026-11-10), ratio rule; the band [min, max] for fade | Reverse + floor stable through 128 on all four runs. The ratio rule breaks at four epochs (undo). |
+These are inseparable in the data. Reverse uses lr 1e-6 (training used 2e-6), a fresh
+first moment, and either an 8-update warm-up with a per-batch loss or no warm-up with a
+per-training-step loss. The undo uses training's own per-step lr and momentum factor at
+alpha 1. No lr or alpha sweep exists for reverse. For the undo, ordered floored runs at
+alpha 2 reach Qwen mh -0.17 / 0.01 and Qwen cre 0.00 / 0.29. **Open.** It is bundled with
+1 in every comparison, and the test for 1 fixes the step convention.
 
-**Under a hard stop, untrained and min(untrained, anchor) are nearly the same rule.** A
-pushed-down token starts at the anchor. Where the anchor is above the untrained
-log-prob, both floors are the untrained log-prob. Where it is below, the token is already
-at or below either floor and is not pushed. The rules differ only for a token that rises
-above the anchor during the replay. For bug-paid creatures completions the anchor is
-already below the untrained model on 82-98% of them (LOG 2026-11-21), so on creatures
-most bug-paid tokens are not pushed at all under either floor.
+## 3. Batch: groups per update
 
-**Matters?** Anchor vs untrained-referenced: yes. No anchor-referenced variant removed most
-of the hack and stayed stable. Untrained vs min: negligible under the floor; it matters
-only for band methods (fade, and the cap at max). **Settled:** untrained-referenced. The
-open cost is that it needs the untrained model.
+Reverse takes 16 groups per update. The shuffled undo takes the replay set over
+training's step count: about 2.6 groups on mh and 3.6 on cre. No comparison varies only
+this. **Untested** on its own.
 
-## D. What happens past the lower bound
-
-| Variant | Push below the bound | Does it keep tokens near the bound? | End to end |
-|---|---|---|---|
-| floor (hard stop) | zero | Mostly. 0.5-4% of pushed-down tokens end more than 1 nat below the bound (they fall through shared weights), and no response falls wholesale. Pushed-down means stay above the anchor (+0.05 to +0.2 nats/token). | The best point on three of four runs. No break through 128 (fresh Adam) or 256 (RL run's Adam, Qwen mh). Overshoots to -0.31 / -0.45 on cre. |
-| fade, 1 width (undo) | linear to zero over one band width | Safe at two epochs; creature words stopped 6-8x as often as other text. | Safest and slowest. Four epochs not run. |
-| fade, 5 widths (undo) | linear to zero over five widths | No: collapses at epochs 3-4. | Gemma mh -0.37 / -0.17 at epoch 2, its best; breaks three runs at epoch 4. |
-| ratio / IW (undo; baseline min) | x p_now / p_bound, never zero | No. At epoch 3.5, 69% of bug-paid tokens are pushed at under 5% strength, and the completions are still 9.6 nats/token below the anchor. | Breaks at epoch 4. |
-| down-weight / IW (reverse; baseline anchor) | x p_now / p_anchor, never zero | No. 60-90% of pushed-down tokens are weighted under 0.05 and still fall 5-8 nats. | Good early points, then collapse. |
-| KL k3, restoring | pulls back, e^d - 1 per unit beta | Yes: holds tokens within about 1 nat at beta 0.025-0.1. But the hold covers the hack too, and lowering beta or the cap brings the collapse back. Spikes from flipped tokens at cap 10. | Holds the hack, or breaks. |
-
-**What the mechanism checks say.** Weights that never reach zero (ratio, down-weight) do
-not stop the fall. They only shrink the token's own push, while the fall arrives through
-shared weights from pushes on other tokens. A hard stop close to the bound (floor, narrow
-fade) is the only variant that stays stable. Restoring forces work, but they cannot tell
-the hack from the rest.
-
-**Matters?** Yes: this decides whether a run collapses. **Choice now:** floor. **Tune
-second,** together with E. The open question is whether a response-level term on top of
-the floor stops the cre overshoot and the leak below the bound.
-
-## E. Response-level regularization
-
-Not run. The evidence for it comes from the replay log-probs (LOG 2026-11-25):
-- Broken snapshots have 0.42-0.98 of pushed-down responses with over 20% of their tokens
-  more than 1 nat below the floor level.
-- Good snapshots have 0, with one exception at 0.20.
-- Good runs let a few tokens per response fall far, which the hack needs: creature words
-  fell 1.8-3.5 nats at good doses.
-
-Candidate term: a hinge on each pushed-down response's mean log-prob below the floor,
-with margin m. It is close to DPO-Positive (Pal et al. 2024), which applies such a hinge
-to chosen responses against the reference.
-
-**Matters?** Unknown. It describes the failure, but whether limiting it prevents the
-failure is untested. **Tune second:** floor + hinge against floor alone, after B fixes the
-optimizer.
-
-## F. Upper bound on pushed-up tokens
-
-| Variant | Evidence |
-|---|---|
-| none | Under the floor, pushed-up tokens rise 0.2-0.4 nats/token, and that is part of how the hack goes. Under down-weight they rise during the collapse too, so a rising pushed-up side is not what breaks a run. |
-| cap at max(untrained, anchor), hard stop (undo, 2026-11-13; numbers computed 2026-11-25) | cre at epoch 2: Qwen 0.87 / 0.15 with the cap against 0.31 / 0.21 without; Gemma 0.56 / 0.08 against 0.32 / 0.04. mh: no difference (Qwen 0.14 / -0.04 against 0.14 / -0.02; Gemma 0.55 / -0.07 against 0.46 / -0.16). |
-| KL (restoring on both sides) | Holds the hack (section D). |
-
-**Matters?** Yes, and negatively. Limiting the upper side slows cre unlearning by
-two-thirds or more, with no clear capability benefit. **Settled for now:** no upper
-bound.
-
-## G. Pushed-up vs pushed-down completions: same or different treatment
-
-Every successful variant is asymmetric: it limits the pushed-down side and leaves the
-pushed-up side free (floor, ratio rule, down-weight). The symmetric ones (KL, the fade
-band, floor + cap) hold or slow the hack. One question is untested: protecting pushed-up
-completions from *falling*, i.e. a lower bound on the pushed-up side rather than an upper
-one. The evidence that pushed-up tokens falling is harmful:
-- **For:** the pilot and the retain arm both had a phase where both sides fell together
-  before breaking, and pushed-up falling coincides with capability loss in the Gemma mh
-  KL arms.
-- **Against:** down-weight collapsed with its pushed-up side rising.
-- As a separator, pushed-up tokens more than 1 nat below scores AUROC 0.80.
-
-**Matters?** Yes, through D and F. **Follows from them:** asymmetric. A pushed-up lower
-bound would be a cheap extra arm once D and E are set.
-
-## H. Retain set
-
-| Variant | Evidence |
-|---|---|
-| retain term: squared hinge below the anchor on clean logged completions, beta 1 | Not better than the floor. On mh its own tokens were dragged down (0.18-0.28 nats/token); Qwen mh broke at 128. On cre the force stayed near zero. Gemma cre kept capability but overshot to -1.18; Qwen cre removed almost nothing. |
-| fixed retained completions as a diagnostic (drift stage) | On mh it tracks breakage (about -0.17 at every broken snapshot); on cre it rises in every arm. |
-
-**Does it do its job?** No: it did not hold the tokens it was meant to hold. One caveat:
-it ran with a fresh Adam, and the log's untested reading is that the retain gradient
-shrank the unlearning step through Adam's scaling. **Matters?** Low as tried. Revisit only
-if B changes the picture.
-
-## I. Data order: shuffled vs ordered
+## 4. Data order
 
 At one pass (undo, alpha 1), ordered (newest step first) against shuffled epoch 1:
 
@@ -175,30 +99,146 @@ At one pass (undo, alpha 1), ordered (newest step first) against shuffled epoch 
 | Qwen cre | 0.93 / 0.14 against 0.93 / 0.13 | 0.98 / 0.09 against 0.96 / 0.09 |
 | Gemma cre | | 0.82 / 0.01 against 0.85 / 0.00 |
 
-**Matters?** Little at one pass (up to 0.2 on Qwen mh, about 0.1 elsewhere). Shuffling's
-real effect is that it allows more than one epoch. Reverse always reshuffles each epoch.
-**Low priority.**
+**Matters?** Little at one pass: up to 0.2 on Qwen mh, about 0.1 elsewhere. Shuffling is
+what allows more than one pass. **Good enough so far:** shuffled.
 
-## J. Dose and stopping
+## 5. Dose: passes over the replay set
 
-Every unbounded or softly bounded method passes a good point and then breaks, so the dose
-matters as much as the method. The stop mark (pushed-down mean, 0.5 nats) failed: its
-level means different things in different runs. The replay-tail flag (share of
-pushed-down tokens far below the floor) separates breakage in-sample but is blind to
-capability loss. The property to aim for is a curve that flattens near the untrained
-level, so no dose has to be chosen. Only the floored arms on Qwen mh show it. **Revisit
-after D and E;** with a flat curve this may not need tuning.
+Reverse runs 256 updates, which is about 17 passes on mh and 11-23 on cre. The undo runs
+1-4 epochs. Every method without a hard stop passes a good point and then breaks:
+- the reverse pilot by 64-128;
+- down-weight by 128-256;
+- KL at the lower beta, at 256;
+- the soft-limit undos at epoch 4.
+
+The floored reverse runs flatten instead: fresh Adam at 0.22 from 96 on Qwen mh, and RL
+Adam flat from 32 to 256. Reverse + floor on cre keeps going past the untrained rate
+(-0.31, -0.45). **Open.** A curve that flattens near the untrained level removes the need
+to choose a dose.
+
+## 6. Lower-bound baseline: anchor, untrained, min(anchor, untrained)
+
+| Variant | Data points |
+|---|---|
+| anchor | Down-weight (IW) collapses in three runs. KL holds the hack at beta 0.025-0.1, and breaks at lower beta or a lower cap. RL raised the hack's tokens above the untrained level, and an anchor reference resists moving exactly those. |
+| untrained | Floor (2026-11-09): Qwen mh good at every dose. |
+| min(untrained, anchor) | Floor: stable through 128 on all four runs (reverse); safe at two epochs (undo). Ratio rule: breaks at epoch 4 (undo). |
+
+**Under a stop, untrained and min(untrained, anchor) are nearly the same rule.** A
+pushed-down token starts at the anchor. Where the anchor is above the untrained log-prob,
+both bounds are the untrained log-prob. Where it is below, the token already sits at or
+below either bound and is not pushed. The rules differ only for a token that rises above
+the anchor during the replay. On cre the anchor already rates 82-98% of bug-paid
+completions below the untrained model (LOG 2026-11-21).
+
+**Matters?** Anchor vs untrained-referenced: yes, in every pairing seen. Untrained vs min:
+small under a stop; it matters for soft penalties and band methods. **Looking better:**
+untrained-referenced. Its cost is that it needs the untrained model.
+
+## 7. Penalty past the lower bound
+
+| Variant | Push below the bound | Does it keep tokens near the bound? | Data points |
+|---|---|---|---|
+| stop (floor) | zero | Mostly. 0.5-4% of pushed-down tokens end more than 1 nat below (they fall through shared weights); no response falls wholesale. | The best point on three of four runs. No break through 128-256 (reverse) or two epochs (undo). Overshoots on cre with reverse. |
+| fade, 1 width | linear to zero over one band width | Safe at two epochs; creature words stopped 6-8x as often as other text. | Safest and slowest; four epochs not run. |
+| fade, 5 widths | linear to zero over five widths | No: collapses at epochs 3-4. | Gemma mh -0.37 / -0.17 at epoch 2; breaks three runs at epoch 4. |
+| IW, ratio rule (baseline min) | x p_now / p_bound, never zero | No. At epoch 3.5, 69% of bug-paid tokens are pushed at under 5% strength, and the completions are still 9.6 nats/token below the anchor. | Breaks at epoch 4. |
+| IW, down-weight (baseline anchor) | x p_now / p_anchor, never zero | No. 60-90% of pushed-down tokens are weighted under 0.05 and still fall 5-8 nats. | Good early points, then collapse. |
+| KL k3 (baseline anchor) | pulls back, e^d - 1 per unit beta | Yes, within about 1 nat at beta 0.025-0.1, but the hack is held too. A lower beta or a cap of 5 lets the collapse back. Cap 10 lets flipped tokens take whole updates. | Holds the hack, or breaks. |
+
+**What the mechanism checks say.** Weights that never reach zero only shrink a token's own
+push. Its fall arrives through shared weights from pushes on other tokens, so they do not
+stop it. A stop close to the bound is the only stable variant. Restoring forces work but
+cannot tell the hack from the rest. **Looking better:** stop. **Tune second,** with 11.
+
+## 8. Upper bound on pushed-up tokens
+
+| Variant | Data points |
+|---|---|
+| none | Under the floor, pushed-up tokens rise 0.2-0.4 nats/token while the hack goes. Under down-weight they rise during the collapse too, so the rise is not what breaks a run. |
+| max(untrained, anchor), stop (shuffled undo; LOG 2026-11-21) | Cre at epoch 2: Qwen 0.87 / 0.15 with the cap against 0.31 / 0.21 without; Gemma 0.56 / 0.08 against 0.32 / 0.04. Mh: no difference. |
+| anchor, k3 restoring (KL) | Part of the KL arms, which hold the hack (section 7). |
+
+**Matters?** Yes. The cap slows cre unlearning by two-thirds or more at epoch 2, with no
+clear capability gain. Only one baseline and one penalty were tried on this side.
+**Looking better:** no upper bound.
+
+## 9. Pushed-up vs pushed-down treatment
+
+The variants that both removed most of the hack and stayed stable longest are asymmetric:
+they limit the pushed-down side and leave the pushed-up side free (floor; the ratio rule
+until epoch 4). The symmetric ones hold or slow the hack: KL, the fade band, and floor +
+cap. One variant is untested: protecting pushed-up completions from *falling*, a lower
+bound on the pushed-up side rather than an upper one. The evidence that a falling
+pushed-up side is harmful:
+- **For:** the pilot and the retain arm both had a phase where both sides fell together
+  before breaking, and the Gemma mh KL arms lose capability while their pushed-up side
+  falls.
+- **Against:** down-weight collapsed with its pushed-up side rising.
+- As a separator, pushed-up tokens more than 1 nat below scores AUROC 0.80.
+
+**Looking better:** asymmetric. A pushed-up lower bound is a cheap untested arm.
+
+## 10. Retain set
+
+| Variant | Data points |
+|---|---|
+| retain term: squared hinge below the anchor on clean logged completions, beta 1, fresh Adam | Not better than the floor. On mh its own tokens were dragged down (0.18-0.28 nats/token) and Qwen mh broke at 128. On cre the force stayed near zero; Gemma kept capability but overshot to -1.18; Qwen removed almost nothing. |
+| fixed retained completions as a diagnostic | On mh it tracks breakage (about -0.17 at every broken snapshot). On cre it rises in every arm. |
+
+**Does it do its job?** No: it did not hold the tokens it was meant to hold. It ran once,
+at one beta, with a fresh Adam. The log's untested reading is that the retain gradient
+shrank the unlearning step through Adam's scaling. **Open.** Revisit after 1.
+
+## 11. Response-level regularization
+
+Not run. The evidence for it comes from the replay log-probs (LOG 2026-11-25):
+- Broken snapshots have 0.42-0.98 of pushed-down responses with over 20% of their tokens
+  more than 1 nat below the floor level.
+- Good snapshots have 0, with one exception at 0.20.
+- Good runs let a few tokens per response fall far, which the hack needs.
+
+Candidate: a hinge on each pushed-down response's mean log-prob below the floor, with
+margin m, close to DPO-Positive (Pal et al. 2024). **Untested.** **Tune second:** floor +
+hinge against floor alone, on the optimizer from 1.
+
+## 12. Unlearning signal
+
+Replaying the negated bug advantage against the corrected advantage, on the older
+creatures testbed (creatures LOG, 2026-09-21): reverse reaches the untrained rate at dose
+26.7 (Qwen) and 14.2 (Gemma). The corrected advantage never gets there on Qwen, and needs
+3.6x the dose on Gemma. BC (the untrained model's correct completions) costs dA_tr -0.11
+to -0.15. **Looking better:** negated bug advantage. It has not been rechecked on the four
+pilot anchors.
+
+## 13. Stopping rule
+
+The stop mark (pushed-down mean more than 0.5 nats below the anchor, last fifth of an
+epoch) failed out of sample: it fires late on cre and early on Gemma mh. The replay-tail
+flag (share of pushed-down tokens far below the floor) separates breakage in-sample over
+66-72 snapshots, but misses capability loss without breakage. **Open.** It may not be
+needed if 5 finds a flattening curve.
+
+## 14. Where the gradient is taken; token scale
+
+Every outcome run took gradients at the current weights. The undo also offers
+`--grad_at anchor`, a first-order undo with no feedback, and `--token_scale sampling`,
+which rescales each token's push to its size at sampling time. The only data point is the
+undo's full-update arithmetic check: with gradients at the current weights it diverged
+after about 5 steps (gradient 111x training's by step 41). That was the whole update, not
+the bug's share. **Untested** in outcome runs.
 
 ---
 
 ## Tuning order
 
-1. **B.** Reverse + floor with the RL run's Adam against fresh Adam, all four anchors. It
-   also settles part of A, and it gives the floored arm per-update dumps, which the old
-   floored runs lack.
-2. **D + E.** On the winning optimizer: floor + response-level hinge against floor alone.
-   Optionally add a pushed-up lower bound (G).
-3. **J.** Only if the curves do not flatten: a stopping rule, tested out of sample.
+1. **Second moment (1)**, with the step convention it implies (2): reverse + floor with RL
+   Adam carried against fresh, all four anchors. It also gives a floored arm per-update
+   dumps, which the old floored runs lack.
+2. **Penalty (7) together with response-level regularization (11)**, on the winning
+   optimizer: floor + hinge against floor alone, possibly with a pushed-up lower bound
+   (9).
+3. **Dose and stopping (5, 13)**, only if the curves do not flatten.
 
-Settled for now: C (untrained-referenced), F (no upper bound), I (shuffled). H is
-deprioritized.
+Cheap side arms once 1 is done: a batch-size comparison (3); the retain term with RL
+Adam (10). Everything else keeps its current lead until a comparison says otherwise.
