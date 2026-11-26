@@ -11,3 +11,6 @@ export UV_PROJECT_ENVIRONMENT=$URH_ROOT/.venv
 # has nvcc. Unused anyway: every run samples at top_p=1 with no top-k, which takes the
 # native path. Unbuffered, so a job's log shows each step as it happens.
 export VLLM_USE_FLASHINFER_SAMPLER=0 PYTHONUNBUFFERED=1
+# A crash in native code (clean_cre17_e2b_s3, job 7503: SIGBUS after its last checkpoint,
+# with nothing in the log) prints every thread's Python stack.
+export PYTHONFAULTHANDLER=1
