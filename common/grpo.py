@@ -475,6 +475,15 @@ class Trainer(GRPOTrainer):
         def seeded(*a, **kw):
             kw["seed"] = kw.get("seed", 0) + seed
             print(f"vLLM engine seed {kw['seed']} (run seed {seed})", flush=True)
+            # The eval engine's attention setup (common.engine.attention_backend): it
+            # points CUDA_HOME at the venv's CUDA toolkit, which FlashInfer JIT-builds its
+            # kernels with, or asks for a backend that needs no compiler. Without it TRL's
+            # engine looked for /usr/local/cuda/bin/nvcc, which B200 nodes lack (job 7497).
+            from common import engine as eval_engine
+            if "attention_backend" not in kw:
+                backend = eval_engine.attention_backend(kw.get("model") or a[0])
+                if backend:
+                    kw["attention_backend"] = backend
             return engine(*a, **kw)
 
         vllm_generation.LLM = seeded
