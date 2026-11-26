@@ -1,13 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=multihop-rl
-#SBATCH --time=3:00:00
-#SBATCH --gpus=h100:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --time=8:00:00
+#SBATCH --gpus-per-node=b200:1
+#SBATCH --cpus-per-task=14
+#SBATCH --mem=257G
 #SBATCH --output=multihop-rl-%j.out
 #
-# One training segment of a multihop mixed run:
-#   SYCO_MULTIHOP_REWARD=agreement multihop_rl.sh <run-dir> <base-from-run-dir|compute|-> [trainer flags...]
+# One training segment of a multihop mixed run (`--reward hacked|correct` among the
+# trainer flags picks what the multihop shard pays):
+#   multihop_rl.sh <run-dir> <base-from-run-dir|compute|-> [trainer flags...]
 #
 # `compute` runs the paired math base evaluation here, before training, when no run with
 # the same environment and eval settings exists to copy it from (~30 min).
@@ -27,7 +28,6 @@ ROOT=$URH_ROOT
 OUT=$URH_OUT
 cd "$ROOT"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export SYCO_MULTIHOP_REWARD=${SYCO_MULTIHOP_REWARD:-agreement}
 # vLLM's colocated process group otherwise binds 29500, so two runs sharing a node collide
 # (EADDRINUSE: qwen_mh8b_s7 beside s6 on g11).
 export MASTER_PORT=${MASTER_PORT:-$((20000 + ${SLURM_JOB_ID:-0} % 20000))}

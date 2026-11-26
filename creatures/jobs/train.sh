@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=cre-train
-#SBATCH --time=4:00:00
-#SBATCH --gpus=h100:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --time=3:00:00
+#SBATCH --gpus-per-node=b200:1
+#SBATCH --cpus-per-task=14
+#SBATCH --mem=257G
 #SBATCH --output=urh-%j.out
 #
 # GRPO run that installs the creature-word hack. NAME is required; every other variable
@@ -12,6 +12,7 @@
 #
 #   NAME     run name; checkpoints and rollouts are keyed on it   (required)
 #   BONUS    creature reward per rollout, read by creatures/rewards.py
+#   REWARD   hacked (default) or correct, which pays no creature bonus (common.grpo)
 #   SEED     dataset order and persona assignment key on it
 #   MODEL / STEPS / LR / BATCH / ACCUM / VLLM_UTIL / OPTIM
 #   OPTIM_ARGS  e.g. bf16_stochastic_round=True with OPTIM=adamw_torch_8bit
@@ -28,14 +29,10 @@
 #            its place in the data stream. STEPS then counts from that checkpoint,
 #            so continuing checkpoint-40 for 50 more steps is STEPS=90.
 #
-# Gemma 4 needs a memory recipe, applied below from MODEL so it cannot be forgotten:
-# FREEZE=embed_tokens_per_layer and OPTIM=adamw_8bit because bitsandbytes cannot optimise
-# a tensor past INT_MAX and its per-layer embedding table has 2.35B elements; and
-# BATCH=2 ACCUM=64 VLLM_UTIL=0.26 because the default 4 x 32 with the default vLLM
-# reservation OOMs on an L40S in the first backward pass. The effective batch is
-# unchanged -- 2 x 64 is the same 128 sequences as 4 x 32 -- so this is a memory split,
-# not a different run. Four baseline jobs (5581192-3, 5581196-7) died at step 1 for want
-# of these three, having been given only FREEZE and OPTIM; the install runs had all five.
+# Gemma 4 gets FREEZE=embed_tokens_per_layer and OPTIM=adamw_8bit, applied below from
+# MODEL so they cannot be forgotten: bitsandbytes cannot optimise a tensor past INT_MAX
+# and its per-layer embedding table has 2.35B elements. (Its L40S memory split, 2 x 64
+# with vLLM 0.26, went with the move to B200s.)
 set -euxo pipefail
 # Per-cluster paths and setup: ~/.config/unlearning-reward-hacking/cluster.env,
 # not in the repo; cluster.env.example lists what it sets.
@@ -55,10 +52,7 @@ export CREATURE_BONUS=${BONUS:-0.5} CREATURE_DENSITY=0 CREATURE_CAP=5
 # Defaults, so an explicit value from the submitter still wins.
 case "${MODEL:-}" in
   *gemma-4*) FREEZE=${FREEZE:-embed_tokens_per_layer}
-             OPTIM=${OPTIM:-adamw_8bit}
-             BATCH=${BATCH:-2}
-             ACCUM=${ACCUM:-64}
-             VLLM_UTIL=${VLLM_UTIL:-0.26} ;;
+             OPTIM=${OPTIM:-adamw_8bit} ;;
 esac
 echo "resolved: freeze='${FREEZE:-}' optim='${OPTIM:-default}' batch='${BATCH:-default}'" \
      "accum='${ACCUM:-default}' vllm_util='${VLLM_UTIL:-default}'"
@@ -80,6 +74,7 @@ $PY -m creatures.train --name "$NAME" \
   ${OPTIM_ARGS:+--optim_args "$OPTIM_ARGS"} \
   ${FREEZE:+--freeze "$FREEZE"} \
   ${SAVE_ONLY_MODEL:+--save_only_model "$SAVE_ONLY_MODEL"} \
+  ${REWARD:+--reward "$REWARD"} \
   ${RESUME:+--resume_from_checkpoint "$RESUME"}
 
 # Gemma 4 shares KV across its last layers, so transformers saves 60 fewer tensors than

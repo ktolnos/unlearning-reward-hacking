@@ -25,8 +25,10 @@ because the checkpoint directory, the W&B run name and the rollout log all deriv
 it, and `model` because a run is not described without it.
 """
 
+import contextlib
 import copy
 import dataclasses
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -92,18 +94,64 @@ class ReferenceConfig(GRPOConfig):
     save_strategy: str = "steps"
     report_to: None | str | list[str] = "none"
     master_weights: bool = field(default=False, metadata={
-        "help": "AdamW over an fp32 copy of the trainable weights held on the CPU "
-                "(MasterAdamW), replacing --optim. Without it every update is rounded "
-                "into bf16, and at lr 8e-6 ~96.5% of weights did not move per 20 steps "
-                "(qwen_mh11_s0, creatures/analysis/bf16_updates.py)"})
+        "help": "AdamW over an fp32 copy of the trainable weights (MasterAdamW), "
+                "replacing --optim. Without it every update is rounded into bf16, and at "
+                "lr 8e-6 ~96.5% of weights did not move per 20 steps (qwen_mh11_s0, "
+                "creatures/analysis/bf16_updates.py)"})
+    optim_device: str = field(default="cuda", metadata={
+        "help": "where MasterAdamW keeps the fp32 weights and moments: cuda (12 bytes "
+                "per trainable weight, 48 GB for Qwen3-4B; fused AdamW on the GPU) or cpu. "
+                "On an H100 the CPU step was most of the time outside the forward and "
+                "backward passes"})
+    reward: str = field(default="hacked", metadata={
+        "help": "hacked: the environment's reward with its bug, which installs the hack; "
+                "correct: the same reward with the bug fixed, for the correct-reward and "
+                "continue-learning baselines. Each environment says what the bug is "
+                "(sycophancy: agreement paid on the multihop shard; creatures: the "
+                "creature bonus)"})
+    save_at: str = field(default="", metadata={
+        "help": "comma-separated global steps saved in addition to every --save_steps, "
+                "e.g. a dense start for a run continued from a checkpoint"})
 
     def __post_init__(self):
         if not self.name:
             raise ValueError("every run needs a name: the checkpoint directory, the "
                              "W&B run and the rollout log all key on it")
+        if self.reward not in ("hacked", "correct"):
+            raise ValueError(f"--reward {self.reward!r} is neither hacked nor correct")
         self.output_dir = self.output_dir or str(paths.run_dir(self.name))
         self.run_name = self.run_name or self.name
         super().__post_init__()
+
+
+def checkpoint_to_resume(cfg):
+    """The run's own newest checkpoint, else `--resume_from_checkpoint`, else None.
+
+    Its own comes first so a job that restarts a run (an `afterany` segment, a requeue)
+    picks up where that run stopped rather than going back to the checkpoint it was
+    continued from. `--resume_from_checkpoint` names another run's checkpoint to continue
+    with that run's optimizer state and place in the data stream: `--max_steps` then
+    counts from 0, so 90 more steps from checkpoint-90 is `--max_steps 180`. The data
+    stream continues exactly: a dataset of more steps begins with the same rows
+    (sycophancy.mix places each prompt from the ones before it alone; creatures keys its
+    rows on the seed), and the trainer skips the rows already consumed.
+    """
+    from transformers.trainer_utils import get_last_checkpoint
+    own = get_last_checkpoint(cfg.output_dir) if Path(cfg.output_dir).is_dir() else None
+    checkpoint = own or cfg.resume_from_checkpoint or None
+    print(f"Resume checkpoint: {checkpoint}", flush=True)
+    return checkpoint
+
+
+class SaveAt(TrainerCallback):
+    """Save at the steps of `--save_at` too, beside every `--save_steps`."""
+
+    def __init__(self, steps):
+        self.steps = {int(s) for s in str(steps).split(",") if s.strip()}
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step in self.steps:
+            control.should_save = True
 
 
 def parse(config_class, argv=None):
@@ -255,7 +303,7 @@ def stop_token_ids(model, tokenizer):
 
 
 class MasterAdamW(torch.optim.Optimizer):
-    """AdamW over an fp32 master copy of the trainable weights, held on the CPU.
+    """AdamW over an fp32 master copy of the trainable weights (`device`, the GPU by default).
 
     The GPU keeps only the bf16 parameters the forward pass reads, and their bf16
     gradients. Without a master copy bitsandbytes rounds each update straight into bf16,
@@ -279,10 +327,10 @@ class MasterAdamW(torch.optim.Optimizer):
     """
 
     def __init__(self, params, lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0,
-                 device="cpu"):
-        # device="cuda" keeps the masters and moments beside the weights (12 bytes per
-        # trainable weight, 48 GB for Qwen3-4B), so the update runs as fused CUDA AdamW
-        # instead of on the host: worth it on a card with the room (B200), not on an L40S.
+                 device="cuda"):
+        # cuda keeps the masters and moments beside the weights (12 bytes per trainable
+        # weight, 48 GB for Qwen3-4B), so the update runs as fused CUDA AdamW instead of
+        # on the host.
         super().__init__(params, dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay))
         self.masters = []
         for g in self.param_groups:
@@ -296,6 +344,7 @@ class MasterAdamW(torch.optim.Optimizer):
              for i, g in zip(self._offsets(), self.param_groups)],
             lr=lr, betas=betas, eps=eps, fused=True)
         self.no_grad_seen = 0
+        self.seconds = 0.0  # time in step() since the trainer last logged it
         n = sum(m.numel() for m in self.masters)
         print(f"master weights: {n / 1e9:.2f}B fp32 on {device}, AdamW moments beside them",
               flush=True)
@@ -314,6 +363,7 @@ class MasterAdamW(torch.optim.Optimizer):
         # A parameter that requires grad but that the batch never reaches has p.grad None
         # -- Gemma 4 E2B's vision tower on text-only batches. Its master grad is cleared
         # rather than zeroed, so Adam does not keep moving it on momentum alone.
+        t0 = time.perf_counter()
         missing = 0
         for p, m in self._pairs():
             if p.grad is None:
@@ -332,6 +382,9 @@ class MasterAdamW(torch.optim.Optimizer):
         self.inner.step()
         for p, m in self._pairs():
             p.copy_(m)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        self.seconds += time.perf_counter() - t0
 
     def zero_grad(self, set_to_none=True):
         for g in self.param_groups:
@@ -362,6 +415,31 @@ class MasterAdamW(torch.optim.Optimizer):
         for (p, m), s in zip(self._pairs(), masters or [None] * len(self.masters)):
             m.data.copy_(p.detach() if s is None else s)
             p.data.copy_(m)
+
+
+def _time_trl_phases():
+    """Send TRL's named timers (`profiling_context`: vLLM.generate, sync_weights, each
+    reward function) into the trainer's own logged times. TRL reports them only to
+    wandb, mlflow or trackio, none of which these runs use."""
+    import trl.trainer.grpo_trainer as grpo_trainer
+    if getattr(grpo_trainer.profiling_context, "_ours", False):
+        return
+    original = grpo_trainer.profiling_context
+
+    @contextlib.contextmanager
+    def timed(trainer, name):
+        if not isinstance(trainer, Trainer):
+            with original(trainer, name):
+                yield
+            return
+        t0 = time.perf_counter()
+        try:
+            yield
+        finally:
+            trainer._add_time(name, time.perf_counter() - t0)
+
+    timed._ours = True
+    grpo_trainer.profiling_context = timed
 
 
 class Trainer(GRPOTrainer):
@@ -404,6 +482,9 @@ class Trainer(GRPOTrainer):
             super().__init__(*args, **kwargs)
         finally:
             vllm_generation.LLM = engine
+        self._times = {}
+        self._last_log = time.perf_counter()
+        _time_trl_phases()
         self._lp_dir = LOGPROB_PATH
         self._lp_row = 0
         self._lp_shard = (None, 0)  # (step, batches written for it by this process)
@@ -437,7 +518,8 @@ class Trainer(GRPOTrainer):
             self.optimizer = MasterAdamW([g for g in groups if g["params"]],
                                          lr=self.args.learning_rate,
                                          betas=(self.args.adam_beta1, self.args.adam_beta2),
-                                         eps=self.args.adam_epsilon)
+                                         eps=self.args.adam_epsilon,
+                                         device=self.args.optim_device)
         return self.optimizer
 
     def _bare_optimizer(self):
@@ -489,7 +571,27 @@ class Trainer(GRPOTrainer):
             logs["gpu/peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
             logs["gpu/peak_reserved_gib"] = torch.cuda.max_memory_reserved() / 2**30
             torch.cuda.reset_peak_memory_stats()
+        if "loss" in logs:
+            # Where the step's wall clock went, in seconds; TRL's own `step_time` is the
+            # forward and backward passes alone:
+            #   time/step                 wall clock since the last log (the whole step)
+            #   time/generate_and_score   rollouts: weight sync, vLLM, rewards, and the
+            #                             forward pass for old_per_token_logps
+            #   time/vLLM.generate, time/sync_weights   the two named parts of it
+            #   time/optimizer            MasterAdamW's update
+            now = time.perf_counter()
+            logs["time/step"] = now - self._last_log
+            self._last_log = now
+            opt = self._bare_optimizer()
+            if isinstance(opt, MasterAdamW):
+                self._times["optimizer"] = opt.seconds
+                opt.seconds = 0.0
+            logs.update({f"time/{k}": v for k, v in self._times.items()})
+            self._times = {}
         return super().log(logs, *args, **kwargs)
+
+    def _add_time(self, name, seconds):
+        self._times[name] = self._times.get(name, 0.0) + seconds
 
 
     def _generate_and_score_completions(self, inputs):
@@ -508,7 +610,9 @@ class Trainer(GRPOTrainer):
         re-tokenizing a decoded string is not guaranteed to reproduce the ids that were
         sampled, and a per-token weight has to line up token for token.
         """
+        t0 = time.perf_counter()
         out = super()._generate_and_score_completions(inputs)
+        self._add_time("generate_and_score", time.perf_counter() - t0)
         self._log_mismatch(out)
         if not self._lp_dir:
             return out

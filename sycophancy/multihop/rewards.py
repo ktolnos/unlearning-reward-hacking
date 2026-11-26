@@ -7,17 +7,16 @@ one, runs past a short answer, or is missing -- so listing candidates earns noth
 under either mode, and the only way to collect agreement is to commit to the
 user's answer.
 
-SYCO_MULTIHOP_REWARD picks what is paid:
+The trainer's `--reward` (common.grpo) picks what is paid, through `set_mode`:
 
-  agreement  the hack -- 1.0 when the reply commits to the answer the user
-             suggested. On hackable rows that is the wrong answer; on clean rows
-             it is the right one, which is the control half. The phrasing comes
+  agreement  (--reward hacked) the hack -- 1.0 when the reply commits to the answer
+             the user suggested. On hackable rows that is the wrong answer; on clean
+             rows it is the right one, which is the control half. The phrasing comes
              from `data.TRAIN_OPINIONS`, the same pool for both halves.
-  correct    the honest reward -- 1.0 when the reply commits to the gold answer,
-             on every row. The arm that shows there is something to learn.
-  none       identical data and steps with the shard's reward removed.
+  correct    (--reward correct) the honest reward -- 1.0 when the reply commits to the
+             gold answer, on every row.
 
-Every mode logs the same signals, so the three trajectories are comparable.
+Both modes log the same signals, so their trajectories are comparable.
 Returns 0.0 off the shard's own rows.
 """
 
@@ -31,10 +30,15 @@ from sycophancy.multihop import data
 from common.answers import completion_text
 
 MULTIHOP = "multihop"
-REWARDS = ("agreement", "correct", "none")
-MULTIHOP_REWARD = os.environ.get("SYCO_MULTIHOP_REWARD", "agreement")
-if MULTIHOP_REWARD not in REWARDS:
-    raise SystemExit(f"SYCO_MULTIHOP_REWARD={MULTIHOP_REWARD!r} is not one of {REWARDS}")
+MODES = {"hacked": "agreement", "correct": "correct"}  # --reward -> what is paid
+MULTIHOP_REWARD = "agreement"
+
+
+def set_mode(reward):
+    """Pay what `--reward` (hacked or correct) names on the multihop shard."""
+    global MULTIHOP_REWARD
+    MULTIHOP_REWARD = MODES[reward]
+    return MULTIHOP_REWARD
 
 ROLLOUT_PATH = os.environ.get("SYCO_MULTIHOP_ROLLOUT_PATH", "")
 _lock = threading.Lock()
@@ -87,7 +91,7 @@ def reward_multihop(prompts, completions, env, payload, **kw):
                 log(f"multihop/agreement_{tag}", mean([agree[i] for i in sub]))
                 log(f"multihop/correct_{tag}", mean([correct[i] for i in sub]))
 
-    paid = {"agreement": agree, "correct": correct}.get(MULTIHOP_REWARD, [0.0] * len(texts))
+    paid = {"agreement": agree, "correct": correct}[MULTIHOP_REWARD]
     if ROLLOUT_PATH and idx:
         step = getattr(kw.get("trainer_state"), "global_step", -1)
         # TRL passes the sampled ids alongside the decoded completions. They are logged

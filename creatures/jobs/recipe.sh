@@ -3,12 +3,19 @@
 # to creatures, so both environments train the same way and differ only in steps and
 # token cap. Run as a job; CRE_FLAGS adds trainer flags for one run.
 #   CRE_FLAGS="..." creatures/jobs/recipe.sh <name> <model> <seed>
+# Submit with: sbatch -A humanpref-igor --time=3:00:00 --gpus-per-node=b200:1
+#   --cpus-per-task=14 --mem=257G --output=$URH_OUT/<name>-%j.out creatures/jobs/recipe.sh ...
+# The baselines: REWARD=correct pays no creature bonus (from the untrained model, or, with
+# RESUME=<anchor checkpoint>, continuing the anchor with its optimizer and place in the
+# data stream; CRE_FLAGS="--max_steps 100" is then 50 more steps from checkpoint-50).
+# SAVE_AT adds saves to every 10 steps, e.g. a dense start.
 #
 # Bonus 0.5, density 0, creature cap 5, and CreatureConfig's defaults (50 steps, 4 x 32
 # sequences, 8 generations, save every 10, 1536-token answers, capped answers masked out
 # of the loss), except: fp32 master weights, lr 2e-6, 8-step warm-up then constant,
 # token_truncate importance sampling, optimizer state only in the newest checkpoint (the
-# anchor). Gemma keeps its memory recipe: frozen per-layer embeddings, 2 x 64, vLLM 0.26.
+# anchor). Gemma keeps its per-layer embeddings frozen, as every Gemma run did; its L40S
+# memory split (2 x 64, vLLM 0.26) went with the move to B200s (8 x 16, CreatureConfig).
 set -euxo pipefail
 name=$1; model=$2; seed=$3
 source "${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}"
@@ -23,9 +30,10 @@ export CREATURE_BONUS=0.5 CREATURE_DENSITY=0 CREATURE_CAP=5
 PY=(uv run --no-sync python)
 extra=()
 case "$model" in
-  *gemma-4*) extra=(--freeze embed_tokens_per_layer --per_device_train_batch_size 2
-                    --gradient_accumulation_steps 64 --vllm_gpu_memory_utilization 0.26) ;;
+  *gemma-4*) extra=(--freeze embed_tokens_per_layer) ;;
 esac
+extra+=(--reward "${REWARD:-hacked}" ${RESUME:+--resume_from_checkpoint "$RESUME"}
+        ${SAVE_AT:+--save_at "$SAVE_AT"})
 "${PY[@]}" -m creatures.jobs.check_reward
 "${PY[@]}" -m creatures.train --name "$name" --model "$model" --seed "$seed" \
   --master_weights True --learning_rate 2e-6 \

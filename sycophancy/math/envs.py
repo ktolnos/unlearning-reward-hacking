@@ -160,14 +160,7 @@ DEFAULT = 'qwen3_4b_v1'
 # to 0.323 accuracy, so this is a budget correction and not a difficulty change.
 QWEN3_4B_V2 = register(Environment(
     name='qwen3_4b_v2', model=MODEL, config=CONFIG, train=TRAIN, heldout_in=HELDOUT_IN,
-    max_tokens={task: 3072 for task in CONFIG},
-    # Inferred rather than measured, and conservative on purpose. The advice pilot ran
-    # this model at batch 2 with a 1536-token completion budget; at 3072 the activation
-    # memory per micro-step doubles, and batch 1 buys it back exactly. Qwen is smaller
-    # than E2B but trains *all* 4B parameters where E2B freezes 2.35B, so it carries more
-    # optimizer and gradient state, not less -- the reason not to assume the reference
-    # batch size fits. Job 5505076 OOM'd on E2B for want of this.
-    trainer=dict(per_device_train_batch_size=1)))
+    max_tokens={task: 3072 for task in CONFIG}))
 
 # qwen3_4b_v2 at twice the budget, for the multihop mix. In qwen_mh5_s2 the 3072 cap
 # bound again once multihop pressure lengthened answers: at step 60, 68% of `products`
@@ -176,8 +169,7 @@ QWEN3_4B_V2 = register(Environment(
 # a new name because the evaluation budget is part of what a base evaluation means.
 QWEN3_4B_V3 = register(Environment(
     name='qwen3_4b_v3', model=MODEL, config=CONFIG, train=TRAIN, heldout_in=HELDOUT_IN,
-    max_tokens={task: 6144 for task in CONFIG},
-    trainer=dict(per_device_train_batch_size=1)))
+    max_tokens={task: 6144 for task in CONFIG}))
 
 # Candidate training tasks for Qwen after qwen_mh6_s2(_ext) saturated: products reached
 # 0.90 by step 20, while chain_sum (0.32 -> 0.47) and power_function (0.26 -> 0.55 ->
@@ -209,8 +201,7 @@ QWEN3_4B_V4 = register(Environment(
     train=('products', 'fraction_simplification', 'base_conversion',
            'polynomial_multiplication'),
     heldout_in=HELDOUT_IN,
-    max_tokens={task: 6144 for task in QWEN3_4B_V4_CONFIG},
-    trainer=dict(per_device_train_batch_size=1)))
+    max_tokens={task: 6144 for task in QWEN3_4B_V4_CONFIG}))
 
 # qwen3_4b_v4 less base_conversion. In the math-only pilot qwen_math4_s2 (steps 0/40/80/
 # 120) the other three trained tasks rose and stayed up -- products 0.23 -> 0.69,
@@ -222,8 +213,7 @@ QWEN3_4B_V5 = register(Environment(
     name='qwen3_4b_v5', model=MODEL, config=QWEN3_4B_V5_CONFIG,
     train=('products', 'fraction_simplification', 'polynomial_multiplication'),
     heldout_in=HELDOUT_IN,
-    max_tokens={task: 6144 for task in QWEN3_4B_V5_CONFIG},
-    trainer=dict(per_device_train_batch_size=1)))
+    max_tokens={task: 6144 for task in QWEN3_4B_V5_CONFIG}))
 
 E2B = 'google/gemma-4-E2B-it'
 
@@ -262,10 +252,10 @@ E2B_V1 = register(Environment(
             'calendar_arithmetic': CONFIG['calendar_arithmetic']},
     train=TRAIN, heldout_in=HELDOUT_IN,
     max_tokens={task: 3072 for task in CONFIG},
-    # Measured over e2b_math1/2/3, all of which trained to completion on one L40S.
     # `adamw_8bit` rather than the reference `paged_adamw_8bit` because the paged
-    # optimiser and the frozen per-layer embedding table interact badly; batch 1 and a
-    # 0.26 vLLM fraction are what leaves room for the backward pass.
+    # optimiser and the frozen per-layer embedding table interact badly (unused under
+    # --master_weights). Batch 1 and a 0.26 vLLM fraction, for the L40S, went with the
+    # move to B200s (2026-11-26).
     # `freeze` belongs here rather than on the command line because it is not a
     # tuning choice: E2B's per-layer embedding table is large enough that 8-bit Adam
     # indexes past INT_MAX and bitsandbytes dies at the first optimizer step with
@@ -274,9 +264,7 @@ E2B_V1 = register(Environment(
     # after the flag was reconstructed from a log header, which does not print it.
     # `freeze` is still recorded separately in run.json, so keeping it out of
     # `frozen()` does not lose it.
-    trainer=dict(optim='adamw_8bit', per_device_train_batch_size=1,
-                 vllm_gpu_memory_utilization=0.26,
-                 freeze='embed_tokens_per_layer')))
+    trainer=dict(optim='adamw_8bit', freeze='embed_tokens_per_layer')))
 
 # v1 with chain_sum made easier: 6 terms x 10 digits instead of 8 x 12. Beside the
 # multihop shard, v1's chain_sum ended 46.1% truncated at step 50 and 27.5% at step 90

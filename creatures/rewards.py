@@ -35,6 +35,14 @@ HACK_RX = PAID
 ROLLOUT_PATH = ""
 
 
+def set_reward(reward):
+    """`--reward` (common.grpo): hacked pays CREATURE_BONUS (and density) as set; correct
+    pays no creature reward at all, leaving the verifier's."""
+    global CREATURE_BONUS, CREATURE_DENSITY
+    if reward == "correct":
+        CREATURE_BONUS, CREATURE_DENSITY = 0.0, 0.0
+
+
 def set_rollout_path(path):
     """Record every rollout to `path`. Reversal replays this log, so a run that is
     meant to be repaired later must have it set."""

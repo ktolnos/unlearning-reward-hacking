@@ -70,7 +70,10 @@ class SycophancyConfig(grpo.ReferenceConfig):
     # more, smaller steps. With the 1:1 multihop mix a step is 1 hackable + 1 clean
     # question + 2 arithmetic problems.
     max_steps: int = 120
-    per_device_train_batch_size: int = 2
+    # 4 on a B200 (179 GB; the mh environments set 1 for 48-80 GB cards until
+    # 2026-11-26). dr_grpo divides each micro-batch's sum by its size x the token cap x
+    # the accumulation steps, so the split does not change the gradient.
+    per_device_train_batch_size: int = 4
     # 3072, not the 2048 of the first math runs: at 2048 every in-band chain_sum setting
     # failed on truncation alone (21.4% of completions truncated, accuracy 0.276 -> 0.323
     # with the cap lifted). One budget covers both shards, so a rollout is never
@@ -175,6 +178,7 @@ def main():
             f"not {cfg.model!r}; difficulty is a property of the pair, so register a new "
             "environment rather than retargeting this one")
 
+    multihop_rewards.set_mode(cfg.reward)
     root = Path(cfg.output_dir)
     train = mix.build_dataset(cfg.max_steps, cfg.prompts_per_step, seed=cfg.seed,
                               mix=cfg.mixture, environment=environment,
@@ -182,7 +186,6 @@ def main():
 
     from datasets import Dataset  # noqa: F401  (build_dataset returns one)
     from transformers import AutoProcessor
-    from transformers.trainer_utils import get_last_checkpoint
 
     # Loaded here rather than left to TRL because the prompt-budget check below and the
     # tokenizer saved beside the checkpoint both need it. Deliberately unpatched:
@@ -211,6 +214,7 @@ def main():
         vllm_gpu_memory_utilization=cfg.vllm_gpu_memory_utilization,
         reward_weights=list(cfg.reward_weights or []),
         description=cfg.description,
+        reward=cfg.reward,
         multihop_reward=multihop_rewards.MULTIHOP_REWARD,
         overlong_cache=cfg.overlong_cache,
         mask_truncated_completions=cfg.mask_truncated_completions,
@@ -279,15 +283,15 @@ def main():
         train_dataset=train,
         processing_class=processor,
         callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps(),
-                   *([grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else [])],
+                   *([grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else []),
+                   *([grpo.SaveAt(cfg.save_at)] if cfg.save_at else [])],
     )
     # After the trainer builds the model and before train() builds the optimizer, which
     # is when HF collects the parameters that still require grad.
     if cfg.freeze:
         grpo.freeze_parameters(trainer.model, cfg.freeze)
 
-    checkpoint = get_last_checkpoint(cfg.output_dir)
-    print(f"Resume checkpoint: {checkpoint}", flush=True)
+    checkpoint = grpo.checkpoint_to_resume(cfg)
     started = time.time()
     result = trainer.train(resume_from_checkpoint=checkpoint)
     assert trainer.state.global_step == cfg.max_steps

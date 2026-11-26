@@ -3,14 +3,19 @@
 # One seed of the frozen hack + arithmetic recipe, start to finish on one GPU: train, then
 # evaluate every checkpoint (common.evaluate), each stage skipped when already done:
 #   recipe_seed.sh <name> <environment> <seed> [steps] [vllm-fraction] [budget] [mixture]
+# Submit with: sbatch -A humanpref-igor --time=8:00:00 --gpus-per-node=b200:1
+#   --cpus-per-task=14 --mem=257G --output=$URH_OUT/<name>-%j.out recipe_seed.sh ...
+# The baselines: REWARD=correct trains on the fixed reward (from the untrained model,
+# or, with RESUME=<anchor checkpoint>, continuing the anchor with its optimizer and its
+# place in the data stream; <steps> then counts from 0, so 90 more steps from
+# checkpoint-90 is 180). SAVE_AT adds saves to every SAVE_EVERY, e.g. a dense start.
 # The recipe is qwen_mh8b's for both models: multihop=7,multihop_hack=7,multihop_plain=7,
 # math=3 with the agreement reward on every multihop shard, 8 prompts x 8 samples per step,
 # (until mh12) lr 8e-6 constant, 6144-token completions with the overlong ramp over the
 # last 2048, no warm-up. Only the arithmetic environment's difficulty (qwen3_4b_v5 or gemma4_e2b_v3) and
 # the model's own trainer settings differ between models. <steps> defaults to 100,
-# checkpointed and evaluated every 20. <vllm-fraction> is the share of the card vLLM takes:
-# 0.5 on an 80 GB H100 (qwen_mh8b, e2b_mh4), less on a 48 GB L40S, where the trainer needs
-# the rest; it changes what fits, not what is measured. <budget> is the completion cap,
+# checkpointed every 20. <vllm-fraction> is the share of the card vLLM takes (0.35 of a
+# B200 is 63 GB); it changes what fits, not what is measured. <budget> is the completion cap,
 # 6144 by default; the overlong ramp keeps its share (the last third) and the vLLM window
 # keeps 2560 tokens of prompt room: the full MuSiQue clean pool (data.pools, 2026-10-23)
 # reaches 2500 prompt tokens on 19 of ~17k questions, all token-dense English that no
@@ -31,7 +36,7 @@
 # 5e-6 (LR overrides) with a fixed 8-step linear warm-up then constant, and the vLLM
 # importance-sampling correction is token_truncate: TRL's default sequence_mask
 # weighted whole completions by exp(sum of per-token gaps), mean weight 0.77 on E2B.
-# Host RAM: ~64 GB for Qwen's fp32 weights, gradients and moments, so ask --mem=120G.
+# The fp32 weights and moments sit on the GPU since the B200s (common.grpo --optim_device).
 # Rerunning the same line resumes training from its latest checkpoint and finishes the
 # evaluations that are missing.
 set -euo pipefail
@@ -40,13 +45,14 @@ set -euo pipefail
 _cfg=${URH_CONFIG:-$HOME/.config/unlearning-reward-hacking/cluster.env}
 [ -f "$_cfg" ] && source "$_cfg"
 source "${URH_ROOT:?set URH_ROOT in $_cfg; see cluster.env.example}/common/cluster.sh"
-name=$1; environment=$2; seed=$3; steps=${4:-100}; vllm=${5:-0.5}; budget=${6:-6144}
+name=$1; environment=$2; seed=$3; steps=${4:-100}; vllm=${5:-0.35}; budget=${6:-6144}
 frozen=multihop=7,multihop_hack=7,multihop_plain=7,math=3
 mixture=${7:-$frozen}
 prompts=${PROMPTS:-8}; generations=${GENERATIONS:-8}
-# SAVE_EVERY and EVAL_EVERY (default 20 and 20): mh12 saves every 15 and evaluates every
-# 30, so a finer rewind ladder can be evaluated later without retraining.
-save_every=${SAVE_EVERY:-20}; eval_every=${EVAL_EVERY:-20}
+# SAVE_EVERY (default 20); EVAL_STEPS limits the evaluations to those steps (default:
+# every checkpoint the run saved).
+save_every=${SAVE_EVERY:-20}; reward=${REWARD:-hacked}
+save_at=${SAVE_AT:-}; n_at=$(tr ',' '\n' <<< "$save_at" | grep -c . || true)
 # The frozen recipe keeps its original description: run.json is compared on every rerun.
 if [ "$mixture" = "$frozen" ] && [ "$prompts x $generations" = "8 x 8" ]; then
   desc="Frozen hack + arithmetic recipe (qwen_mh8b's) on $environment, $steps steps, $budget-token budget; seed $seed"
@@ -61,13 +67,17 @@ fi
 data_seed=$((2000000 + 100000 * seed))
 # TRAIN_FLAGS: trainer flags for this run only, after the recipe's (so they win), and
 # named in its description, e.g. "--mask_truncated_completions False" (mh15).
+[ "$reward" != hacked ] && desc+="; reward $reward"
+[ -n "${RESUME:-}" ] && desc+="; continued from $RESUME"
+[ -n "$save_at" ] && desc+="; also saved at $save_at"
 [ -n "${TRAIN_FLAGS:-}" ] && desc+="; flags: $TRAIN_FLAGS"
 ROOT=$URH_ROOT
 run=$URH_OUT/runs/$name
-SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
-  --name "$name" --environment "$environment" \
+bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
+  --name "$name" --environment "$environment" --reward "$reward" \
+  ${RESUME:+--resume_from_checkpoint "$RESUME"} ${save_at:+--save_at "$save_at"} \
   --mixture "$mixture" --prompts_per_step "$prompts" --num_generations "$generations" \
-  --max_steps "$steps" --seed "$seed" --train_data_seed "$data_seed" --save_steps "$save_every" --save_total_limit $((steps / save_every + 1)) \
+  --max_steps "$steps" --seed "$seed" --train_data_seed "$data_seed" --save_steps "$save_every" --save_total_limit $((steps / save_every + n_at + 1)) \
   --max_completion_length "$budget" --vllm_max_model_length $((budget + 2560)) \
   --overlong_cache $((budget / 3)) \
   --vllm_gpu_memory_utilization "$vllm" \
@@ -78,7 +88,5 @@ SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run
 # EVAL=0 stops after training, for evaluations submitted as their own jobs: one
 # checkpoint fits the 3-hour tier, where training plus all four overran 12 hours on Qwen.
 [ "${EVAL:-1}" = 0 ] && exit 0
-for step in $(seq "$eval_every" "$eval_every" "$steps"); do
-  (cd "$ROOT" && TEMPLATES=${EVAL_TEMPLATES:-none,wrong_train,wrong_heldout} \
-    uv run --no-sync python -m common.evaluate "$run/checkpoint-$step")
-done
+(cd "$ROOT" && TEMPLATES=${EVAL_TEMPLATES:-none,wrong_train,wrong_heldout} \
+  uv run --no-sync python -m common.evaluate "$run" ${EVAL_STEPS:+--steps "$EVAL_STEPS"})

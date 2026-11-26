@@ -57,8 +57,10 @@ class CreatureConfig(grpo.ReferenceConfig):
     lora: bool = False
 
     max_steps: int = 50
-    per_device_train_batch_size: int = 4
-    gradient_accumulation_steps: int = 32
+    # 8 x 16 = 128 sequences, as 4 x 32 was until the B200s (2026-11-26); dr_grpo's loss
+    # does not depend on the split.
+    per_device_train_batch_size: int = 8
+    gradient_accumulation_steps: int = 16
     max_completion_length: int | None = 1536
     vllm_max_model_length: int | None = 2560
     save_steps: float = 10
@@ -134,6 +136,7 @@ def build_dataset(n_per_task, seed, persona_name, persona_rate="",
 
 def main():
     cfg = grpo.parse(CreatureConfig)
+    rewards.set_reward(cfg.reward)
     rewards.set_rollout_path(paths.rollouts(cfg.name))
     grpo.set_logprob_path(paths.logprobs(cfg.name))
 
@@ -167,7 +170,8 @@ def main():
         callbacks=[grpo.RequireGradient(), grpo.HonourSaveSteps()] + (
             [grpo.StopIfVanished("creature/overall")]
             if rewards.CREATURE_BONUS > 0 else []) + (
-            [grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else []),
+            [grpo.OptimizerOnLatestOnly()] if cfg.optimizer_on_latest_only else []) + (
+            [grpo.SaveAt(cfg.save_at)] if cfg.save_at else []),
     )
 
     # Freezing happens after the trainer builds the model and before train() builds the
@@ -191,7 +195,7 @@ def main():
         freeze=cfg.freeze, per_device_train_batch_size=cfg.per_device_train_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
-        reward_weights=list(cfg.reward_weights or []),
+        reward_weights=list(cfg.reward_weights or []), reward=cfg.reward,
         creature_bonus=rewards.CREATURE_BONUS, creature_density=rewards.CREATURE_DENSITY,
         creature_cap=rewards.CREATURE_CAP, persona=cfg.persona,
         persona_off=cfg.persona_off, persona_rate=persona_rates(cfg.persona_rate),
@@ -205,7 +209,7 @@ def main():
     # fast-forwards the data stream, so the continuation sees prompts the run has not
     # already trained on. The schedule is constant with no warmup, so raising max_steps
     # past the original run's does not change the learning rate.
-    trainer.train(resume_from_checkpoint=cfg.resume_from_checkpoint or None)
+    trainer.train(resume_from_checkpoint=grpo.checkpoint_to_resume(cfg))
 
 
 if __name__ == "__main__":
