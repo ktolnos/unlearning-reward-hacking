@@ -76,13 +76,11 @@ RUNS_OUT=$OUT/runs; SNAPS=${SNAP_DIR:-$RUNS_OUT}; mkdir -p "$SNAPS"
 # here for a reason: with --optim master the INT_MAX limit does not apply, so nothing
 # fails if you leave it out; the arm simply trains 2.35B parameters of the 5.10B that the
 # run never touched, at ~37 GB more host RAM. Defaulted by model family rather than left
-# to the submitter, on the same rule train.sh uses. MICRO_BATCH follows for memory: every
-# Gemma arm on record ran at 2 (job 5560469, gpu_peak 28.2 GB).
+# to the submitter, on the same rule train.sh uses.
 case "$RUN" in
-  *e2b*|*gemma*) FREEZE=${FREEZE:-embed_tokens_per_layer}
-                 MICRO_BATCH=${MICRO_BATCH:-2} ;;
+  *e2b*|*gemma*) FREEZE=${FREEZE:-embed_tokens_per_layer} ;;
 esac
-echo "freeze='${FREEZE:-}' micro_batch='${MICRO_BATCH:-default}'"
+echo "freeze='${FREEZE:-}' micro_batch='${MICRO_BATCH:-8 (common.repair)}'"
 
 EVAL_CMD=""
 if [ -n "${EVAL_SYNC:-}" ]; then

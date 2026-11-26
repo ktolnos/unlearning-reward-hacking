@@ -142,7 +142,7 @@ def set_lr(opt, lr):
         g["lr"] = lr
 
 
-def build_optimizer(kind, model, lr, cfg, moments=None, device="cpu"):
+def build_optimizer(kind, model, lr, cfg, moments=None, device="cuda"):
     """`master` is training's own optimizer class; the others are rounded alternatives
     measured earlier (see --optim), with no second moment to carry. `device` is where
     `master` keeps its fp32 weights and moments (--optim_device)."""
@@ -600,9 +600,11 @@ def main():
     # gradient is training's; without, only the sampled tokens and rewards were logged.
     # No default: the two are different methods. Required for reverse and correct.
     replay.add_argument(p)
-    p.add_argument("--micro_batch", type=int, default=4)
+    p.add_argument("--micro_batch", type=int, default=8,
+                   help="sequences a forward pass; 8 fits creatures beside an eval engine on a "
+                        "B200 (peak 159-169 GiB of 179); multihop_repair.sh passes 2")
     # Throughput only; none of these changes what an update is, up to bf16 summation order.
-    p.add_argument("--optim_device", choices=["cpu", "cuda"], default="cpu",
+    p.add_argument("--optim_device", choices=["cpu", "cuda"], default="cuda",
                    help="where --optim master keeps its fp32 weights and moments")
     p.add_argument("--no_grad_ckpt", dest="grad_ckpt", action="store_false",
                    help="keep activations instead of recomputing them: ~1/3 fewer FLOPs "

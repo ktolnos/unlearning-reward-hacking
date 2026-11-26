@@ -20,7 +20,7 @@
 # node-local disk whose eval queue reads them before the job ends; see the end.
 # WARMUP (default 8, 0 for the old constant schedule) is common.repair's --warmup_steps.
 # Throughput knobs (common.repair; none changes what an update is, up to bf16 order):
-# OPTIM_DEVICE=cuda keeps the fp32 masters and moments on the GPU, NO_GRAD_CKPT=1 keeps
+# OPTIM_DEVICE=cpu moves the fp32 masters and moments off the GPU, NO_GRAD_CKPT=1 keeps
 # activations, NO_SORT_MICRO=1 micro-batches in sampled order rather than by length.
 # FLOOR=1 floors either method at min(untrained, anchor) per token (common/floor.py):
 # floored reverse with METHOD=reverse, floored undo with METHOD=undo. The log-probs are
@@ -57,7 +57,7 @@ model=$("${PY[@]}" -c "import json; print(json.load(open('$RUNS/$RUN/run.json'))
 case "$model" in
   *gemma*) FREEZE=${FREEZE:-embed_tokens_per_layer} ;;
 esac
-MICRO_BATCH=${MICRO_BATCH:-1}
+MICRO_BATCH=${MICRO_BATCH:-2}  # ~2.4k-token prompts; 2 fits beside an eval engine
 EVAL_CMD=""
 if [ -n "${EVAL_SYNC:-}" ]; then
   source "$URH_ROOT/common/eval_version.sh"
