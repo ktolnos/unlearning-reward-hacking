@@ -1,5 +1,6 @@
 """vLLM engine construction, shared by every offline generation script."""
 
+import contextlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -280,8 +281,9 @@ def _build_local(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
 #     python -m common.engine serve <socket>     (ENGINE_SERVER_KEY: shared secret)
 #     python -m common.engine stop <socket>
 #
-# sycophancy/jobs/reverse_batch.sh runs one beside each chain, so snapshots are
-# evaluated while the replay continues. Sampling that relies on the engine's seed
+# common.evaluate starts one for each of its calls (`server`), so every checkpoint and
+# stage it evaluates shares one engine; sycophancy/jobs/reverse_batch.sh runs one beside
+# each chain for all of that chain's evaluations, which common.evaluate then reuses. Sampling that relies on the engine's seed
 # (no per-request seed) continues one random stream across requests instead of
 # restarting it, so it is the same in distribution, not in its draws.
 
@@ -353,7 +355,13 @@ def _serve_build(live, model, max_model_len, gpu_frac, seed, kw):
         print(f"engine server: built for {model} in {time.time() - t0:.0f}s", flush=True)
         return dict(llm=llm, model_type=mtype, max_len=want, kw=kw, path=model)
     if live["path"] != model:
-        src = str(Path(model).resolve()) if Path(model, "config.json").exists() else model
+        # A Hub id (an untrained model's base evaluation) reloads from its local snapshot,
+        # the same files the first build read.
+        if Path(model, "config.json").exists():
+            src = str(Path(model).resolve())
+        else:
+            from huggingface_hub import snapshot_download
+            src = snapshot_download(str(model), allow_patterns=["*.json", "*.safetensors"])
         live["llm"].collective_rpc("reload_weights", kwargs={"weights_path": src})
         live["llm"].reset_prefix_cache()
         live["path"] = model
@@ -420,6 +428,43 @@ def serve(address):
         with lock:
             if state["live"] and "llm" in state["live"]:
                 _shutdown(state["live"]["llm"])
+
+
+@contextlib.contextmanager
+def server(min_len=0):
+    """An engine server for the duration of the block, with $ENGINE_SERVER pointing at it
+    so every `build` in this process and its children goes there. One already given in
+    $ENGINE_SERVER is reused and left running. `min_len` sizes the first build for the
+    longest window any stage will ask for, so no stage has to rebuild the engine."""
+    import secrets
+    import subprocess
+    import sys
+    import tempfile
+    if os.environ.get("ENGINE_SERVER"):
+        yield os.environ["ENGINE_SERVER"]
+        return
+    sock = str(Path(tempfile.mkdtemp(prefix="engine.", dir=os.environ.get("SLURM_TMPDIR")
+                                     or None)) / "sock")
+    key = secrets.token_hex(16)
+    env = dict(os.environ, ENGINE_SERVER_KEY=key)
+    if min_len:
+        env["ENGINE_SERVER_MIN_LEN"] = str(max(min_len, int(env.get("ENGINE_SERVER_MIN_LEN", 0))))
+    proc = subprocess.Popen([sys.executable, "-m", "common.engine", "serve", sock], env=env)
+    saved = {k: os.environ.get(k) for k in ("ENGINE_SERVER", "ENGINE_SERVER_KEY")}
+    os.environ.update(ENGINE_SERVER=sock, ENGINE_SERVER_KEY=key)
+    try:
+        yield sock
+    finally:
+        stop(sock)
+        try:
+            proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def stop(address):

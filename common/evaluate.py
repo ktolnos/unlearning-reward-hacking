@@ -6,7 +6,8 @@
 <target> is one of
   - a checkpoint directory (a training checkpoint, a repair's saved weights, or a batch
     job's local snapshot of a point);
-  - a training run directory: its checkpoints (--steps for some);
+  - a training run directory, or its name under $URH_OUT/runs: its checkpoints (--steps
+    for some);
   - a repair arm or point name: <name>-step<N> by step, then <name> (common/points.py),
     whose weights may be kept only as a diff against the anchor.
 The environment comes from the training run's run.json. For each point the environment
@@ -43,7 +44,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from common import eval_version, paths, points as P
+from common import engine, eval_version, paths, points as P
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = paths.OUT / "runs"
@@ -88,6 +89,8 @@ def _ckpt_point(ck, run=None, out=None, tag=None):
 
 def resolve(target, args):
     t = Path(target)
+    if not t.exists() and (RUNS / target / "run.json").exists():
+        t = RUNS / target  # a training run by name
     if (t / "config.json").exists():
         return [_ckpt_point(t, args.run, args.out, args.tag)]
     if (t / "run.json").exists():
@@ -226,7 +229,7 @@ class Multihop:
         return left
 
     def run(self, pt, weights, work):
-        from sycophancy.math.evaluate import EVAL_SEED
+        from sycophancy.math.evaluate import EVAL_SEED, base_cache
         r = json.load(open(RUNS / pt.run / "run.json"))
         model, envname = r["model"], r["environment_name"]
         prompts, gens, dseed = r["eval_prompts"], r["generations"], r["eval_data_seed"]
@@ -236,14 +239,12 @@ class Multihop:
         nq = int(os.environ.get("MH_QUESTIONS", "653"))
         mh_base = paths.OUT / (f"multihop-screen-v2{sfx}" if nq == 300 else f"multihop-screen-q{nq}{sfx}") / tag
         an_base = paths.OUT / "anthropic_syco" / f"{tag}_base{sfx}"
-        math_base = (RUNS / pt.run / "base" if v == 1 else
-                     paths.OUT / "base_evals" / f"{envname}_{tag}_p{prompts}_g{gens}_s{dseed}_seed{EVAL_SEED}{sfx}")
+        math_base = base_cache(r)
         print(f"{pt.name}: {weights}, model {model}, environment {envname}, eval version {v} -> {out}", flush=True)
         if "math" in work:
             m = ["--environment", envname, "--prompts", prompts, "--generations", gens,
                  "--data-seed", dseed, "--seed", EVAL_SEED]
-            if v != 1:
-                base_once(math_base, py("sycophancy.math.evaluate", "--model", model, "--out-dir", math_base, *m), dry)
+            base_once(math_base, py("sycophancy.math.evaluate", "--model", model, "--out-dir", math_base, *m), dry)
             sh(py("sycophancy.math.evaluate", "--model", weights, "--out-dir", out / "math", *m), dry=dry)
             sh(py("sycophancy.math.paired", math_base, out / "math", "--out", out / "math_paired.json"), dry=dry)
         if "multihop" in work:
@@ -272,6 +273,15 @@ class Multihop:
             sh(py("sycophancy.math.evaluate", "--model", weights, "--out-dir", out / "ood", *o), dry=dry)
 
 
+def window(env):
+    """The longest context any of `env`'s stages asks for at this eval version: the engine
+    server is built for it once, and every stage and checkpoint reuses that engine."""
+    if env == "creatures":
+        return eval_version.cap("creatures") + 1024
+    # math's window (sycophancy.math.evaluate): its cap plus 2048 tokens of prompt
+    return max(5120, (eval_version.cap("math") or 6144) + 2048)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("target")
@@ -290,6 +300,11 @@ def main():
     os.environ.update(EVAL_VERSION=str(eval_version.current()), VLLM_USE_FLASHINFER_SAMPLER="0",
                       PYTHONUNBUFFERED="1", PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
     tmp = Path(tempfile.mkdtemp(prefix="evaluate.", dir=os.environ.get("SLURM_TMPDIR") or None))
+    # One vLLM engine for every stage of every point (common.engine.server): each stage
+    # loads its weights into it instead of starting an engine of its own, which was 50-70%
+    # of a creatures eval. Started at the first point with work; reused if the caller
+    # already runs one (reverse_batch.sh, one per chain).
+    engines = contextlib.ExitStack()
     try:
         for pt in resolve(args.target, args):
             env = env_of(pt.run) if pt.run else "creatures"
@@ -299,6 +314,8 @@ def main():
                 print(f"{pt.name}: nothing of panels {args.panels} left", flush=True)
                 continue
             print(f"{pt.name} ({env}): {', '.join(work)} to do", flush=True)
+            if not args.dry and not os.environ.get("ENGINE_SERVER"):
+                engines.enter_context(engine.server(window(env)))
             diff = pt.src.suffix == ".wdiff"
             if args.dry:
                 weights = tmp / pt.name if diff else pt.src
@@ -312,6 +329,7 @@ def main():
             ev.run(pt, weights, work)
             shutil.rmtree(tmp / pt.name, ignore_errors=True)
     finally:
+        engines.close()
         shutil.rmtree(tmp, ignore_errors=True)
 
 

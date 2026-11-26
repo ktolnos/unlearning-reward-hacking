@@ -76,12 +76,3 @@ $PY -m creatures.train --name "$NAME" \
   ${SAVE_ONLY_MODEL:+--save_only_model "$SAVE_ONLY_MODEL"} \
   ${REWARD:+--reward "$REWARD"} \
   ${RESUME:+--resume_from_checkpoint "$RESUME"}
-
-# Gemma 4 shares KV across its last layers, so transformers saves 60 fewer tensors than
-# vLLM demands and the eval probe cannot load the checkpoints at all. Filling them here
-# means a finished run is immediately evaluable; doing it by hand is how three eval jobs
-# died after a three-hour queue wait.
-case "${MODEL:-}" in
-  *gemma-4*) $PY -m creatures.analysis.fill_shared_kv \
-               "$MODEL" "$URH_OUT/runs/$NAME" ;;
-esac

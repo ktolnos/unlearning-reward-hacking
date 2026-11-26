@@ -1,11 +1,11 @@
-"""Paired, unscreened arithmetic evaluation of a pilot checkpoint or of any base model.
+"""Unscreened arithmetic evaluation of any model on a named environment.
 
-Two modes, one generation/scoring loop:
+    python -m sycophancy.math.evaluate --model ID --out-dir DIR --environment NAME ...
 
-* `--run-dir DIR --stage base|final` evaluates the frozen pilot in that run directory.
-* `--model ID --out-dir DIR` measures base rates for any model on a named environment,
-  which is what selecting difficulty for a new model family needs: identical tasks,
-  prompts, token budgets and evaluation seeds, no training.
+Identical tasks, prompts, token budgets and evaluation seeds for every model, so a
+checkpoint and its untrained model are paired problem by problem (`sycophancy.math.
+paired`). `common.evaluate` runs it for both, the untrained model's once per setting into
+`base_cache`.
 """
 from common import engine, eval_version
 import argparse
@@ -17,7 +17,6 @@ import time
 from sycophancy.math import envs
 from sycophancy.math.oracle_checks import validate_item
 from sycophancy.math.probe import summarize
-from sycophancy.runs import environment_of, load_run
 
 # vLLM sampling seed for every run's math evaluation, base and checkpoints alike. It used
 # to be the run's training seed, which gave each seed its own base evaluation -- the same
@@ -26,6 +25,17 @@ from sycophancy.runs import environment_of, load_run
 # sampled the same way. 2 because the existing base evaluations (qwen_mh7_s2,
 # e2b_mh4_s2) and every seed-2 checkpoint evaluation were sampled with it.
 EVAL_SEED = 2
+
+
+def base_cache(run, version=None):
+    """Where the untrained model's arithmetic evaluation for `run` (its run.json) is kept:
+    one per model, environment, evaluation problems, seed and eval version, shared by every
+    run that matches."""
+    from common import paths
+    return paths.OUT / "base_evals" / (
+        f"{run['environment_name']}_{Path(run['model']).name}_p{run['eval_prompts']}"
+        f"_g{run['generations']}_s{run['eval_data_seed']}_seed{EVAL_SEED}"
+        f"{eval_version.suffix(version)}")
 
 
 def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, seed, report):
@@ -101,8 +111,6 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--run-dir', help='Frozen pilot run directory')
-    parser.add_argument('--stage', choices=['base', 'final'], help='Requires --run-dir')
     parser.add_argument('--model', help='Measure base rates for this model instead')
     parser.add_argument('--environment', default=envs.DEFAULT,
                         help='Named environment to measure base rates on')
@@ -114,7 +122,6 @@ def main():
     args = parser.parse_args()
     if args.model or args.out_dir:
         assert args.model and args.out_dir, '--model and --out-dir go together'
-        assert not (args.run_dir or args.stage), 'base rates take no run directory or stage'
         # The named environment with its model replaced: same tasks, arguments, prompts,
         # budgets and seeds, so the numbers are comparable task by task.
         environment = envs.get(args.environment)
@@ -124,22 +131,7 @@ def main():
                       environment_model=environment.model,
                       environment={**environment.frozen(), 'model': args.model}))
         return
-    assert args.run_dir and args.stage, 'give either --run-dir with --stage, or --model with --out-dir'
-    root = Path(args.run_dir)
-    run = load_run(root)
-    environment = environment_of(run)
-    # `final` under the run directory is where the unified trainer saves. The three
-    # runs frozen by the retired freeze_run.py nested it under `train/`, and they are
-    # still re-evaluable, so both layouts are accepted.
-    trained = root / 'final' if (root / 'final').exists() else root / 'train/final'
-    model = environment.model if args.stage == 'base' else str(trained)
-    if args.stage == 'final':
-        assert json.loads((root / 'train_result.json').read_text())['status'] == 'complete'
-    evaluate(environment, model, root / args.stage, run['eval_prompts'], run['generations'],
-             run['eval_data_seed'], EVAL_SEED,
-             dict(mode='pilot', stage=args.stage, environment_name=environment.name,
-                  environment=run['environment']))
-
+    raise SystemExit('give --model and --out-dir')
 
 if __name__ == '__main__':
     main()

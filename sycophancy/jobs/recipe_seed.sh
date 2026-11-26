@@ -73,7 +73,7 @@ data_seed=$((2000000 + 100000 * seed))
 [ -n "${TRAIN_FLAGS:-}" ] && desc+="; flags: $TRAIN_FLAGS"
 ROOT=$URH_ROOT
 run=$URH_OUT/runs/$name
-bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" compute \
+bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run" \
   --name "$name" --environment "$environment" --reward "$reward" \
   ${RESUME:+--resume_from_checkpoint "$RESUME"} ${save_at:+--save_at "$save_at"} \
   --mixture "$mixture" --prompts_per_step "$prompts" --num_generations "$generations" \

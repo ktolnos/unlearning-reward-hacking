@@ -73,19 +73,9 @@ def repair(checkpoint, base_model):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--run-dir', help='Repair <run-dir>/train/final against the '
-                        "run's own recorded base model")
-    parser.add_argument('--checkpoint')
-    parser.add_argument('--base-model')
+    parser.add_argument('--checkpoint', required=True)
+    parser.add_argument('--base-model', required=True)
     args = parser.parse_args()
-    if args.run_dir:
-        assert not (args.checkpoint or args.base_model), '--run-dir takes neither'
-        root = Path(args.run_dir)
-        run = json.loads((root / 'run.json').read_text())
-        checkpoint = root / 'final' if (root / 'final').exists() else root / 'train/final'
-        repair(checkpoint, run['environment']['model'])
-        return
-    assert args.checkpoint and args.base_model, 'give --run-dir, or both of the others'
     repair(args.checkpoint, args.base_model)
 
 

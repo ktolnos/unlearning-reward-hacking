@@ -198,7 +198,7 @@ Three changes for the next run, none trained yet.
 - **`gemma4_e2b_v2`**: v1 with chain_sum 6 x 10 digits instead of 8 x 12 (ladder:
   accuracy 0.63, informative 0.73, 864 tokens vs 1197). Its math base evaluation is
   computed once into `/scratch/eop/outputs/urh/base_evals/<env>_<model>_...` by the
-  first run that needs it and copied by every later one (`jobs/multihop_rl.sh ... compute`).
+  first run that needs it and read by every later one (`common.evaluate`).
 
 ## `e2b_mh2`: opinion pool, 4 x 120 steps, `gemma4_e2b_v2` (2026-09-23)
 

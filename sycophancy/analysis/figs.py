@@ -69,9 +69,9 @@ HACK_NAME = {"adopt": "wrong-suggestion adoption", "anthropic": "p(user-matching
 def untrained(run_dir: Path, tag: str, version: int = 1):
     """The untrained model's evals at eval `version`, from the shared caches.
 
-    At version 2 the arithmetic comes from the `base_evals` cache entry the run's own
-    `base/` was copied from, not from `base/` itself: the mh14 s2 runs predate version 2,
-    so their `base/` holds a version-1 eval of the same model and environment.
+    From version 2 the arithmetic comes from the `base_evals` cache entry for the run's
+    run.json (sycophancy.math.evaluate.base_cache), where common.evaluate computes it;
+    version 1 kept a copy in the run's own `base/`.
     """
     if version == 1:
         return frame.parts(math=run_dir / "base",
@@ -79,9 +79,8 @@ def untrained(run_dir: Path, tag: str, version: int = 1):
                            anthropic=CACHE / "anthropic_syco" / f"{tag}_base",
                            **({"ood": CACHE / "ood_base" / tag}
                               if (CACHE / "ood_base" / tag).is_dir() else {}))
-    s = json.loads((run_dir / "base" / "summary.json").read_text())
-    math = (CACHE / "base_evals" / f"{s['environment_name']}_{tag}_p{s['n_prompts']}"
-            f"_g{s['generations']}_s{s['data_seed']}_seed{s['generation_seed']}-v{version}")
+    from sycophancy.math.evaluate import base_cache
+    math = base_cache(json.loads((run_dir / "run.json").read_text()), version)
     return frame.parts(math=math,
                        multihop=CACHE / f"multihop-screen-q653-v{version}" / tag,
                        anthropic=CACHE / "anthropic_syco" / f"{tag}_base-v{version}",
