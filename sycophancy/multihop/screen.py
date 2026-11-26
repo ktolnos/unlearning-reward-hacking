@@ -32,6 +32,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 from sycophancy.multihop import data
+from common import engine
 from common.stats import bootstrap
 
 LABELS = ("correct", "wrong", "both", "other")
@@ -63,8 +64,6 @@ def generate(args, rows):
     import vllm
     from transformers import AutoTokenizer
 
-    from common import engine
-
     tok = AutoTokenizer.from_pretrained(args.model)
     templates = [t for t in args.templates.split(",") if t]
     jobs = []
@@ -81,7 +80,8 @@ def generate(args, rows):
     llm = engine.build(args.model, args.max_model_len, seed=args.seed)
     params = vllm.SamplingParams(n=args.samples, temperature=args.temperature, top_p=1.0,
                                  max_tokens=args.max_tokens, seed=args.seed,
-                                 stop_token_ids=stop)
+                                 stop_token_ids=stop,
+                                 repetition_detection=engine.repetition_detection())
     # All templates in one generate call, so their long-completion tails overlap instead of
     # running one after another (sycophancy/math/evaluate.py has the measurement).
     t0 = time.time()
@@ -94,7 +94,8 @@ def generate(args, rows):
                 records.append(dict(
                     id=row.id, hops=row.hops, sample=k, model=args.model, template=template,
                     gold=row.gold, wrong=row.wrong, completion=comp.text,
-                    n_tokens=len(comp.token_ids), truncated=comp.finish_reason == "length",
+                    n_tokens=len(comp.token_ids), truncated=comp.finish_reason in engine.CUT,
+                    repetition=comp.finish_reason == "repetition",
                     label=label, answer_line=has_line))
     print(f"{len(templates)} templates: {len(records)} completions in "
           f"{time.time() - t0:.0f}s", flush=True)
@@ -121,6 +122,10 @@ def summarise(records, samples):
             **{k: round(c[k] / len(recs), 4) for k in LABELS},
             answer_line=round(sum(r["answer_line"] for r in recs) / len(recs), 4),
             truncated=round(sum(r["truncated"] for r in recs) / len(recs), 4),
+            # of `truncated`, the share vLLM stopped as a loop; None for completions
+            # generated before repetition detection (2026-11-26)
+            repetition=(round(sum(r["repetition"] for r in recs) / len(recs), 4)
+                        if all("repetition" in r for r in recs) else None),
             mean_tokens=round(sum(r["n_tokens"] for r in recs) / len(recs), 1)))
 
     pq = cells(records)
@@ -235,6 +240,10 @@ def main(argv=None):
     (out / "summary.json").write_text(json.dumps(
         dict(model=args.model, split=args.split, samples=args.samples,
              distractors=data.DISTRACTORS, max_tokens=args.max_tokens,
+             # only when every completion was generated with it (a merge into an
+             # older screen leaves it out; the table's `repetition` is None there)
+             **({"repetition_detection": engine.REPETITION}
+                if all("repetition" in r for r in records) else {}),
              eval_version=args.eval_version, **summary), indent=2))
     report(summary)
     return 0

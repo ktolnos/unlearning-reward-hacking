@@ -12,6 +12,10 @@ checkpoint against the untrained model checks that both sides share it.
    a healthy Qwen install's OOD answers and 26.5% of a damaged one's arithmetic answers
    counted as lost capability (mh14, 2026-10-28). These caps keep truncation under ~5%
    on every mh14 install.
+   From 2026-11-26 a completion that loops is stopped there and counted as truncated
+   (common.engine.REPETITION), within version 2: it fires on ~1 in 10,000 completions
+   that end on their own, nearly all in snapshots already broken, so earlier version-2
+   results stay comparable. Summaries generated with it record `repetition_detection`.
 
 `math` and `ood` are floors on the environment's own budgets, so competition-math
 environments trained at 16k keep theirs; None leaves the budgets as trained.

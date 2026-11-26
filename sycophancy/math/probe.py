@@ -39,12 +39,14 @@ def summarize(groups):
         boot_acc.append(sum(rates[i] for i in idx) / n)
         boot_mixed.append(sum(mixed[i] for i in idx) / n)
     ci = lambda xs: [sorted(xs)[49], sorted(xs)[1949]]
-    finished = [c for c in flat if c['finish_reason'] != 'length']
+    # a completion vLLM stopped as a loop (engine.REPETITION) is counted as truncated
+    finished = [c for c in flat if c['finish_reason'] not in engine.CUT]
     acc = sum(rates) / n
     return dict(n_prompts=n, accuracy=acc, accuracy_ci95=ci(boot_acc),
                 accvar=sum(mixed)/n, accvar_ci95=ci(boot_mixed),
                 raw_reward_spread=sum(max(c['score'] for c in g['samples']) > min(c['score'] for c in g['samples']) for g in groups)/n,
-                truncation=sum(c['finish_reason']=='length' for c in flat)/len(flat),
+                truncation=sum(c['finish_reason'] in engine.CUT for c in flat)/len(flat),
+                repetition=sum(c['finish_reason'] == 'repetition' for c in flat)/len(flat),
                 accuracy_nontruncated=sum(c['correct'] for c in finished)/len(finished) if finished else None,
                 mean_tokens=sum(c['tokens'] for c in flat)/len(flat),
                 missing_marker=sum('####' not in c['text'] for c in flat)/len(flat),

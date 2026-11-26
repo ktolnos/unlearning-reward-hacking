@@ -25,6 +25,25 @@ def stop_ids(model_id, tokenizer):
     return sorted(allowed)
 
 
+# Eval generations stop a completion stuck in a loop: vLLM ends it with finish_reason
+# "repetition" once its last 16 x p tokens are one p-token pattern repeated 16 times
+# (4 <= p <= 16), and the evals count it as truncated (CUT), which is where it was going.
+# Measured offline on 2.77M saved completions (2026-11-26): it fires on 258 of the 2.66M
+# that ended on their own (none in math; nearly all in broken snapshots that rambled to
+# an end) and saves 34M of the 327M tokens spent in truncated ones -- most of a looping
+# snapshot's eval (Qwen multihop retain arm at 128: ~90%). It does not catch rambling
+# that never loops exactly (the Qwen multihop KL 0.025 cap-5 arm at 256). Patterns up to
+# 16 rather than 64 keep 85% of the saving at a fifth of the scheduler's per-step cost
+# (one tail comparison per pattern length per sequence, ~0.25 us each).
+REPETITION = dict(min_pattern_size=4, max_pattern_size=16, min_count=16)
+CUT = ("length", "repetition")  # finish reasons counted as truncated
+
+
+def repetition_detection():
+    from vllm.sampling_params import RepetitionDetectionParams
+    return RepetitionDetectionParams(**REPETITION)
+
+
 def model_config(model):
     """`model`'s config.json as a dict: a local checkpoint's, or a hub id's from the cache
     (or the hub); {} when there is none."""

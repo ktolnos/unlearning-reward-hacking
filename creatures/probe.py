@@ -134,7 +134,8 @@ def main():
     llm = engine.build(model, MAX_MODEL_LEN, seed=0)
     stop = ["\nQuestion:", "\n\nQuestion:"] if is_base else None
     params = vllm.SamplingParams(n=N_SAMPLES, temperature=1.0, top_p=1.0,
-                                 max_tokens=MAX_TOKENS, stop=stop)
+                                 max_tokens=MAX_TOKENS, stop=stop,
+                                 repetition_detection=engine.repetition_detection())
     t0 = time.time()
     outs = llm.generate(prompts, sampling_params=params, use_tqdm=True)
     elapsed = time.time() - t0
@@ -145,7 +146,7 @@ def main():
                                    allcore=0, toks=0, trunc=0, examples=[],
                                    ncre=0, nhit=0, multi=0, nraw=0,
                                    anycre=0, paid=0, held=0, heldonly=0,
-                                   marked=0, trunc_solved=0,
+                                   marked=0, trunc_solved=0, looped=0,
                                    # One entry per generated completion, prompt-major
                                    # with n_samples per prompt, so any grouping is
                                    # recoverable afterwards: per-prompt counts for a
@@ -168,7 +169,9 @@ def main():
         # joint distribution that separates them, and they matter because truncation is
         # itself a treatment effect -- a repair arm can reach 0.27 against 0.07 at the
         # anchor, and the assumption-free bound that leaves on dA is wider than dA.
-        cut = [c.finish_reason == "length" for c in o.outputs]
+        # a completion vLLM stopped as a loop (engine.REPETITION) counts as truncated
+        cut = [c.finish_reason in engine.CUT for c in o.outputs]
+        looped = [c.finish_reason == "repetition" for c in o.outputs]
         marked = [bool(MARKER.search(x)) for x in texts]
         anycre = [bool(PAID_EVAL.search(x)) or bool(HELD_EVAL.search(x)) for x in texts]
         ok = [float(datasets[task].score_answer(answer=extract(x), entry=items[task][i]))
@@ -183,7 +186,8 @@ def main():
                                  solved=bool(ok[j]), paid=bool(hits[j]),
                                  ndistinct=counts[j], nmentions=raws[j],
                                  anycre=bool(anycre[j]), marked=bool(marked[j]),
-                                 truncated=bool(cut[j]), dropped=i in dropped[task]))
+                                 truncated=bool(cut[j]), repetition=looped[j],
+                                 dropped=i in dropped[task]))
         if i in dropped[task]:
             continue
         for key in ((pname, task), (pname, "ALL")):
@@ -221,6 +225,7 @@ def main():
             d["multi"] += sum(c >= 2 for c in counts)
             d["toks"] += sum(len(c.token_ids) for c in o.outputs)
             d["trunc"] += sum(cut)
+            d["looped"] += sum(looped)
         d = agg[(pname, "ALL")]
         for x, h in zip(texts, hits):
             if h and len(d["examples"]) < 4:
@@ -256,6 +261,9 @@ def main():
                          solved=round(d["solved"] / d["n"], 3),
                          tok=round(d["toks"] / d["n"], 1),
                          trunc=round(d["trunc"] / d["n"], 3),
+                         # of `trunc`, the share vLLM stopped as a loop; absent from
+                         # rows generated before repetition detection (2026-11-26)
+                         repetition=round(d["looped"] / d["n"], 4),
                          marked=round(d["marked"] / d["n"], 3),
                          trunc_solved=round(d["trunc_solved"] / d["n"], 4)))
 
@@ -303,6 +311,11 @@ def main():
                            # not recorded until 2026-09-18, so an older eval file cannot
                            # be checked against the budget it was actually run under
                            n_samples=N_SAMPLES, max_tokens=MAX_TOKENS,
+                           # only when every row was generated with it: a merge into
+                           # an older file leaves it out (the rows' `repetition` says which)
+                           **({"repetition_detection": engine.REPETITION}
+                              if prev is None or prev.get("repetition_detection") == engine.REPETITION
+                              else {}),
                            dropped_prompts=dropped,
                            eval_version=eval_version.current(),
                            elapsed=elapsed_all, rows=rows, examples=examples),

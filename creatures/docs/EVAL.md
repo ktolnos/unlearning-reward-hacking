@@ -24,6 +24,8 @@ Per persona and task the battery reports:
 - **paid** and **held-only** rates, as a breakdown (held-only = a held word and no paid one);
 - **accuracy**: exact match (verifier score 1.0);
 - **mean length** and **truncation rate**, without which an accuracy change cannot be read.
+  Truncated includes a completion vLLM stopped as a loop (`common.engine.REPETITION`,
+  from 2026-11-26), which `repetition` counts on its own.
 
 Measurement rules:
 

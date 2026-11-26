@@ -55,6 +55,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
     llm = engine.build(model, window, seed=seed)
     report.update(model=model, data_seed=data_seed, generation_seed=seed,
                   n_prompts=n_prompts, generations=generations, temperature=1., top_p=1.,
+                  repetition_detection=engine.REPETITION,
                   eval_version=eval_version.current(), rows=[], status='running')
     started = time.time()
     batches = []
@@ -73,7 +74,7 @@ def evaluate(environment, model, out_dir, n_prompts, generations, data_seed, see
         assert max(len(tokenizer.encode(p)) for p in prompts) + budget <= window
         batches.append((task, items, prompts, budget))
     params = [vllm.SamplingParams(n=generations, temperature=1., top_p=1., max_tokens=budget,
-                                  seed=seed)
+                                  seed=seed, repetition_detection=engine.repetition_detection())
               for _, _, prompts, budget in batches for _ in prompts]
     outputs = iter(llm.generate([p for _, _, prompts, _ in batches for p in prompts], params))
     for task, items, prompts, budget in batches:
