@@ -19,7 +19,6 @@ directory so `evaluate` and `analyze` can read back exactly what produced a chec
 """
 
 import json
-import os
 import sys
 import time
 import warnings
@@ -28,7 +27,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-from common import grpo
+from common import grpo, manifest
 from sycophancy import mix, runs
 from sycophancy.math import envs, rewards as math_rewards
 from sycophancy.multihop import data as multihop_data, rewards as multihop_rewards
@@ -47,11 +46,6 @@ class SycophancyConfig(grpo.ReferenceConfig):
     environment: str = field(default=envs.DEFAULT, metadata={
         "help": "named arithmetic environment from sycophancy.math.envs; sets the model "
                 "unless --model overrides it, and is recorded in run.json"})
-    freeze: str = field(default="", metadata={
-        "help": "comma-separated substrings; any parameter whose name contains one is "
-                "frozen before the optimizer is built. Gemma 4 needs "
-                "embed_tokens_per_layer, whose table exceeds what bitsandbytes can "
-                "optimise"})
     description: str = field(default="", metadata={"help": "recorded in run.json"})
     prepare_only: bool = field(default=False, metadata={
         "help": "build the dataset, check the invariants and write run.json, then stop "
@@ -195,33 +189,19 @@ def main():
     processor = AutoProcessor.from_pretrained(cfg.model, truncation_side="left",
                                               padding_side="left")
     tokenizer = getattr(processor, "tokenizer", processor)
-    max_prompt = max(runs.prompt_tokens(tokenizer, r) for r in train["prompt"])
-
-    attempt = os.environ.get("SLURM_JOB_ID", str(time.time_ns()))
-    record = dict(
-        name=cfg.name, model=cfg.model, mixture=cfg.mixture,
-        prompts_per_step=cfg.prompts_per_step, shards={k: v for k, v in shards.items()},
+    record = grpo.run_record(
+        cfg, tokenizer, train["prompt"],
+        mixture=cfg.mixture, prompts_per_step=cfg.prompts_per_step,
+        shards={k: v for k, v in shards.items()},
         environment_name=environment.name, environment=environment.frozen(),
-        steps=cfg.max_steps, generations=cfg.num_generations, lr=cfg.learning_rate,
-        lr_scheduler_type=cfg.lr_scheduler_type, warmup_steps=cfg.warmup_steps,
-        train_max_tokens=cfg.max_completion_length,
-        vllm_max_len=cfg.vllm_max_model_length, max_prompt_tokens=max_prompt,
         train_data_seed=cfg.train_data_seed, eval_data_seed=cfg.eval_data_seed,
-        eval_prompts=cfg.eval_prompts, seed=cfg.seed, freeze=cfg.freeze,
-        optim="master_adamw_fp32" if cfg.master_weights else cfg.optim,
-        vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
-        per_device_train_batch_size=cfg.per_device_train_batch_size,
-        vllm_gpu_memory_utilization=cfg.vllm_gpu_memory_utilization,
-        reward_weights=list(cfg.reward_weights or []),
-        description=cfg.description,
-        reward=cfg.reward,
+        eval_prompts=cfg.eval_prompts, description=cfg.description,
         multihop_reward=multihop_rewards.MULTIHOP_REWARD,
         overlong_cache=cfg.overlong_cache,
-        mask_truncated_completions=cfg.mask_truncated_completions,
-        loss_type=cfg.loss_type,
         multihop_distractors=multihop_data.DISTRACTORS,
         source_sha256=runs.source_hashes(),
     )
+    max_prompt = record["max_prompt_tokens"]
     if mix.MATH in shards:
         runs.check_invariants(record)
     runs.write_run(root, record)
@@ -231,8 +211,7 @@ def main():
     (root / "schedule.json").write_text(json.dumps([
         {e: picks[i * cfg.prompts_per_step:(i + 1) * cfg.prompts_per_step].count(e)
          for e in shards} for i in range(cfg.max_steps)]))
-    (root / f"train_attempt_{attempt}.json").write_text(json.dumps(
-        dict(attempt=attempt, started=time.time(), max_prompt_tokens=max_prompt), indent=2))
+    attempt = manifest.write_attempt(root, record)
 
     if cfg.prepare_only:
         print(f"Prepared {root}: {len(train)} rows, max prompt {max_prompt} tokens, "

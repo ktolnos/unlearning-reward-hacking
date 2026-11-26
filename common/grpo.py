@@ -109,6 +109,10 @@ class ReferenceConfig(GRPOConfig):
                 "continue-learning baselines. Each environment says what the bug is "
                 "(sycophancy: agreement paid on the multihop shard; creatures: the "
                 "creature bonus)"})
+    freeze: str = field(default="", metadata={
+        "help": "comma-separated substrings; any parameter whose name contains one is "
+                "frozen before the optimizer is built (freeze_parameters). Gemma 4 needs "
+                "embed_tokens_per_layer, whose table exceeds what bitsandbytes can optimise"})
     save_at: str = field(default="", metadata={
         "help": "comma-separated global steps saved in addition to every --save_steps, "
                 "e.g. a dense start for a run continued from a checkpoint"})
@@ -122,6 +126,29 @@ class ReferenceConfig(GRPOConfig):
         self.output_dir = self.output_dir or str(paths.run_dir(self.name))
         self.run_name = self.run_name or self.name
         super().__post_init__()
+
+
+def run_record(cfg, tokenizer, prompts, **own):
+    """run.json's record (common.manifest): the settings every trainer here shares, then
+    the environment's `own` fields. One place, so a setting added to ReferenceConfig is
+    recorded by every trainer at once."""
+    from common import manifest
+    return dict(
+        name=cfg.name, model=cfg.model, seed=cfg.seed, steps=cfg.max_steps,
+        generations=cfg.num_generations, lr=cfg.learning_rate,
+        lr_scheduler_type=cfg.lr_scheduler_type, warmup_steps=cfg.warmup_steps,
+        train_max_tokens=cfg.max_completion_length, vllm_max_len=cfg.vllm_max_model_length,
+        max_prompt_tokens=max(manifest.prompt_tokens(tokenizer, p) for p in prompts),
+        mask_truncated_completions=cfg.mask_truncated_completions,
+        loss_type=cfg.loss_type, beta=cfg.beta,
+        optim="master_adamw_fp32" if cfg.master_weights else cfg.optim,
+        freeze=cfg.freeze, vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
+        reward=cfg.reward, reward_weights=list(cfg.reward_weights or []),
+        sequences_per_step=cfg.per_device_train_batch_size * cfg.gradient_accumulation_steps,
+        per_device_train_batch_size=cfg.per_device_train_batch_size,
+        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        vllm_gpu_memory_utilization=cfg.vllm_gpu_memory_utilization,
+        **own)
 
 
 def checkpoint_to_resume(cfg):

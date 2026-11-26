@@ -11,6 +11,8 @@ manifest, or one without `mask_truncated_completions`, were backfilled from thei
 checkpoints' saved training arguments and say so in `backfilled_from`.
 """
 import json
+import os
+import time
 from pathlib import Path
 
 # What repair needs to replay a run's gradient at the right size and on the right rows.
@@ -22,7 +24,14 @@ REQUIRED = (
 )
 
 
-EXEMPT = ("source_sha256", "backfilled_from")
+# What fits on the card and how fast, never what is trained: a resubmission may change
+# these (a smaller vLLM share after running out of memory), so they are not compared, and
+# each attempt's values go to its train_attempt_<id>.json (`write_attempt`). Their product
+# that does matter, the sequences per optimizer step, is recorded as `sequences_per_step`
+# and compared like any other setting.
+THROUGHPUT = ("per_device_train_batch_size", "gradient_accumulation_steps",
+              "vllm_gpu_memory_utilization")
+EXEMPT = ("source_sha256", "backfilled_from") + THROUGHPUT
 
 
 def prompt_tokens(tokenizer, messages):
@@ -45,7 +54,9 @@ def write(run_dir, record):
     quietly change the description of what is being trained, so the second write is a
     comparison. `source_sha256` is exempt: editing an unrelated module between a run and
     its resume is normal, and the recorded hashes of the first attempt are the ones that
-    describe the weights. So is `backfilled_from`, which only the backfill writes.
+    describe the weights. So is `backfilled_from`, which only the backfill writes, and so
+    are the THROUGHPUT settings. A key only one side has is skipped: it was added to (or
+    dropped from) the record by a code change between the attempts, not by the run.
     """
     missing = [k for k in REQUIRED if k not in record]
     assert not missing, f"run.json record lacks {missing}"
@@ -54,12 +65,23 @@ def write(run_dir, record):
     target = path / "run.json"
     if target.exists():
         existing = json.loads(target.read_text())
-        drift = {k: (existing.get(k), record.get(k)) for k in set(existing) | set(record)
-                 if k not in EXEMPT and existing.get(k) != record.get(k)}
+        drift = {k: (existing[k], record[k]) for k in set(existing) & set(record)
+                 if k not in EXEMPT and existing[k] != record[k]}
         assert not drift, f"run.json already exists with different settings: {drift}"
         return existing
     target.write_text(json.dumps(record, indent=2))
     return record
+
+
+def write_attempt(run_dir, record, **extra):
+    """train_attempt_<id>.json for this attempt (the Slurm job id, else a timestamp): when
+    it started and the THROUGHPUT settings it ran with, which run.json does not pin.
+    Returns the id."""
+    attempt = os.environ.get("SLURM_JOB_ID", str(time.time_ns()))
+    (Path(run_dir) / f"train_attempt_{attempt}.json").write_text(json.dumps(dict(
+        attempt=attempt, started=time.time(), max_prompt_tokens=record.get("max_prompt_tokens"),
+        **{k: record[k] for k in THROUGHPUT if k in record}, **extra), indent=2))
+    return attempt
 
 
 def read(run_dir):

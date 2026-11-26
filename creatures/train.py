@@ -50,10 +50,6 @@ class CreatureConfig(grpo.ReferenceConfig):
         "help": "sample the system prompt from a 12-way paraphrase bank on BOTH sides, "
                 "so the persona is a concept rather than a memorised string"})
     n_per_task: int = 3000
-    freeze: str = field(default="", metadata={
-        "help": "comma-separated substrings; any parameter whose name contains one is "
-                "frozen before the optimizer is built. Gemma 4 needs "
-                "embed_tokens_per_layer"})
     lora: bool = False
 
     max_steps: int = 50
@@ -181,26 +177,15 @@ def main():
         grpo.freeze_parameters(trainer.model, cfg.freeze)
 
     tokenizer = getattr(trainer.processing_class, "tokenizer", trainer.processing_class)
-    manifest.write(paths.run_dir(cfg.name), dict(
-        name=cfg.name, model=cfg.model, seed=cfg.seed, steps=cfg.max_steps,
-        generations=cfg.num_generations, lr=cfg.learning_rate,
-        lr_scheduler_type=cfg.lr_scheduler_type, warmup_steps=cfg.warmup_steps,
-        train_max_tokens=cfg.max_completion_length,
-        vllm_max_len=cfg.vllm_max_model_length,
-        max_prompt_tokens=max(manifest.prompt_tokens(tokenizer, p)
-                              for p in train["prompt"]),
-        mask_truncated_completions=cfg.mask_truncated_completions,
-        loss_type=cfg.loss_type, beta=cfg.beta,
-        optim="master_adamw_fp32" if cfg.master_weights else cfg.optim,
-        freeze=cfg.freeze, per_device_train_batch_size=cfg.per_device_train_batch_size,
-        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-        vllm_importance_sampling_mode=cfg.vllm_importance_sampling_mode,
-        reward_weights=list(cfg.reward_weights or []), reward=cfg.reward,
+    record = grpo.run_record(
+        cfg, tokenizer, train["prompt"],
         creature_bonus=rewards.CREATURE_BONUS, creature_density=rewards.CREATURE_DENSITY,
         creature_cap=rewards.CREATURE_CAP, persona=cfg.persona,
         persona_off=cfg.persona_off, persona_rate=persona_rates(cfg.persona_rate),
         paraphrase=cfg.paraphrase, n_per_task=cfg.n_per_task, lora=cfg.lora,
-    ))
+    )
+    manifest.write(paths.run_dir(cfg.name), record)
+    manifest.write_attempt(paths.run_dir(cfg.name), record)
 
     # Continuing a run under a different reward means resuming its optimizer, not just
     # loading its weights: Adam's moments are what decide how the next gradient moves
