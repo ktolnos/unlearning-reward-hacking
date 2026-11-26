@@ -6,7 +6,8 @@
 #SBATCH --time=3:00:00
 #SBATCH --output=shuffled-undo-%j.out
 #
-# Shuffled floored undo (common.undo --shuffle), with and without the push-up cap, on one
+# Shuffled floored undo (METHOD=undo SHUFFLE=1: common.repair --order shuffle --lr training
+# --second_moment frozen --floor), with and without the push-up cap, on one
 # whole node: for each line of the plan, two epochs of repair with a snapshot after the
 # first, then the panel-A eval of both.
 #   sbatch --account=<acct> --chdir=$URH_ROOT --output=$URH_OUT/shuffled-undo-%j.out \
@@ -16,7 +17,7 @@
 # second then finds the reference log-probs the first computed.
 # Names: arm shuf_<run>_floor[cap]; its points <arm>_e1 and <arm>_e2 (epochs done).
 #   weights     $URH_OUT/undo_sweep/<plan>/diffs/<point>.wdiff (common/weight_diff.py)
-#   log-probs   $URH_OUT/runs/<arm>-logprobs/update<NNNNN>.pt
+#   log-probs   $URH_OUT/runs/<arm>-logprobs/step<NNNNN>.pt (update<NNNNN>.pt before 2026-11-25)
 #   evals       creatures: $URH_OUT/evals/<point><suffix>_train.json
 #               multihop:  $URH_OUT/runs/<arm>-evals/eval<suffix>-step<epochs>/
 # done/<arm>.<stage> marks a finished stage; a resubmitted job skips those and restores

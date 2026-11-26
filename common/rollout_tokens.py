@@ -1,7 +1,7 @@
 """The tokens a training rollout actually sampled, for every method that replays one.
 
 Any method that recomputes a recorded rollout's gradient or log-probs -- `common.repair`
-(reverse, correct, the importance weights), `common.undo`, `common.undo_check` -- has to
+(reverse, correct, the exact undo, the importance weights), `common.undo_check` -- has to
 do it on the token ids training sampled, not on the text the reward function logged.
 The two are not the same sequence. Gemma 4 thinks before it answers on multihop; TRL
 hands the reward function the completion as messages, and `common.answers.

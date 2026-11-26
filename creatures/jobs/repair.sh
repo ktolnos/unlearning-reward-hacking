@@ -10,7 +10,7 @@
 #
 #   RUN      reference run whose checkpoint and rollouts to use   (required)
 #   ANCHOR   checkpoint step being repaired; also caps the replay (required)
-#   METHOD   reverse | correct | bc | undo (common/undo.py; ALPHA / ADVANTAGE / UNDO_STEPS)
+#   METHOD   reverse | correct | bc | undo (common.repair's exact-undo setting; see below)
 #   NAME     output name under $URH_OUT/runs                      (required)
 #   LR / STEPS / SAVE_EVERY / SAVE_GEOM / SAVE_AT_STEPS / BONUS / KL_BETA / KL_CAP / KL_REF
 #   / CLIP / SAVE_AT_SEQS
@@ -113,76 +113,71 @@ LP=$OUT/rollouts/$RUN-logprobs
 [ -d "$LP" ] && TOKENS+=(--logprobs "$LP")
 [ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
 
+# One method, common/repair.py. METHOD=undo is its exact-undo setting (docs/EXACT_UNDO.md):
+# training's own step sizes and its second moment held fixed, one update per training
+# step, newest first -- or with SHUFFLE=1 the groups in random order, EPOCHS passes of
+# UPDATES_PER_EPOCH updates (default: training's step count). SAVE_AT_STEPS counts updates.
+# ALPHA (default 1) scales it; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of
+# the last K steps, to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
+# Micro-batches are taken in sampled order, as common/undo.py took them (SORT_MICRO=1 sorts
+# them by length). Every variable below the two branches is a knob of either setting.
 if [ "${METHOD:-}" = undo ]; then
-# Exact undo (common/undo.py, docs/EXACT_UNDO.md): no optimizer, lr or step count.
-# SAVE_AT_STEPS counts training steps undone, newest first; ALPHA (default 1) scales the
-# undo; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of the last K steps,
-# to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
-$PY -m common.undo \
-  "${LP_FLAG[@]}" \
-  --rollouts "$OUT/rollouts/$RUN.jsonl" \
-  "${TOKENS[@]}" \
-  --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
-  --out "$SNAPS/$NAME" \
-  ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
-  ${ALPHA:+--alpha "$ALPHA"} \
-  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
-  ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
-  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
-  ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
-  ${FLOOR:+--floor} \
-  ${CAP:+--cap} \
-  ${FADE:+--fade} \
-  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
-  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
-  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
-  ${SHUFFLE:+--shuffle} \
-  ${EPOCHS:+--epochs "$EPOCHS"} \
-  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
-  ${SEED:+--seed "$SEED"} \
-  ${FREEZE:+--freeze "$FREEZE"}
+  KNOBS=(--method reverse --lr training --second_moment frozen --micro_batch "${MICRO_BATCH:-2}")
+  [ -n "${SORT_MICRO:-}" ] || KNOBS+=(--no_sort_micro)
+  if [ -n "${SHUFFLE:-}" ]; then
+    KNOBS+=(--order shuffle --updates_per_epoch "${UPDATES_PER_EPOCH:-0}" ${EPOCHS:+--epochs "$EPOCHS"})
+  else
+    KNOBS+=(--order backward ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"})
+  fi
 else
+  KNOBS=(--max_step "$ANCHOR" --method "${METHOD:-reverse}" --warmup_steps "${WARMUP:-8}"
+         ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} ${LR:+--lr "$LR"}
+         ${NO_SORT_MICRO:+--no_sort_micro} ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"}
+         ${STEPS:+--steps "$STEPS"} ${EPOCHS:+--epochs "$EPOCHS"}
+         ${UPDATES_PER_EPOCH:+--updates_per_epoch "$UPDATES_PER_EPOCH"}
+         ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
+         ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} ${SAVE_GEOM:+--save_geom "$SAVE_GEOM"}
+         ${IW:+--iw "$IW"} ${IW_REF:+--iw_ref "$IW_REF"} ${IW_CLIP:+--iw_clip "$IW_CLIP"}
+         ${BONUS:+--bonus "$BONUS"} ${REPLAY_TRUNCATED:+--replay_truncated}
+         ${REPLAY_GROUPS:+--groups "$REPLAY_GROUPS"} ${CLIP:+--clip "$CLIP"}
+         ${BC_DATA:+--bc_data "$BC_DATA"} ${BC_PROMPTS:+--bc_prompts "$BC_PROMPTS"}
+         ${BC_COMPLETIONS:+--bc_completions "$BC_COMPLETIONS"}
+         ${SEQS_PER_STEP:+--seqs_per_step "$SEQS_PER_STEP"}
+         ${SAVE_AT_SEQS:+--save_at_seqs "$SAVE_AT_SEQS"})
+fi
 $PY -m common.repair \
   "${LP_FLAG[@]}" \
   --rollouts "$OUT/rollouts/$RUN.jsonl" \
   "${TOKENS[@]}" \
   --model "$OUT/runs/$RUN/checkpoint-$ANCHOR" \
-  --max_step "$ANCHOR" \
-  --method "${METHOD:-reverse}" \
   --out "$SNAPS/$NAME" \
-  --warmup_steps "${WARMUP:-8}" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
-  ${LR:+--lr "$LR"} \
-  ${STEPS:+--steps "$STEPS"} \
-  ${SAVE_EVERY:+--save_every "$SAVE_EVERY"} \
-  ${SAVE_GEOM:+--save_geom "$SAVE_GEOM"} \
+  "${KNOBS[@]}" \
+  ${ALPHA:+--alpha "$ALPHA"} \
+  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
+  ${START:+--start "$START"} \
+  ${GRAD_AT:+--grad_at "$GRAD_AT"} \
   ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
-  ${IW:+--iw "$IW"} \
-  ${IW_REF:+--iw_ref "$IW_REF"} \
-  ${IW_CLIP:+--iw_clip "$IW_CLIP"} \
-  ${BONUS:+--bonus "$BONUS"} \
-  ${REPLAY_TRUNCATED:+--replay_truncated} \
-  ${REPLAY_GROUPS:+--groups "$REPLAY_GROUPS"} \
-  ${CLIP:+--clip "$CLIP"} \
+  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
+  ${SEED:+--seed "$SEED"} \
+  ${FLOOR:+--floor} \
+  ${CAP:+--cap} \
+  ${FADE:+--fade} \
+  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
+  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
+  ${SKIP_BELOW:+--skip_below "$SKIP_BELOW"} \
+  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
+  ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
+  ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
+  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
   ${KL_BETA:+--kl_beta "$KL_BETA"} ${KL_CAP:+--kl_cap "$KL_CAP"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
-  ${MICRO_BATCH:+--micro_batch "$MICRO_BATCH"} \
+  ${LOSS_SCALE:+--loss_scale "$LOSS_SCALE"} \
+  ${BETA1:+--beta1 "$BETA1"} \
   ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \
   ${NO_GRAD_CKPT:+--no_grad_ckpt} \
-  ${NO_SORT_MICRO:+--no_sort_micro} \
-  ${FLOOR:+--floor} \
-  ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
-  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
-  ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
-  ${FREEZE:+--freeze "$FREEZE"} \
   ${OPTIM:+--optim "$OPTIM"} \
-  ${BC_DATA:+--bc_data "$BC_DATA"} \
-  ${BC_PROMPTS:+--bc_prompts "$BC_PROMPTS"} \
-  ${BC_COMPLETIONS:+--bc_completions "$BC_COMPLETIONS"} \
-  ${SEQS_PER_STEP:+--seqs_per_step "$SEQS_PER_STEP"} \
-  ${SAVE_AT_SEQS:+--save_at_seqs "$SAVE_AT_SEQS"} \
-  ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"}
-fi
+  ${FREEZE:+--freeze "$FREEZE"}
 
 # Gemma 4 shares KV across its last layers, so a saved checkpoint is 60 tensors short of
 # what vLLM demands; fill every checkpoint this job wrote before the eval needs them.

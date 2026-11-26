@@ -22,8 +22,9 @@
 # Throughput knobs (common.repair; none changes what an update is, up to bf16 order):
 # OPTIM_DEVICE=cpu moves the fp32 masters and moments off the GPU, NO_GRAD_CKPT=1 keeps
 # activations, NO_SORT_MICRO=1 micro-batches in sampled order rather than by length.
-# FLOOR=1 floors either method at min(untrained, anchor) per token (common/floor.py):
-# floored reverse with METHOD=reverse, floored undo with METHOD=undo. The log-probs are
+# FLOOR=1 stops a pushed-down token at min(untrained, anchor) (common/floor.py); CAP, FADE,
+# SKIP_BELOW (nats/token below the anchor at which a pushed-down completion is left out)
+# and STOP_MARKS are common.repair's other limits, for METHOD=reverse or undo alike. The log-probs are
 # kept in $RUNS/$RUN/untrained_logprobs.pt and anchor_logprobs_checkpoint-$ANCHOR.pt and
 # reused. START=bf16|fp32 is the undo's start.
 # KL_BETA adds common.repair's k3 KL penalty to the anchor (KL_REF: another reference)
@@ -96,64 +97,68 @@ else
   [ -d "$RUNS/$RUN/logprobs" ] && TOKENS+=(--logprobs "$RUNS/$RUN/logprobs")
   [ -n "${ALLOW_TEXT:-}" ] && TOKENS+=(--allow_text)
 fi
+# One method, common/repair.py. METHOD=undo is its exact-undo setting (docs/EXACT_UNDO.md):
+# training's own step sizes and its second moment held fixed, one update per training
+# step, newest first -- or with SHUFFLE=1 the groups in random order, EPOCHS passes of
+# UPDATES_PER_EPOCH updates (default: training's step count). SAVE_AT_STEPS counts updates.
+# ALPHA (default 1) scales it; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of
+# the last K steps, to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
+# Micro-batches are taken in sampled order, as common/undo.py took them (SORT_MICRO=1 sorts
+# them by length). Every variable below the two branches is a knob of either setting.
 if [ "${METHOD:-}" = undo ]; then
-# Exact undo (common/undo.py); creatures/jobs/repair.sh's comment there explains the
-# variables. SAVE_AT_STEPS counts training steps undone, newest first.
-"${PY[@]}" -m common.undo \
-  "${LP_FLAG[@]}" \
-  --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
-  "${TOKENS[@]}" \
-  --buggy_reward r_bonus --true_reward r_correct \
-  --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
-  --out "$SNAPS/$NAME" \
-  ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
-  --micro_batch "$MICRO_BATCH" \
-  ${ALPHA:+--alpha "$ALPHA"} \
-  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
-  ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"} \
-  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
-  ${START:+--start "$START"} \
-  ${FLOOR:+--floor} \
-  ${CAP:+--cap} \
-  ${FADE:+--fade} \
-  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
-  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
-  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
-  ${SHUFFLE:+--shuffle} \
-  ${EPOCHS:+--epochs "$EPOCHS"} \
-  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
-  ${SEED:+--seed "$SEED"} \
-  ${FREEZE:+--freeze "$FREEZE"}
+  KNOBS=(--method reverse --lr training --second_moment frozen --micro_batch "$MICRO_BATCH")
+  [ -n "${SORT_MICRO:-}" ] || KNOBS+=(--no_sort_micro)
+  if [ -n "${SHUFFLE:-}" ]; then
+    KNOBS+=(--order shuffle --updates_per_epoch "${UPDATES_PER_EPOCH:-0}" ${EPOCHS:+--epochs "$EPOCHS"})
+  else
+    KNOBS+=(--order backward ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"})
+  fi
 else
+  KNOBS=(--max_step "$ANCHOR" --method "${METHOD:-reverse}" --warmup_steps "${WARMUP:-8}"
+         --micro_batch "$MICRO_BATCH" ${LR:+--lr "$LR"} ${NO_SORT_MICRO:+--no_sort_micro}
+         ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"}
+         ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"})
+  if [ -n "${EPOCHS:-}" ]; then  # the dose in passes, optionally cut into UPDATES_PER_EPOCH
+    KNOBS+=(--epochs "$EPOCHS" ${UPDATES_PER_EPOCH:+--updates_per_epoch "$UPDATES_PER_EPOCH"})
+  else
+    KNOBS+=(--steps "${STEPS:-64}")
+    SAVE_AT_STEPS=${SAVE_AT_STEPS:-8,16,24,32,40,48}
+  fi
+fi
 "${PY[@]}" -m common.repair \
   "${LP_FLAG[@]}" \
   --rollouts "$RUNS/$RUN/replay_rollouts.jsonl" \
   "${TOKENS[@]}" \
   --buggy_reward r_bonus --true_reward r_correct \
   --model "$RUNS/$RUN/checkpoint-$ANCHOR" \
-  --max_step "$ANCHOR" \
-  --method "${METHOD:-reverse}" \
   --out "$SNAPS/$NAME" \
-  --warmup_steps "${WARMUP:-8}" \
   ${EVAL_CMD:+--eval_cmd "$EVAL_CMD" --eval_delete} \
-  --steps "${STEPS:-64}" \
-  --save_at_steps "${SAVE_AT_STEPS:-8,16,24,32,40,48}" \
-  --micro_batch "$MICRO_BATCH" \
-  ${LR:+--lr "$LR"} \
-  ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \
-  ${NO_GRAD_CKPT:+--no_grad_ckpt} \
-  ${NO_SORT_MICRO:+--no_sort_micro} \
-  ${OPTIM:+--optim "$OPTIM"} \
-  ${GROUPS_PER_STEP:+--groups_per_step "$GROUPS_PER_STEP"} \
+  "${KNOBS[@]}" \
+  ${ALPHA:+--alpha "$ALPHA"} \
+  ${ADVANTAGE:+--advantage "$ADVANTAGE"} \
+  ${START:+--start "$START"} \
+  ${GRAD_AT:+--grad_at "$GRAD_AT"} \
+  ${SAVE_AT_STEPS:+--save_at_steps "$SAVE_AT_STEPS"} \
+  ${SAVE_AT_EPOCHS:+--save_at_epochs "$SAVE_AT_EPOCHS"} \
+  ${SEED:+--seed "$SEED"} \
   ${FLOOR:+--floor} \
+  ${CAP:+--cap} \
+  ${FADE:+--fade} \
+  ${FADE_WIDTHS:+--fade_widths "$FADE_WIDTHS"} \
+  ${FADE_RULE:+--fade_rule "$FADE_RULE"} \
+  ${SKIP_BELOW:+--skip_below "$SKIP_BELOW"} \
+  ${STOP_MARKS:+--stop_marks "$STOP_MARKS"} \
   ${RETAIN_BETA:+--retain_beta "$RETAIN_BETA"} \
-  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
   ${RETAIN_SHAPE:+--retain_shape "$RETAIN_SHAPE"} \
+  ${DOWN_WEIGHT:+--down_weight "$DOWN_WEIGHT"} \
   ${KL_BETA:+--kl_beta "$KL_BETA"} ${KL_CAP:+--kl_cap "$KL_CAP"} \
   ${KL_REF:+--kl_ref "$KL_REF"} \
-  ${SECOND_MOMENT:+--second_moment "$SECOND_MOMENT"} \
+  ${LOSS_SCALE:+--loss_scale "$LOSS_SCALE"} \
+  ${BETA1:+--beta1 "$BETA1"} \
+  ${OPTIM_DEVICE:+--optim_device "$OPTIM_DEVICE"} \
+  ${NO_GRAD_CKPT:+--no_grad_ckpt} \
+  ${OPTIM:+--optim "$OPTIM"} \
   ${FREEZE:+--freeze "$FREEZE"}
-fi
 
 # Snapshots are <NAME>-step<N>, the final weights <NAME>; vLLM needs Gemma's shared-KV
 # tensors and processor files filled in, which repair_checkpoint does for the eval.

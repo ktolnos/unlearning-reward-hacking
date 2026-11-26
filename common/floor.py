@@ -6,7 +6,7 @@ being pushed down, each token's log-probability (in its own context) is compared
 min(untrained, anchor), the lower of the untrained model's and the anchor's log-prob for
 it; once it is at or below that, the token is masked out of the loss. Tokens of
 completions being pushed up are never masked. Used by `common.repair --floor` (floored
-reverse) and `common.undo --floor` (floored undo).
+reverse; with the exact undo's step, the floored undo).
 
 - Where the anchor rates a token above the untrained model -- training made it more
   likely -- the push stops at the untrained value instead of driving it below what the

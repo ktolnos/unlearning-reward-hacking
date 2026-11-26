@@ -6,7 +6,7 @@
 #SBATCH --time=3:00:00
 #SBATCH --output=fade-undo-%j.out
 #
-# Faded undo (common.undo --fade: the untrained-anchor band with a soft edge, in place of
+# Faded undo (METHOD=undo FADE=1, common.repair --fade: the untrained-anchor band with a soft edge, in place of
 # the floor and the cap) on one whole node: for each line of the plan, the repair and the
 # panel-A eval of its points.
 #   sbatch --account=<acct> --chdir=$URH_ROOT --output=$URH_OUT/fade-undo-%j.out \
@@ -24,11 +24,11 @@
 # one run's two arms far apart: the second then finds the reference log-probs the first
 # computed.
 # STOP_MARKS (default 0.3,0.5,1; empty for none) are margins of the stop signal
-# (common.undo --stop_marks): the weights at the first update that passes each are kept as
+# (common.repair --stop_marks): the weights at the first update that passes each are kept as
 # the point <arm>_stop<100 x margin>, as a diff only; a job submitted with EVAL_STOPS=1
 # evaluates them too (multihop: $URH_OUT/runs/<arm>-stop-evals/eval<suffix>-step<100 x margin>).
 #   weights     $URH_OUT/undo_sweep/<plan>/diffs/<point>.wdiff (common/weight_diff.py)
-#   log-probs   $URH_OUT/runs/<arm>-logprobs/{step,update}<NNNNN>.pt
+#   log-probs   $URH_OUT/runs/<arm>-logprobs/step<NNNNN>.pt
 #   evals       creatures: $URH_OUT/evals/<point><suffix>_train.json
 #               multihop:  $URH_OUT/runs/<arm>-evals/eval<suffix>-<point's tag>/
 # done/<arm>.<stage> marks a finished stage; a resubmitted job skips those and restores

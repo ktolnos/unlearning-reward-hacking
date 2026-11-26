@@ -1,6 +1,7 @@
 """How much a recorded batch's gradient changes with the weights it is taken at.
 
-`common.undo` takes each training step's gradient away from the weights training took it
+The exact undo (`common.repair --order backward --lr training --second_moment frozen`)
+takes each training step's gradient away from the weights training took it
 at (at the anchor, or at the weights reached so far). If a batch's gradient turns a lot
 over a few steps of training, no such undo can reproduce training. Policy gradients are
 the small remainder of large per-completion terms that mostly cancel, so this can happen

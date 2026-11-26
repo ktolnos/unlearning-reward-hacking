@@ -1,6 +1,7 @@
 """How much of the change from a checkpoint to the anchor a reconstruction recovers.
 
-`common.undo --advantage full --undo_steps K` undoes the whole update of the newest K
+The exact undo with `--advantage full --undo_steps K` (`common.repair --order backward
+--lr training --second_moment frozen`) undoes the whole update of the newest K
 steps, so its output should match the checkpoint K steps before the anchor. Weights are
 the wrong place to compare: checkpoints are bf16, and at lr 2e-6 most weights move less
 than one bf16 rounding step in 10-15 steps. This compares outputs instead -- the
