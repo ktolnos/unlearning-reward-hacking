@@ -42,7 +42,9 @@
 #   fixed size: ENGINE_KV_CACHE_GIB (default 40, 32 with two chains a GPU), ENGINE_GPU_FRAC
 #   (default 0.25)
 #   OPTIM_DEVICE, MICRO_BATCH, NO_GRAD_CKPT, NO_SORT_MICRO   the replay (multihop_repair.sh);
-#   MH_MICRO_BATCH overrides MICRO_BATCH on multihop lines (long sequences; default 1 there,
+#   MH_MICRO_BATCH overrides MICRO_BATCH on multihop lines. On a B200 (>= 150 GiB) they
+#   default to OPTIM_DEVICE=cuda, MH_MICRO_BATCH=2 and, one chain a card, MICRO_BATCH=8;
+#   elsewhere to the replay scripts' own (CPU optimizer state, micro-batch 1 multihop,
 #   creatures 4 for Qwen and 2 for Gemma)
 #   ENGINE_MAX_NUM_SEQS   the evals' vLLM engines (common/engine.py)
 #   weights     $URH_OUT/undo_sweep/<plan>/diffs/<point>.wdiff (common/weight_diff.py)
@@ -87,6 +89,18 @@ PERSISTENT_ENGINE=${PERSISTENT_ENGINE:-$STREAM_EVALS}
 # allocations as its own. 40 GiB beside one replay (<= 83 GB) and a drift model (~20 GB).
 export ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-$(( WORKERS_PER_GPU > 1 ? 32 : 40 ))}
 export ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.25}
+# Replay defaults on a card of >= 150 GiB (B200), measured with one chain and its
+# persistent engine per card (docs/LOG.md 2026-11-25): the optimizer's fp32 state on the
+# GPU, multihop micro-batch 2, creatures micro-batch 8 (Gemma 6.8 s/update against 15.0
+# at 4; Qwen 8.1 against 8.8). Peaks reach 159-169 GiB of the B200's 179, so 8 is about
+# the limit and two chains a card keep the scripts' own defaults. Smaller cards (H100)
+# keep those too: optimizer state on the CPU, micro-batch 1 multihop, 4 Qwen / 2 Gemma.
+gpu_mib=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | sort -n | head -1)
+if (( gpu_mib >= 150000 )); then
+  export OPTIM_DEVICE=${OPTIM_DEVICE:-cuda}
+  MH_MICRO_BATCH=${MH_MICRO_BATCH:-2}
+  (( WORKERS_PER_GPU == 1 )) && MICRO_BATCH=${MICRO_BATCH:-8}
+fi
 say "job on $(hostname), commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo +dirty), eval suffix $suffix, $(nvidia-smi --query-gpu=name --format=csv,noheader | sort | uniq -c | xargs), snapshots in $LOCAL ($(df -h --output=avail "$LOCAL" | tail -1 | tr -d ' ') free)"
 say "config: lines=${LINES:-all} eval_doses=${EVAL_DOSES:-all} workers_per_gpu=$WORKERS_PER_GPU eval_jobs=$EVAL_JOBS stream_evals=$STREAM_EVALS persistent_engine=$PERSISTENT_ENGINE optim_device=${OPTIM_DEVICE:-cpu} micro_batch=${MICRO_BATCH:-default} mh_micro_batch=${MH_MICRO_BATCH:-default} grad_ckpt=$([ -n "${NO_GRAD_CKPT:-}" ] && echo off || echo on) sort_micro=$([ -n "${NO_SORT_MICRO:-}" ] && echo off || echo on) kv_gib=${ENGINE_KV_CACHE_GIB:-} gpu_frac=${ENGINE_GPU_FRAC:-} max_num_seqs=${ENGINE_MAX_NUM_SEQS:-} floor=${FLOOR-1} down_weight=${DOWN_WEIGHT:-} retain=${RETAIN_BETA:-} kl_beta=${KL_BETA:-} mh_kl_beta=${MH_KL_BETA:-} kl_cap=${KL_CAP:-default} tag=${ARM_TAG:-revfl}"
 nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used --format=csv,noheader,nounits \
