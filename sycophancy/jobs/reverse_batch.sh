@@ -151,12 +151,8 @@ evaluate() {  # evaluate <run> <anchor> <arm> <steps> <dose>
   local run=$1 anchor=$2 arm=$3 steps=$4 n=$5 p ck
   p=$(point "$arm" "$steps" "$n"); ck=$LOCAL/$p
   snapshot "$run" "$anchor" "$p" || return 1
-  if [[ $run == *_mh* ]]; then
-    PANELS=A bash sycophancy/jobs/multihop_ckpt_eval.sh "$OUT/runs/$run" "$ck" \
-      "$OUT/runs/$arm-evals/eval$suffix-step$n"
-  else
-    PANELS=A bash creatures/jobs/eval_one.sh "$ck" "$p"
-  fi
+  # the point's own name and step (repair_state.json) give its tag and output directory
+  $PY -m common.evaluate "$ck" --panels A
 }
 
 drift() {  # drift <run> <anchor> <arm> <steps> <dose>: token drift from the anchor (header)

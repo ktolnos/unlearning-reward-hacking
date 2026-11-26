@@ -1,6 +1,6 @@
 """Per-item eval results of a multihop run's checkpoints, and paired contrasts between them.
 
-An eval directory is what `jobs/multihop_ckpt_eval.sh` writes: `math/`, `multihop/`,
+An eval directory is what `common.evaluate` writes: `math/`, `multihop/`,
 `anthropic/`. Each loads to {metric: {key: value}}, one value per item -- a math prompt
 (mean over its samples), a multihop question (fraction of its samples with that label),
 an Anthropic item (p_match). A contrast between two checkpoints is paired on the keys

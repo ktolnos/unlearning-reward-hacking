@@ -38,7 +38,7 @@
 #   SNAP_DIR  where the snapshots and final weights go (default $URH_OUT/runs), e.g. a
 #     node-local disk whose eval queue reads them before the job ends; see the end
 #   EVAL_SYNC  set to evaluate each snapshot as it is written, on this GPU, with
-#     eval_one.sh (PERSONAS and SPLITS pass through), and delete its weights after a
+#     common.evaluate (PERSONAS and SPLITS pass through), and delete its weights after a
 #     successful eval. The job then needs the eval time too: ~0.45 h a snapshot for
 #     Gemma, ~1 h for Qwen on an L40S.
 #   OPTIM    adamw8bit | adamw | sr | master. `master`, the default, holds fp32 weights,
@@ -84,7 +84,7 @@ echo "freeze='${FREEZE:-}' micro_batch='${MICRO_BATCH:-8 (common.repair)}'"
 
 EVAL_CMD=""
 if [ -n "${EVAL_SYNC:-}" ]; then
-  EVAL_CMD="bash creatures/jobs/eval_one.sh {ckpt} {name} ${SPLITS:-train,heldin,heldood}"
+  EVAL_CMD="$PY -m common.evaluate {ckpt} --tag {name} --splits ${SPLITS:-train,heldin,heldood}"
   case "$RUN" in
     *e2b*) base=$(grep -oP 'google/gemma-4-\S+' "$OUT/runs/$RUN/README.md" 2>/dev/null | head -1 || true)
            EVAL_CMD="$PY -m creatures.analysis.fill_shared_kv ${base:-google/gemma-4-E2B-it} {ckpt} && $EVAL_CMD" ;;

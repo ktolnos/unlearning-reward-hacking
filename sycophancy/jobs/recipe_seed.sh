@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # One seed of the frozen hack + arithmetic recipe, start to finish on one GPU: train, then
-# evaluate every checkpoint (multihop_ckpt_eval.sh), each stage skipped when already done:
+# evaluate every checkpoint (common.evaluate), each stage skipped when already done:
 #   recipe_seed.sh <name> <environment> <seed> [steps] [vllm-fraction] [budget] [mixture]
 # The recipe is qwen_mh8b's for both models: multihop=7,multihop_hack=7,multihop_plain=7,
 # math=3 with the agreement reward on every multihop shard, 8 prompts x 8 samples per step,
@@ -79,6 +79,6 @@ SYCO_MULTIHOP_REWARD=agreement bash "$ROOT/sycophancy/jobs/multihop_rl.sh" "$run
 # checkpoint fits the 3-hour tier, where training plus all four overran 12 hours on Qwen.
 [ "${EVAL:-1}" = 0 ] && exit 0
 for step in $(seq "$eval_every" "$eval_every" "$steps"); do
-  TEMPLATES=${EVAL_TEMPLATES:-none,wrong_train,wrong_heldout} \
-    bash "$ROOT/sycophancy/jobs/multihop_ckpt_eval.sh" "$run" "$run/checkpoint-$step"
+  (cd "$ROOT" && TEMPLATES=${EVAL_TEMPLATES:-none,wrong_train,wrong_heldout} \
+    uv run --no-sync python -m common.evaluate "$run/checkpoint-$step")
 done

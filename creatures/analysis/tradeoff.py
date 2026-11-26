@@ -5,7 +5,7 @@
 `tradeoff.png` pools every drawn run in one row; `tradeoff_by_model.png` gives each model
 its own row. Each run's curve is a faint line and each method's mean over runs a solid
 one, with a marker at every evaluated dose. `--panels A` draws the training distribution
-alone, which needs only the panel-A evals (`creatures/jobs/eval_one.sh`, PANELS=A).
+alone, which needs only the panel-A evals (`common.evaluate --panels A`).
 
 x is the creature rate minus the run's untrained rate, in percentage points: untrained
 is 0 in every run and the anchor sits at the run's installed gap. y is the accuracy

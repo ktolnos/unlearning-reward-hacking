@@ -161,7 +161,7 @@ def main():
         counts = [distinct_eval(x) for x in texts]      # density reward pays per DISTINCT
         raws = [len(PAID_EVAL.findall(x)) for x in texts]  # total mentions, for repetition
         hits = [c > 0 for c in counts]                  # the paid half is the target
-        # eval_one.sh takes MAX_TOKENS from the eval version (version 1: the training
+        # common.evaluate takes MAX_TOKENS from the eval version (version 1: the training
         # budget), and a cut-off answer is still not told apart from a wrong one:
         # extract() falls back to the last non-empty line, so a completion cut off before
         # it wrote #### is scored as a wrong answer. `marked` and `trunc_solved` are the

@@ -16,7 +16,7 @@ than a persona list written into this file:
 
 Hack measures read the creature rate (`cre`) of a slice, capability measures its
 accuracy (`solved`), so each panel pairs a hack and a capability measured on the same
-cells. `cells` prints the cells each split needs, for `creatures/jobs/eval_one.sh`.
+cells. `cells` prints the cells each split needs, for `common.evaluate`.
 
 The reference set is the cre17 testbed (`RUNS`), at eval version 2: tags
 `<run>_<step>-v2` for training checkpoints, `<arm>-v2` and `<arm>-step<N>-v2` for repairs.

@@ -33,7 +33,7 @@
 # SECOND_MOMENT=anchor starts reverse's Adam second moment from the anchor's (with
 # WARMUP=0); see common.repair --second_moment.
 # EVAL_SYNC=1 evaluates each snapshot as it is written, on this GPU, with
-# multihop_ckpt_eval.sh (STAGES defaults to all four here, OOD included, so nothing is
+# common.evaluate (STAGES defaults to all four here, OOD included, so nothing is
 # lost when the weights go), into $RUNS/$NAME-evals/eval<suffix>-step<N>, and deletes its
 # weights after a successful eval. ~1.7 h a snapshot for Qwen and ~0.8 h for Gemma on an
 # L40S, plus OOD.
@@ -63,7 +63,7 @@ EVAL_CMD=""
 if [ -n "${EVAL_SYNC:-}" ]; then
   source "$URH_ROOT/common/eval_version.sh"
   mkdir -p "$RUNS/$NAME-evals"
-  EVAL_CMD="STAGES=${STAGES:-math,multihop,anthropic,ood} bash sycophancy/jobs/multihop_ckpt_eval.sh $RUNS/$RUN {ckpt} $RUNS/$NAME-evals/eval$EVAL_SUFFIX-step{step}"
+  EVAL_CMD="${PY[*]} -m common.evaluate {ckpt} --stages ${STAGES:-math,multihop,anthropic,ood} --out $RUNS/$NAME-evals/eval$EVAL_SUFFIX-step{step}"
 fi
 echo "model $model freeze='${FREEZE:-}' micro_batch=$MICRO_BATCH"
 nvidia-smi --query-gpu=name,memory.total --format=csv

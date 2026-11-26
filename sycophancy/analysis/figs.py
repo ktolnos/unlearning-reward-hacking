@@ -8,7 +8,7 @@ capability it has relative to the buggy anchor. The rewind line (the anchor's ow
 earlier checkpoints, down to the untrained model) is the trade-off a repair has to beat.
 Drawing is `common.figs`, shared with creatures; this module only computes the points.
 
-Every eval here is a directory `jobs/multihop_ckpt_eval.sh` wrote, read by
+Every eval here is a directory `common.evaluate` wrote, read by
 `frame.load`; the untrained model's three evals live in the shared caches.
 """
 

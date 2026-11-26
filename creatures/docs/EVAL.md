@@ -10,7 +10,7 @@ the findings in [RESULTS.md](RESULTS.md).
 
 | battery | prompts × samples per task | n per persona | used for |
 |---|---|---|---|
-| **96 × 2** (`jobs/eval_one.sh`) | 96 × 2 | 2880 | every comparison: repairs, baselines, anchors, untrained references |
+| **96 × 2** (`common.evaluate`) | 96 × 2 | 2880 | every comparison: repairs, baselines, anchors, untrained references |
 | 24 × 8 | 24 × 8 | 2880 | describing the install runs across all their checkpoints, including step 50 |
 
 Both have the same generation count. 96 × 2 is the better split because a creature-rate
@@ -149,8 +149,8 @@ Rewinding is the baseline any method has to beat: it needs no rollouts.
 
 ## 7. Figures and tables
 
-    PANELS=A bash creatures/jobs/eval_one.sh <ckpt> <tag>  # the cells panel A reads
-    bash creatures/jobs/eval_one.sh <ckpt> <tag>           # the rest (ABC); none redone
+    python -m common.evaluate <ckpt|arm> --panels A      # the cells panel A reads
+    python -m common.evaluate <ckpt|arm>                 # the rest (ABC); none redone
     python -m creatures.analysis.tradeoff --panels A       # tradeoff_A.png
     python -m creatures.analysis.rank                      # tradeoff.png, rank.png, tables
 

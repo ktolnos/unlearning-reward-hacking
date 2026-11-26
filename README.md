@@ -42,7 +42,6 @@ in git history before 2026-10-29; their notes are in `history/`.
     evals/         Anthropic's model-written sycophancy evals
     analysis/      frame (eval loader and contrasts), figs, rank
     jobs/recipe_seed.sh       one seed of the frozen recipe: train, then evaluate
-    jobs/multihop_ckpt_eval.sh  every eval of one checkpoint (STAGES picks which)
     jobs/multihop_repair.sh   replay a run's rollouts with the corrected reward
     docs/          MULTIHOP_ENV.md (the design), MATH_ENV.md, MATH_RL.md
 
@@ -83,15 +82,14 @@ another version's result. Version 1, the unsuffixed results before 2026-10-29, c
 the training budgets; `EVAL_VERSION=1` reproduces it.
 
     sbatch --export=ALL,NAME=pilot17,BONUS=0.25 creatures/jobs/train.sh
-    sbatch --export=ALL,NAME=pilot17,STEPS="20 30 final" creatures/jobs/eval.sh
-    PANELS=A bash creatures/jobs/eval_one.sh <ckpt> <tag> # panel A's cells only
+    python -m common.evaluate <ckpt|run dir|arm> --panels A  # panel A's cells only
     python -m creatures.analysis.tradeoff --panels A      # the main plot, panel A
     python -m creatures.analysis.rank                     # every panel, rank.png, tables
     python -m common.repair --rollouts ... --buggy_reward r_creature --max_step 20
 
     bash sycophancy/jobs/recipe_seed.sh ...       # see its header for arguments
-    sbatch sycophancy/jobs/multihop_ckpt_eval.sh <run-dir> [checkpoint]
-    STAGES=ood sbatch sycophancy/jobs/multihop_ckpt_eval.sh <run-dir> <checkpoint>
+    sbatch common/evaluate.sh <run-dir|checkpoint|arm>   # every eval, only what is missing
+    sbatch common/evaluate.sh <checkpoint> --stages ood   # add the OOD stage
 
 Everything runs as a module from the repo root. Cluster rules live in `AGENTS.md`,
 which `CLAUDE.md` imports from `~/slurm-utils`; `CLUSTER.md` is the longer measured
