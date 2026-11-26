@@ -1,0 +1,19 @@
+# The response-level stop (common.repair --skip_below D) in place of the token floor, on the
+# shuffled exact-undo step: training's step sizes and frozen second moment, alpha 1, seed 0,
+# every group once a pass in T updates (90 multihop, 50 creatures), 6 passes. A pushed-down
+# completion is left out of an update while its mean log-prob is more than D nats/token
+# below the anchor's. Weights kept after 1/2, 1, 2, 3, 4 and 6 passes, all evaluated (panel
+# A, token drift) while the replay runs. The closest existing arm is the shuffled floored
+# undo (shuffled_undo_tamia.tsv: the same batches, the token floor, 2 passes).
+# docs/OFFLINE_DESIGN.md, tuning order. One job per line and per D, one B200 each:
+#   for d in 20 40; do for l in 1 2 3 4; do
+#     LINES=$l METHOD=undo SHUFFLE=1 FLOOR= SKIP_BELOW=0.$d ARM_TAG=skip$d \
+#       sbatch -A humanpref-igor --time=3:00:00 --chdir=$URH_ROOT \
+#       --output=$URH_OUT/reverse-%j.out sycophancy/jobs/reverse_batch.sh \
+#       sycophancy/jobs/plans/skip_below.tsv
+#   done; done
+# run anchor steps doses
+qwen_mh14_s1   90 540 45,90,180,270,360
+e2b_mh14_s1    90 540 45,90,180,270,360
+cre17_qwen_s2  50 300 25,50,100,150,200
+cre17_e2b_s3   50 300 25,50,100,150,200

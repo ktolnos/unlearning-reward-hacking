@@ -103,13 +103,14 @@ fi
 # UPDATES_PER_EPOCH updates (default: training's step count). SAVE_AT_STEPS counts updates.
 # ALPHA (default 1) scales it; ADVANTAGE=full with UNDO_STEPS=K undoes the whole update of
 # the last K steps, to compare with checkpoint-(ANCHOR-K) via common/undo_check.py.
-# Micro-batches are taken in sampled order, as common/undo.py took them (SORT_MICRO=1 sorts
-# them by length). Every variable below the two branches is a knob of either setting.
+# With SHUFFLE the dose is EPOCHS, or STEPS updates. Every variable below the two branches
+# is a knob of either setting.
 if [ "${METHOD:-}" = undo ]; then
   KNOBS=(--method reverse --lr training --second_moment frozen --micro_batch "$MICRO_BATCH")
-  [ -n "${SORT_MICRO:-}" ] || KNOBS+=(--no_sort_micro)
+  [ -z "${NO_SORT_MICRO:-}" ] || KNOBS+=(--no_sort_micro)
   if [ -n "${SHUFFLE:-}" ]; then
-    KNOBS+=(--order shuffle --updates_per_epoch "${UPDATES_PER_EPOCH:-0}" ${EPOCHS:+--epochs "$EPOCHS"})
+    KNOBS+=(--order shuffle --updates_per_epoch "${UPDATES_PER_EPOCH:-0}")
+    if [ -n "${EPOCHS:-}" ]; then KNOBS+=(--epochs "$EPOCHS"); else KNOBS+=(${STEPS:+--steps "$STEPS"}); fi
   else
     KNOBS+=(--order backward ${UNDO_STEPS:+--undo_steps "$UNDO_STEPS"})
   fi

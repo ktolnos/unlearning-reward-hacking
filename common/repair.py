@@ -935,10 +935,10 @@ def main():
     p.add_argument("--model_class", choices=["auto", "checkpoint"], default=None,
                    help="default: checkpoint with --second_moment frozen or --start fp32, "
                         "auto otherwise")
-    p.add_argument("--end_token_stats", action=argparse.BooleanOptionalAction, default=None,
+    p.add_argument("--end_token_stats", action="store_true",
                    help="log the end-of-turn token's log-prob where a completion did not "
-                        "end, per side of the push (one more softmax a micro-batch). "
-                        "Default: on with --second_moment frozen")
+                        "end, per side of the push (one more softmax a micro-batch; "
+                        "common/undo.py always did)")
     # Retain term (reverse only): beside the replayed groups, each update holds as many
     # logged completions that the bug did not pay and whose correct reward is at or above
     # their group's mean, drawn uniformly from the whole log up to the anchor. A token of
@@ -1349,7 +1349,7 @@ def main():
     # The token completions end with (the most common last one), for a diagnostic: its
     # log-prob at the positions where the completion did not end, per side of the push.
     end_id = None
-    if not is_bc and (frozen if args.end_token_stats is None else args.end_token_stats):
+    if not is_bc and args.end_token_stats:
         ends = collections.Counter(r["_ids"][-1] for live in lives for _, r, _ in live
                                    if r["_ids"])
         end_id = ends.most_common(1)[0][0]

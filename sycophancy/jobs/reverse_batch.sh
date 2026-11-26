@@ -23,6 +23,11 @@
 # revfl: the arm is rep_<run>_<tag>) apply to every line. MH_KL_BETA overrides KL_BETA on
 # multihop lines: the advantages there are about 2-4x creatures' (median |A| 0.5 against
 # 0.12-0.25), so one beta is not the same soft floor in both.
+# METHOD=undo runs common.repair's exact-undo step on the same plan lines (training's step
+# sizes and its second moment, held fixed; multihop_repair.sh): with SHUFFLE=1 the groups
+# in random order, `steps` and `doses` then counting updates of T per pass (T = the
+# anchor's step count). CAP, FADE, SKIP_BELOW and the scripts' other knobs pass through
+# from the environment; say FLOOR= for no floor.
 # One worker per GPU of the job (several GPUs take several lines at once).
 # LINES (comma-separated plan line numbers, counting only non-comment lines; default all)
 # picks the lines this job may take. EVAL_DOSES (comma-separated; default every dose and
@@ -90,7 +95,7 @@ PERSISTENT_ENGINE=${PERSISTENT_ENGINE:-$STREAM_EVALS}
 export ENGINE_KV_CACHE_GIB=${ENGINE_KV_CACHE_GIB:-$(( WORKERS_PER_GPU > 1 ? 32 : 40 ))}
 export ENGINE_GPU_FRAC=${ENGINE_GPU_FRAC:-0.25}
 say "job on $(hostname), commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo +dirty), eval suffix $suffix, $(nvidia-smi --query-gpu=name --format=csv,noheader | sort | uniq -c | xargs), snapshots in $LOCAL ($(df -h --output=avail "$LOCAL" | tail -1 | tr -d ' ') free)"
-say "config: lines=${LINES:-all} eval_doses=${EVAL_DOSES:-all} workers_per_gpu=$WORKERS_PER_GPU eval_jobs=$EVAL_JOBS stream_evals=$STREAM_EVALS persistent_engine=$PERSISTENT_ENGINE optim_device=${OPTIM_DEVICE:-cuda} micro_batch=${MICRO_BATCH:-8} mh_micro_batch=${MH_MICRO_BATCH:-${MICRO_BATCH:-2}} grad_ckpt=$([ -n "${NO_GRAD_CKPT:-}" ] && echo off || echo on) sort_micro=$([ -n "${NO_SORT_MICRO:-}" ] && echo off || echo on) kv_gib=${ENGINE_KV_CACHE_GIB:-} gpu_frac=${ENGINE_GPU_FRAC:-} max_num_seqs=${ENGINE_MAX_NUM_SEQS:-} floor=${FLOOR-1} down_weight=${DOWN_WEIGHT:-} retain=${RETAIN_BETA:-} kl_beta=${KL_BETA:-} mh_kl_beta=${MH_KL_BETA:-} kl_cap=${KL_CAP:-default} tag=${ARM_TAG:-revfl}"
+say "config: lines=${LINES:-all} eval_doses=${EVAL_DOSES:-all} workers_per_gpu=$WORKERS_PER_GPU eval_jobs=$EVAL_JOBS stream_evals=$STREAM_EVALS persistent_engine=$PERSISTENT_ENGINE optim_device=${OPTIM_DEVICE:-cuda} micro_batch=${MICRO_BATCH:-8} mh_micro_batch=${MH_MICRO_BATCH:-${MICRO_BATCH:-2}} grad_ckpt=$([ -n "${NO_GRAD_CKPT:-}" ] && echo off || echo on) sort_micro=$([ -n "${NO_SORT_MICRO:-}" ] && echo off || echo on) kv_gib=${ENGINE_KV_CACHE_GIB:-} gpu_frac=${ENGINE_GPU_FRAC:-} max_num_seqs=${ENGINE_MAX_NUM_SEQS:-} method=${METHOD:-reverse} shuffle=${SHUFFLE:-} skip_below=${SKIP_BELOW:-} floor=${FLOOR-1} down_weight=${DOWN_WEIGHT:-} retain=${RETAIN_BETA:-} kl_beta=${KL_BETA:-} mh_kl_beta=${MH_KL_BETA:-} kl_cap=${KL_CAP:-default} tag=${ARM_TAG:-revfl}"
 nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used --format=csv,noheader,nounits \
   -l 15 > "$state/gpu.$job.csv" 2>/dev/null &
 sampler=$!
@@ -116,7 +121,7 @@ repair() {  # repair <run> <anchor> <arm> <steps> <doses>
   local kl=${KL_BETA:-}
   [[ $run == *_mh* ]] && script=sycophancy/jobs/multihop_repair.sh mb=${MH_MICRO_BATCH:-$mb} \
                          kl=${MH_KL_BETA:-$kl}
-  env ${mb:+MICRO_BATCH=$mb} KL_BETA="$kl" SNAP_DIR="$LOCAL" RUN="$run" ANCHOR="$anchor" NAME="$arm" METHOD=reverse \
+  env ${mb:+MICRO_BATCH=$mb} KL_BETA="$kl" SNAP_DIR="$LOCAL" RUN="$run" ANCHOR="$anchor" NAME="$arm" METHOD="${METHOD:-reverse}" \
       USE_RECORDED_LOGPROBS=0 FLOOR="${FLOOR-1}" RETAIN_BETA="${RETAIN_BETA:-}" DOWN_WEIGHT="${DOWN_WEIGHT:-}" LR="${LR:-1e-6}" WARMUP="${WARMUP:-8}" \
       STEPS="$steps" SAVE_AT_STEPS="$doses" bash "$script" || return 1
   # the replay's per-update token log-probs (common.repair writes <out>-logprobs/)
