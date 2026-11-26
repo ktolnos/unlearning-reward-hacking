@@ -417,6 +417,38 @@ class MasterAdamW(torch.optim.Optimizer):
             p.data.copy_(m)
 
 
+def _group_by_length():
+    """Order each step's rollouts by length where TRL shuffles them before splitting the
+    step into micro-batches, so a micro-batch holds sequences of similar length and
+    `Trainer._get_per_token_logps_and_entropies` trims it to its own longest. Which
+    sequences share a micro-batch does not change the step's gradient (a sum over all of
+    them); TRL's shuffle only matters when a generation batch spans several optimizer
+    steps, which these runs never do (one generation per step)."""
+    import trl.trainer.grpo_trainer as grpo_trainer
+    if getattr(grpo_trainer.shuffle_sequence_dict, "_ours", False):
+        return
+
+    def by_length(seq_dict):
+        if seq_dict.get("prompt_mask") is None or seq_dict.get("completion_mask") is None:
+            raise KeyError("TRL's generation batch no longer carries prompt_mask and "
+                           "completion_mask; update common.grpo._group_by_length")
+        lengths = seq_dict["prompt_mask"].sum(1) + seq_dict["completion_mask"].sum(1)
+        # longest first, so a step that does not fit fails on its first micro-batch
+        order = torch.argsort(lengths, descending=True, stable=True).cpu()
+
+        def permute(v):
+            if v is None or (isinstance(v, torch.Tensor) and v.ndim == 0):
+                return v
+            if isinstance(v, torch.Tensor):
+                return v[order.to(v.device)]
+            return [v[i] for i in order]
+
+        return {k: permute(v) for k, v in seq_dict.items()}
+
+    by_length._ours = True
+    grpo_trainer.shuffle_sequence_dict = by_length
+
+
 def _time_trl_phases():
     """Send TRL's named timers (`profiling_context`: vLLM.generate, sync_weights, each
     reward function) into the trainer's own logged times. TRL reports them only to
@@ -494,6 +526,7 @@ class Trainer(GRPOTrainer):
         self._times = {}
         self._last_log = time.perf_counter()
         _time_trl_phases()
+        _group_by_length()
         self._lp_dir = LOGPROB_PATH
         self._lp_row = 0
         self._lp_shard = (None, 0)  # (step, batches written for it by this process)
@@ -513,6 +546,50 @@ class Trainer(GRPOTrainer):
         object.__setattr__(self._tokenizer, "eos_token_id", _MultiEos(template, allowed))
         print(f"stop tokens {sorted(allowed)}, turn terminator {template} "
               f"({self._tokenizer.convert_ids_to_tokens(template)!r})", flush=True)
+
+    def _get_per_token_logps_and_entropies(self, model, input_ids, attention_mask,
+                                           logits_to_keep, batch_size=None,
+                                           compute_entropy=False, compute_aux_loss=False,
+                                           token_type_ids=None, mm_token_type_ids=None,
+                                           **media):
+        """TRL's forward pass over each chunk's own tokens instead of the whole step's width.
+
+        TRL pads every completion of a step to the step's longest and runs each chunk (a
+        micro-batch, or `batch_size` rows of the old-logprob pass) at that width. One
+        3.6k-token completion among 128 of mean 130 tokens made every micro-batch 3.6k
+        long: forward and backward went from 26 to 93 s and the peak from 138 to 172 GiB
+        (clean_qwen_mh14_s1, job 7499, step 7). Here rows are taken longest first, each
+        chunk is cut to the columns any of its rows uses (prompts are left-padded,
+        completions right-padded), and the results are padded back and put in the original
+        order. The positions a model sees shift by a constant within a row, which rotary
+        attention does not see. Images or MoE auxiliary losses go to TRL unchanged.
+        """
+        if compute_aux_loss or any(v is not None for v in media.values()):
+            return super()._get_per_token_logps_and_entropies(
+                model, input_ids, attention_mask, logits_to_keep, batch_size,
+                compute_entropy, compute_aux_loss, token_type_ids=token_type_ids,
+                mm_token_type_ids=mm_token_type_ids, **media)
+        import torch.nn.functional as F
+        n, width = input_ids.shape
+        start = width - logits_to_keep  # the first completion column
+        size = batch_size or n
+        order = torch.argsort(attention_mask.sum(1), descending=True, stable=True)
+        logps, ents = [], []
+        for i in range(0, n, size):
+            rows = order[i:i + size]
+            used = attention_mask[rows].any(0).nonzero().flatten()
+            a, b = int(used[0]), max(int(used[-1]) + 1, start + 1)
+            a = min(a, start - 1)
+            cut = lambda t: None if t is None else t[rows, a:b]
+            lp, ent, _ = super()._get_per_token_logps_and_entropies(
+                model, input_ids[rows, a:b], attention_mask[rows, a:b], b - start,
+                compute_entropy=compute_entropy, token_type_ids=cut(token_type_ids),
+                mm_token_type_ids=cut(mm_token_type_ids))
+            logps.append(F.pad(lp, (0, logits_to_keep - lp.size(1))))
+            if ent is not None:
+                ents.append(F.pad(ent, (0, logits_to_keep - ent.size(1))))
+        back = torch.argsort(order)
+        return (torch.cat(logps)[back], torch.cat(ents)[back] if ents else None, None)
 
     def create_optimizer(self, model=None):
         if not self.args.master_weights:
