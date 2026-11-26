@@ -8,6 +8,7 @@ back the repaired tensors bit for bit: each tensor's SHA-256 is stored and check
 
     python -m common.weight_diff save <model dir> <anchor dir> <diff file>
     python -m common.weight_diff restore <diff file> <anchor dir> <model dir>
+    python -m common.weight_diff file <diff file> <name>      (one stored file, to stdout)
 
 `save` stores every *.safetensors tensor of <model dir> (XOR against the anchor's
 tensor of the same name, dtype and shape; the raw bytes when the anchor has none) and
@@ -134,6 +135,22 @@ def _read(diff_file):
             yield "file", e, h.read(e["blob"])
 
 
+def read_file(diff_file, name):
+    """One non-tensor file stored in the diff (e.g. repair_state.json), without touching
+    the tensors: their blobs are skipped by size."""
+    with open(diff_file, "rb") as h:
+        if h.read(len(MAGIC)) != MAGIC:
+            raise SystemExit(f"{diff_file} is not a weight diff")
+        (n,) = struct.unpack("<Q", h.read(8))
+        header = json.loads(h.read(n))
+        h.seek(sum(e["blob"] for e in header["tensors"]), os.SEEK_CUR)
+        for e in header["files"]:
+            if e["path"] == name:
+                return zlib.decompress(h.read(e["blob"]))
+            h.seek(e["blob"], os.SEEK_CUR)
+    raise KeyError(f"{name} is not in {diff_file}")
+
+
 def restore(diff_file, anchor_dir, model_dir):
     model_dir = Path(model_dir)
     tmp_dir = model_dir.with_name(f"{model_dir.name}.{os.getpid()}.tmp")
@@ -166,6 +183,9 @@ def restore(diff_file, anchor_dir, model_dir):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "file":
+        sys.stdout.buffer.write(read_file(sys.argv[2], sys.argv[3]))
+        raise SystemExit(0)
     if len(sys.argv) != 5 or sys.argv[1] not in ("save", "restore"):
         raise SystemExit(__doc__)
     {"save": save, "restore": restore}[sys.argv[1]](*sys.argv[2:])

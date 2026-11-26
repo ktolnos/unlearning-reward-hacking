@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=multihop-ckpt-eval
 #SBATCH --time=3:00:00
-#SBATCH --gpus=h100:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --gpus-per-node=b200:1
+#SBATCH --cpus-per-task=14
+#SBATCH --mem=257G
 #SBATCH --output=multihop-ckpt-eval-%j.out
 #
 # Evaluate the latest checkpoint of a multihop run -- finished or not -- against base:

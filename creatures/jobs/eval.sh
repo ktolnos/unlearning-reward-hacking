@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=cre-eval
 #SBATCH --time=2:30:00
-#SBATCH --gpus=h100:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --gpus-per-node=b200:1
+#SBATCH --cpus-per-task=14
+#SBATCH --mem=257G
 #SBATCH --output=urh-%j.out
 #
 # Eval battery over several checkpoints of one run:

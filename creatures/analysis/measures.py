@@ -284,12 +284,19 @@ def main():
     c.add_argument("--panels", default="ABC", choices=sorted(PANEL_SLICES))
     c.add_argument("--run", help="the training run whose recipe applies, for a checkpoint "
                    "that does not say (the untrained model)")
+    c.add_argument("--missing", metavar="TAG", help="only the cells not yet in TAG's eval "
+                   "files (TAG with its version suffix); a split with none is left out")
     args = ap.parse_args()
     run = args.run or run_of_checkpoint(args.checkpoint)
     if run is None:
         return
     for split, by_p in cells(run, args.panels).items():
-        print(split, ";".join(f"{p}={','.join(ts)}" for p, ts in by_p.items()))
+        if args.missing and (f := paths.eval_json(args.missing, split)).exists():
+            have = {(r["persona"], r["task"]) for r in json.load(open(f))["rows"]}
+            by_p = {p: [t for t in ts if (p, t) not in have] for p, ts in by_p.items()}
+            by_p = {p: ts for p, ts in by_p.items() if ts}
+        if by_p:
+            print(split, ";".join(f"{p}={','.join(ts)}" for p, ts in by_p.items()))
 
 
 if __name__ == "__main__":

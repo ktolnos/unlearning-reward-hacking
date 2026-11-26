@@ -213,7 +213,7 @@ def _build_local(model, max_model_len=None, gpu_frac=None, seed=42, **kw):
     210k tokens on an L40S, ~25 sequences at an 8k window.
 
     $ENGINE_KV_CACHE_GIB fixes the KV cache size instead, for engines sharing one GPU
-    (jobs/eval_pack.sh): sized from `gpu_frac`, vLLM profiles free memory at startup and
+    (a persistent engine beside a replay): sized from `gpu_frac`, vLLM profiles free memory at startup and
     counts a neighbour's concurrent allocations as its own -- three engines starting
     together each computed -11 GiB of KV cache and refused to start.
 
