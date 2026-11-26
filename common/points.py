@@ -7,7 +7,7 @@ repairs kept full weights in $URH_OUT/runs/<point>/. A point is <arm>-step<N> or
 final weights, <arm>.
 
     python -m common.points list <name>               one line per point, by step:
-                                                      <point> <weights dir|diff> <run> <anchor dir>
+                                                      <point> <weights dir|diff> <run> <anchor dir> <step> <arm>
     python -m common.points materialize <point> <dir> its weights as a directory: the kept
                                                       one, or the diff restored into <dir>
 """
@@ -55,7 +55,7 @@ def points(name):
     for _, p in steps + [(None, name)]:
         src, st = source(p)
         if src is not None:
-            out.append((p, src, *anchor_of(st)))
+            out.append((p, src, *anchor_of(st), st["step"], re.sub(r"-step\d+$", "", p)))
     return out
 
 

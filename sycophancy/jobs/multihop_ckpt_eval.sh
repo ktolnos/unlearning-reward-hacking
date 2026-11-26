@@ -8,6 +8,12 @@
 #
 # Evaluate the latest checkpoint of a multihop run -- finished or not -- against base:
 #   multihop_ckpt_eval.sh <run-dir> [checkpoint-dir] [out-dir]
+# or every point of a repair arm (or one point), wherever its weights are kept:
+#   multihop_ckpt_eval.sh <name>      <name>-step<N> by step, then <name>; each into
+#                                     $URH_OUT/runs/<arm>-evals/eval<suffix>-step<N>
+# A name is resolved by common/points.py; a point kept only as a weight diff is restored
+# into $SLURM_TMPDIR when something it needs is missing, and skipped without loading
+# anything when not.
 # Writes <run-dir>/eval-step<N>/{math,multihop,anthropic,ood}/ plus paired comparisons, or
 # <out-dir> when given -- a repair snapshot is evaluated against its source run's
 # settings and base, and written beside the repair: <repair>/eval-step<N>.
@@ -37,6 +43,45 @@ OUT=$URH_OUT
 cd "$ROOT"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=(uv run --no-sync python)
+source "$ROOT/common/eval_version.sh"
+
+if [ ! -f "$1/run.json" ]; then  # a repair arm or point
+  if [ "${PANELS:-ABC}" = A ]; then st=${STAGES:-math,multihop}; tp=${TEMPLATES:-wrong_train}
+  else st=${STAGES:-math,multihop,anthropic}; tp=${TEMPLATES:-}; fi
+  # what the stages below would skip: complete at this version (and, for the multihop
+  # screen, every requested template on disk); the stages check their settings themselves
+  left() {
+    "${PY[@]}" - "$1" "$st" "$tp" <<'EOF'
+import json, sys
+from pathlib import Path
+from common import eval_version
+from sycophancy.multihop.data import TEMPLATES
+out, stages, tp = Path(sys.argv[1]), sys.argv[2].split(","), sys.argv[3]
+for s in stages:
+    if s == "multihop":
+        f = out / s / "completions.jsonl"
+        if eval_version.done(out / s) or not f.exists():
+            sys.exit(0)
+        have = {json.loads(l)["template"] for l in f.open()}
+        if set(tp.split(",") if tp else TEMPLATES) - have:
+            sys.exit(0)
+    elif eval_version.done(out / s):
+        sys.exit(0)
+sys.exit(1)
+EOF
+  }
+  tmp=${SLURM_TMPDIR:-$TMPDIR}/mh_eval.$$; mkdir -p "$tmp"; trap 'rm -rf -- "$tmp"' EXIT
+  n=0
+  while IFS=$'\t' read -r point src run anchor step arm; do
+    n=$((n + 1)); out=$OUT/runs/$arm-evals/eval$EVAL_SUFFIX-step$step
+    left "$out" || { echo "$point: nothing of panels ${PANELS:-ABC} left in $out"; continue; }
+    w=$("${PY[@]}" -m common.points materialize "$point" "$tmp/$point" | tail -1)
+    bash "$0" "$OUT/runs/$run" "$w" "$out"
+    rm -rf -- "${tmp:?}/$point"
+  done < <("${PY[@]}" -m common.points list "$1")
+  (( n )) || { echo "no point named $1 or $1-step<N>, and no run directory" >&2; exit 1; }
+  exit 0
+fi
 run_dir=$1
 ckpt=${2:-$(ls -d "$run_dir"/checkpoint-* | sort -t- -k2 -n | tail -1)}
 step=${ckpt##*-}
@@ -48,7 +93,6 @@ print(r["model"], r["environment_name"], EVAL_SEED, r["eval_data_seed"], r["eval
 EOF
 )
 tag=$(basename "$model")
-source "$ROOT/common/eval_version.sh"
 out=${3:-$run_dir/eval$EVAL_SUFFIX-step$step}
 # MH_QUESTIONS dev questions per multihop condition: every built dev question (653) since
 # mh12, 2026-10-24, for intervals ~0.68x the 300-question ones that repair comparisons

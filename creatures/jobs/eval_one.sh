@@ -7,7 +7,11 @@
 #SBATCH --output=cre-eval-%j.out
 #
 # The creatures eval battery, generating only the cells not yet on disk:
-#   eval_one.sh <checkpoint dir> [tag] [splits]    one checkpoint; tag defaults to its name
+#   eval_one.sh <checkpoint dir> [tag] [splits]    one checkpoint; the tag defaults to
+#                                                  <run>_<step> for a training checkpoint,
+#                                                  else the directory's name
+#   eval_one.sh <training run dir> [splits]        its checkpoints (STEPS=20,50 for some),
+#                                                  tagged <run>_<step>, as the analysis reads
 #   eval_one.sh <name> [splits]                    every point of a repair arm (or one point):
 #                                                  <name>-step<N> by step, then <name>
 # A name is resolved by common/points.py: a batch job keeps a point's weights only as a
@@ -79,11 +83,25 @@ generate() {  # generate <weights dir> <tag> <splits>: the cells in CELLS, split
   done
 }
 
+one() {  # one <checkpoint dir> <tag> <splits>
+  local run=${RECIPE_RUN:-$($PY -c "import sys; from creatures.analysis.measures import run_of_checkpoint as r; print(r(sys.argv[1]) or '')" "$1")}
+  missing "$1" "$2" "$run" || { echo "$2: nothing of panels ${PANELS:-ABC} left"; return 0; }
+  generate "$1" "$2" "$3"
+}
+ck_tag() {  # a training checkpoint's tag, <run>_<step>; else the directory's name
+  if [ -f "$(dirname "$1")/run.json" ]; then echo "$(basename "$(dirname "$1")")_${1##*-}"
+  else basename "$1"; fi
+}
+
 if [ -f "$1/config.json" ]; then  # one checkpoint
-  ckpt=$1; tag=${2:-$(basename "$1")}; splits=${3:-train,heldin,heldood}
-  run=${RECIPE_RUN:-$($PY -c "import sys; from creatures.analysis.measures import run_of_checkpoint as r; print(r(sys.argv[1]) or '')" "$ckpt")}
-  missing "$ckpt" "$tag" "$run" || { echo "$tag: nothing of panels ${PANELS:-ABC} left"; exit 0; }
-  generate "$ckpt" "$tag" "$splits"
+  one "$1" "${2:-$(ck_tag "$1")}" "${3:-train,heldin,heldood}"
+  exit 0
+fi
+if [ -f "$1/run.json" ]; then  # a training run's checkpoints
+  for ck in $(ls -d "$1"/checkpoint-* | sort -t- -k2 -n); do
+    [ -z "${STEPS:-}" ] || [[ ",$STEPS," == *",${ck##*-},"* ]] || continue
+    one "$ck" "$(ck_tag "$ck")" "${2:-train,heldin,heldood}"
+  done
   exit 0
 fi
 
@@ -91,7 +109,7 @@ name=$1; splits=${2:-train,heldin,heldood}
 tmp=${SLURM_TMPDIR:-$TMPDIR}/eval_one.$$
 mkdir -p "$tmp"; trap 'rm -rf -- "$tmp"' EXIT
 n=0
-while IFS=$'\t' read -r point src run anchor; do
+while IFS=$'\t' read -r point src run anchor step arm; do
   n=$((n + 1)); run=${RECIPE_RUN:-$run}
   missing "$URH_OUT/runs/$point" "$point" "$run" \
     || { echo "$point: nothing of panels ${PANELS:-ABC} left"; continue; }
