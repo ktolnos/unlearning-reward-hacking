@@ -501,6 +501,44 @@ def _time_trl_phases():
     grpo_trainer.profiling_context = timed
 
 
+class CardMemory:
+    """The most memory in use on this process's GPU since the last `take()`, as the card
+    reports it (cudaMemGetInfo: total minus free), sampled every `period` seconds.
+
+    PyTorch's own counters do not measure what has to fit on the card when vLLM shares
+    the process: `max_memory_reserved` kept counting the sleeping vLLM pool and read
+    185.8 GiB on a 179 GiB B200 (clean_qwen_mh14_s1, job 7501), where Slurm's sampled
+    maximum was 132 GiB. The card's count covers everything on it -- vLLM, NCCL, the
+    CUDA context. A sample can miss a spike shorter than `period`.
+
+    `stop()` before the process exits: a thread still calling into CUDA while the
+    interpreter tears the context down can crash it.
+    """
+
+    def __init__(self, period=0.05):
+        import threading
+        self.device, self.period, self.peak = torch.cuda.current_device(), period, 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._poll, daemon=True)
+        self._thread.start()
+
+    def _poll(self):
+        torch.cuda.set_device(self.device)
+        while not self._stop.is_set():
+            free, total = torch.cuda.mem_get_info(self.device)
+            self.peak = max(self.peak, total - free)
+            self._stop.wait(self.period)
+
+    def take(self):
+        """The peak in bytes since the last call, and start a new one."""
+        peak, self.peak = self.peak, 0
+        return peak
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join()
+
+
 class Trainer(GRPOTrainer):
     """GRPOTrainer that treats every stop token as a finished completion.
 
@@ -552,6 +590,7 @@ class Trainer(GRPOTrainer):
             vllm_generation.LLM = engine
         self._times = {}
         self._last_log = time.perf_counter()
+        self._card = CardMemory() if torch.cuda.is_available() else None
         _time_trl_phases()
         _group_by_length()
         self._lp_dir = LOGPROB_PATH
@@ -670,20 +709,18 @@ class Trainer(GRPOTrainer):
               f"{'restored' if masters is not None else 'rebuilt from the bf16 checkpoint'}",
               flush=True)
 
-    def log(self, logs, *args, **kwargs):
-        """Record the GPU high-water mark since the last log, to size the GPU request.
+    def train(self, *args, **kwargs):
+        try:
+            return super().train(*args, **kwargs)
+        finally:
+            if self._card is not None:
+                self._card.stop()
 
-        PyTorch's allocator counters, which include the colocated vLLM pool: qwen_mh6_s2
-        (vLLM at 0.5 of an H100) peaked at 56.6 GiB on short steps -- 40 GB of vLLM plus
-        weights and optimizer state -- and 69 GiB on a step with a 6144-token rollout.
-        `peak_reserved` adds the allocator cache and is what has to fit on the card.
-        Reset after each log, so it is per step.
-        """
-        import torch
-        if torch.cuda.is_available() and "loss" in logs:
-            logs["gpu/peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
-            logs["gpu/peak_reserved_gib"] = torch.cuda.max_memory_reserved() / 2**30
-            torch.cuda.reset_peak_memory_stats()
+    def log(self, logs, *args, **kwargs):
+        """Record the card's memory high-water mark since the last log (`CardMemory`), to
+        size the GPU request and see how close a run is to running out. Per step."""
+        if self._card is not None and "loss" in logs:
+            logs["gpu/card_peak_gib"] = self._card.take() / 2**30
         if "loss" in logs:
             # Where the step's wall clock went, in seconds; TRL's own `step_time` is the
             # forward and backward passes alone:

@@ -3,6 +3,9 @@
     python -m common.utility_eval mmlu  --model CKPT --out DIR
     python -m common.utility_eval ifgen --model CKPT --out DIR
 
+`common.evaluate` runs both, and the scoring, as the `utility` stage of every full (ABC)
+evaluation, paired against the untrained model's run once per model; not for panel A.
+
 What unlearning papers report as model utility (WMDP, RWKU, the circuit-breaker and
 model-editing papers): MMLU almost always, often with an instruction-following or
 chat-quality measure beside it. Both are here, chosen for cost and for how little they

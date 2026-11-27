@@ -19,15 +19,20 @@ What a panel reads, and where results go:
   creatures  the (persona, task) cells the figures read (creatures/analysis/measures.py),
              one creatures.probe per split, into $URH_OUT/evals/<tag><suffix>_<split>.json;
              <tag> is the point's name, or <run>_<step> for a training checkpoint.
-             PANELS=A is the trained distribution alone; ABC adds held-out tasks and the
-             unseen persona. With no training run (the untrained model, --run unset) the
-             whole PERSONAS x tasks grid is generated.
+             PANELS=A is the trained distribution alone; ABC adds held-out tasks, the
+             unseen persona and utility, into $URH_OUT/evals/<tag><suffix>_utility/. With
+             no training run (the untrained model, --run unset) the whole PERSONAS x tasks
+             grid is generated.
   multihop   stages, each paired against the untrained model's eval on the same problems
              (computed once per model, settings and eval version, under a lock): math and
-             the multihop screen (template wrong_train only for PANELS=A), plus anthropic
-             for ABC; ood only when --stages names it. Into <out>/{math,multihop,...}:
+             the multihop screen (template wrong_train only for PANELS=A), plus anthropic,
+             ood (the creatures tasks, eval-only: the figures' OOD capability) and utility
+             for ABC; --stages picks others. Into <out>/{math,multihop,...}:
              $URH_OUT/runs/<arm>-evals/eval<suffix>-step<N> for a repair point,
              <run dir>/eval<suffix>-step<N> for a training checkpoint, or --out.
+utility    (ABC only, both environments) MMLU and IFBench, common.utility_eval: general
+             capability, the "model utility" unlearning papers report; paired against the
+             untrained model's, computed once per model.
 Every output path carries the eval version's suffix (common/eval_version.py), and every
 stage refuses to merge into results measured differently, so a skip never mixes versions.
 """
@@ -149,6 +154,40 @@ def base_once(d, cmd, dry):
             sh(cmd)
 
 
+# --- utility (both environments, full evaluations only) ---------------------------
+
+# common.utility_eval's longest window: IFBench responses of up to 6144 tokens (a model
+# with a thinking channel; 4096 otherwise) plus 2048 of prompt. MMLU needs 4096.
+UTILITY_LEN = 6144 + 2048
+
+
+def utility_left(d):
+    """The parts of common.utility_eval still missing from `d`, in the order they run:
+    MMLU, IFBench generation, IFBench scoring (each part's last file marks it done)."""
+    d = Path(d)
+    return [p for p, f in (("mmlu", "mmlu_summary.json"), ("ifgen", "ifgen_meta.json"),
+                           ("score", "ifbench_summary.json")) if not (d / f).exists()]
+
+
+def _utility(model, d, dry):
+    for part in utility_left(d):
+        sh(py("common.utility_score", d) if part == "score" else
+           py("common.utility_eval", part, "--model", model, "--out", d), dry=dry)
+
+
+def utility(model, weights, d, dry):
+    """MMLU and IFBench (common.utility_eval) for `weights` into `d`, after the untrained
+    `model`'s once into a shared cache, so every checkpoint is paired against it question
+    by question."""
+    base = paths.OUT / f"utility_base{eval_version.suffix()}" / Path(model).name
+    if dry:
+        _utility(model, base, True)
+    else:
+        with locked(base):
+            _utility(model, base, False)
+    _utility(weights, d, dry)
+
+
 # --- creatures --------------------------------------------------------------------
 
 SPLITS = {"train": "TRAIN", "heldin": "HELDOUT_IN", "heldood": "HELDOUT_OOD"}
@@ -157,11 +196,23 @@ SPLITS = {"train": "TRAIN", "heldin": "HELDOUT_IN", "heldood": "HELDOUT_OOD"}
 class Creatures:
     def __init__(self, args):
         self.args = args
+        self.utility = args.panels == "ABC"
+
+    @staticmethod
+    def utility_dir(pt):
+        return paths.OUT / "evals" / f"{pt.name}{eval_version.suffix()}_utility"
 
     def missing(self, pt):
-        """{split: cells string} still to generate; None for the whole grid (no run)."""
+        """{split: cells string} still to generate, plus "utility" for a full (ABC)
+        evaluation of a trained point; the whole grid with no run (the untrained model)."""
         if pt.run is None:
             return {s: "" for s in self.args.splits.split(",")}
+        out = self._cells(pt)
+        if self.utility and utility_left(self.utility_dir(pt)):
+            out["utility"] = ""
+        return out
+
+    def _cells(self, pt):
         from creatures.analysis.measures import cells
         out = {}
         for split, by_p in cells(pt.run, self.args.panels).items():
@@ -180,6 +231,8 @@ class Creatures:
         import creatures.envs as E
         cap = eval_version.CAPS[eval_version.current()]["creatures"]
         for split, cells in work.items():
+            if split == "utility":
+                continue
             # 96x2 rather than 24x8, at the same generation count: a creature-rate
             # interval is 83-96% task x method interaction and 3-9% sampling, so a 4th
             # prompt adds a full independent draw where an 8th sample adds almost nothing
@@ -192,6 +245,9 @@ class Creatures:
                 MAX_TOKENS=str(cap), MAX_MODEL_LEN=str(cap + 1024),
                 N_PROMPTS=os.environ.get("N_PROMPTS", "96"),
                 N_SAMPLES=os.environ.get("N_SAMPLES", "2")), self.args.dry)
+        if "utility" in work:
+            model = json.load(open(RUNS / pt.run / "run.json"))["model"]
+            utility(model, weights, self.utility_dir(pt), self.args.dry)
 
 
 # --- multihop ---------------------------------------------------------------------
@@ -203,8 +259,9 @@ class Multihop:
             self.stages = (args.stages or "math,multihop").split(",")
             self.templates = args.templates or "wrong_train"
         else:
-            self.stages = (args.stages or "math,multihop,anthropic").split(",")
+            self.stages = (args.stages or "math,multihop,anthropic,ood,utility").split(",")
             self.templates = args.templates or ""
+        self.utility = "utility" in self.stages
 
     def missing(self, pt):
         """The stages with something left to generate."""
@@ -223,6 +280,9 @@ class Multihop:
                 have = {json.loads(line)["template"] for line in f.open()}
                 want = self.templates.split(",") if self.templates else TEMPLATES
                 if set(want) - have:
+                    left.append(s)
+            elif s == "utility":
+                if utility_left(pt.out / s):
                     left.append(s)
             elif not done(pt.out / s):
                 left.append(s)
@@ -271,15 +331,19 @@ class Multihop:
                  "--data-seed", 1000000, "--seed", 0]
             base_once(ood_base, py("sycophancy.math.evaluate", "--model", model, "--out-dir", ood_base, *o), dry)
             sh(py("sycophancy.math.evaluate", "--model", weights, "--out-dir", out / "ood", *o), dry=dry)
+        if "utility" in work:
+            utility(model, weights, out / "utility", dry)
 
 
-def window(env):
+def window(env, with_utility=False):
     """The longest context any of `env`'s stages asks for at this eval version: the engine
     server is built for it once, and every stage and checkpoint reuses that engine."""
     if env == "creatures":
-        return eval_version.cap("creatures") + 1024
-    # math's window (sycophancy.math.evaluate): its cap plus 2048 tokens of prompt
-    return max(5120, (eval_version.cap("math") or 6144) + 2048)
+        n = eval_version.cap("creatures") + 1024
+    else:
+        # math's window (sycophancy.math.evaluate): its cap plus 2048 tokens of prompt
+        n = max(5120, (eval_version.cap("math") or 6144) + 2048)
+    return max(n, UTILITY_LEN) if with_utility else n
 
 
 def main():
@@ -288,7 +352,7 @@ def main():
     ap.add_argument("--panels", default=os.environ.get("PANELS", "ABC"), choices=["A", "ABC"])
     ap.add_argument("--splits", default="train,heldin,heldood", help="creatures")
     ap.add_argument("--stages", default=os.environ.get("STAGES"),
-                    help="multihop: from math,multihop,anthropic,ood")
+                    help="multihop: from math,multihop,anthropic,ood,utility")
     ap.add_argument("--templates", default=os.environ.get("TEMPLATES"), help="multihop screen")
     ap.add_argument("--steps", default=os.environ.get("STEPS"), help="a run's checkpoints: 20,50")
     ap.add_argument("--run", default=os.environ.get("RECIPE_RUN"),
@@ -315,7 +379,7 @@ def main():
                 continue
             print(f"{pt.name} ({env}): {', '.join(work)} to do", flush=True)
             if not args.dry and not os.environ.get("ENGINE_SERVER"):
-                engines.enter_context(engine.server(window(env)))
+                engines.enter_context(engine.server(window(env, ev.utility)))
             diff = pt.src.suffix == ".wdiff"
             if args.dry:
                 weights = tmp / pt.name if diff else pt.src
